@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/constants/app_assets.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../shared/widgets/custom_button.dart';
@@ -63,23 +65,37 @@ class LoginScreen extends ConsumerWidget {
                   Column(
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: AppColors.royalBlue.withValues(alpha: 0.2),
-                          border: Border.all(color: AppColors.gold, width: 2),
+                          border: Border.all(color: AppColors.gold, width: 2.5),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.gold.withValues(alpha: 0.3),
-                              blurRadius: 18,
-                              spreadRadius: 2,
+                              color: AppColors.gold.withValues(alpha: 0.4),
+                              blurRadius: 20,
+                              spreadRadius: 3,
                             ),
                           ],
                         ),
-                        child: const Icon(
-                          Icons.casino_rounded,
-                          size: 52,
-                          color: AppColors.gold,
+                        child: ClipOval(
+                          child: SvgPicture.asset(
+                            AppAssets.logoSvg,
+                            width: isTablet ? 110 : 88,
+                            height: isTablet ? 110 : 88,
+                            fit: BoxFit.cover,
+                            placeholderBuilder: (context) => Image.asset(
+                              AppAssets.logoJpeg,
+                              width: isTablet ? 110 : 88,
+                              height: isTablet ? 110 : 88,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => const Icon(
+                                Icons.casino_rounded,
+                                size: 52,
+                                color: AppColors.gold,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),

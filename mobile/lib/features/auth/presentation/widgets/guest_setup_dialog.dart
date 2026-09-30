@@ -17,14 +17,12 @@ class CountryItem {
 class AvatarItem {
   final String id;
   final String title;
-  final IconData icon;
-  final Color color;
+  final String imagePath;
 
   const AvatarItem({
     required this.id,
     required this.title,
-    required this.icon,
-    required this.color,
+    required this.imagePath,
   });
 }
 
@@ -103,7 +101,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
     CountryItem('Equatorial Guinea', '🇬🇶'),
     CountryItem('Eritrea', '🇪🇷'),
     CountryItem('Estonia', '🇪🇪'),
-    CountryItem('Eswatini', '🇸🇿'),
+    CountryItem('Eswatini', '🇸ℤ'),
     CountryItem('Ethiopia', '🇪🇹'),
     CountryItem('Fiji', '🇫🇯'),
     CountryItem('Finland', '🇫🇮'),
@@ -120,7 +118,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
     CountryItem('Guinea-Bissau', '🇬🇼'),
     CountryItem('Guyana', '🇬🇾'),
     CountryItem('Haiti', '🇭🇹'),
-    CountryItem('Honduras', '🇭🇳'),
+    CountryItem('Honduras', '🇭HN'),
     CountryItem('Hungary', '🇭🇺'),
     CountryItem('Iceland', '🇮🇸'),
     CountryItem('India', '🇮🇳'),
@@ -246,24 +244,16 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
   ];
 
   static const List<AvatarItem> _avatars = [
-    AvatarItem(id: 'avatar_crown', title: 'Crown King', icon: Icons.workspace_premium_rounded, color: AppColors.gold),
-    AvatarItem(id: 'avatar_queen', title: 'Queen Empress', icon: Icons.face_3_rounded, color: Colors.pinkAccent),
-    AvatarItem(id: 'avatar_wizard', title: 'Wizard Mage', icon: Icons.auto_awesome_rounded, color: Colors.purpleAccent),
-    AvatarItem(id: 'avatar_lion', title: 'Lion Champion', icon: Icons.pets_rounded, color: Colors.deepOrange),
-    AvatarItem(id: 'avatar_bot', title: 'Cyber Bot', icon: Icons.smart_toy_rounded, color: Colors.cyanAccent),
-    AvatarItem(id: 'avatar_warrior', title: 'Royal Knight', icon: Icons.shield_rounded, color: AppColors.red),
-    AvatarItem(id: 'avatar_target', title: 'Target Ace', icon: Icons.sports_esports_rounded, color: AppColors.green),
-    AvatarItem(id: 'avatar_diamond', title: 'Diamond Ace', icon: Icons.diamond_rounded, color: AppColors.diamondBlue),
-    AvatarItem(id: 'avatar_dice', title: 'Golden Dice', icon: Icons.casino_rounded, color: Colors.amber),
-    AvatarItem(id: 'avatar_space', title: 'Space Explorer', icon: Icons.rocket_launch_rounded, color: Colors.blueAccent),
-    AvatarItem(id: 'avatar_ninja', title: 'Speed Ninja', icon: Icons.bolt_rounded, color: Colors.yellowAccent),
-    AvatarItem(id: 'avatar_dragon', title: 'Dragon Lord', icon: Icons.whatshot_rounded, color: Colors.deepOrangeAccent),
-    AvatarItem(id: 'avatar_tiger', title: 'Tiger General', icon: Icons.cruelty_free_rounded, color: Colors.orangeAccent),
-    AvatarItem(id: 'avatar_star', title: 'Star Hero', icon: Icons.star_rounded, color: Colors.lightBlueAccent),
-    AvatarItem(id: 'avatar_trophy', title: 'Trophy Titan', icon: Icons.emoji_events_rounded, color: AppColors.goldDark),
-    AvatarItem(id: 'avatar_gamer_boy', title: 'Gamer', icon: Icons.headset_mic_rounded, color: Colors.tealAccent),
-    AvatarItem(id: 'avatar_agent', title: 'Cool Agent', icon: Icons.dark_mode_rounded, color: Colors.blueGrey),
-    AvatarItem(id: 'avatar_mystic', title: 'Mystic Orb', icon: Icons.blur_on_rounded, color: Colors.indigoAccent),
+    AvatarItem(id: 'mask_black_1', title: 'Black Mask 1', imagePath: 'assets/images/black-mask.webp'),
+    AvatarItem(id: 'mask_black_2', title: 'Black Mask 2', imagePath: 'assets/images/black-mask2.webp'),
+    AvatarItem(id: 'mask_black_4', title: 'Black Mask 4', imagePath: 'assets/images/black-mask4.webp'),
+    AvatarItem(id: 'mask_blue_1', title: 'Blue Mask 1', imagePath: 'assets/images/blue-mask.webp'),
+    AvatarItem(id: 'mask_blue_2', title: 'Blue Mask 2', imagePath: 'assets/images/blue-mask (1).webp'),
+    AvatarItem(id: 'mask_blue_7', title: 'Blue Mask 7', imagePath: 'assets/images/blue-mask7.webp'),
+    AvatarItem(id: 'mask_blue_8', title: 'Blue Mask 8', imagePath: 'assets/images/blue-mask8.webp'),
+    AvatarItem(id: 'mask_green', title: 'Green Mask', imagePath: 'assets/images/green-mask.webp'),
+    AvatarItem(id: 'mask_pest', title: 'Pest Mask', imagePath: 'assets/images/pest-mask.webp'),
+    AvatarItem(id: 'mask_red', title: 'Red Mask', imagePath: 'assets/images/red-mask.webp'),
   ];
 
   @override
@@ -275,7 +265,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
       (c) => c.name == 'Netherlands',
       orElse: () => _allCountries.first,
     );
-    _selectedAvatarId = _avatars.first.id;
+    _selectedAvatarId = _avatars.first.imagePath;
   }
 
   @override
@@ -325,10 +315,10 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
         borderRadius: BorderRadius.circular(24),
         side: const BorderSide(color: AppColors.gold, width: 2),
       ),
-      contentPadding: const EdgeInsets.all(20),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       content: SingleChildScrollView(
         child: SizedBox(
-          width: 400,
+          width: 420,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -344,12 +334,12 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Customize your name, country & avatar before playing!',
+                'Choose your mask avatar & country to enter the game!',
                 style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
 
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
 
               // Player Name Field
               Align(
@@ -381,20 +371,20 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                 ),
               ),
 
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
 
-              // Select Avatar Grid (18 Options)
+              // Select Avatar Grid (Clean Mask Images without bottom text overflow)
               Align(
                 alignment: Alignment.centerLeft,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'CHOOSE YOUR AVATAR',
+                      'CHOOSE MASK AVATAR',
                       style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white60),
                     ),
                     Text(
-                      '${_avatars.length} Presets',
+                      '${_avatars.length} Masks',
                       style: GoogleFonts.poppins(fontSize: 10, color: AppColors.gold),
                     ),
                   ],
@@ -402,28 +392,27 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
               ),
               const SizedBox(height: 8),
               SizedBox(
-                height: 150,
+                height: 125,
                 child: GridView.builder(
                   shrinkWrap: true,
                   physics: const BouncingScrollPhysics(),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 5,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                    childAspectRatio: 1,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 1.0,
                   ),
                   itemCount: _avatars.length,
                   itemBuilder: (context, index) {
                     final avatar = _avatars[index];
-                    final isSelected = avatar.id == _selectedAvatarId;
+                    final isSelected = avatar.imagePath == _selectedAvatarId;
                     return GestureDetector(
-                      onTap: () => setState(() => _selectedAvatarId = avatar.id),
+                      onTap: () => setState(() => _selectedAvatarId = avatar.imagePath),
                       child: Tooltip(
                         message: avatar.title,
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
                           decoration: BoxDecoration(
-                            color: avatar.color.withValues(alpha: 0.18),
                             shape: BoxShape.circle,
                             border: Border.all(
                               color: isSelected ? AppColors.gold : Colors.white24,
@@ -439,8 +428,16 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                                   ]
                                 : null,
                           ),
-                          child: Center(
-                            child: Icon(avatar.icon, color: avatar.color, size: 24),
+                          child: ClipOval(
+                            child: Image.asset(
+                              avatar.imagePath,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => const Icon(
+                                Icons.person_rounded,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -486,7 +483,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                 ),
               ),
 
-              const SizedBox(height: 22),
+              const SizedBox(height: 20),
 
               // Action Buttons
               Row(

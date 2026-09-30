@@ -26,6 +26,41 @@ class UserProfileBar extends StatelessWidget {
 
   IconData _getAvatarIcon(String? avatar) {
     switch (avatar) {
+      // Marvel Superheroes
+      case 'marvel_spiderman':
+        return Icons.coronavirus_rounded;
+      case 'marvel_cap':
+        return Icons.shield_rounded;
+      case 'marvel_thor':
+        return Icons.thunderstorm_rounded;
+      case 'marvel_ironman':
+        return Icons.precision_manufacturing_rounded;
+      case 'marvel_hulk':
+        return Icons.fitness_center_rounded;
+      case 'marvel_panther':
+        return Icons.dark_mode_rounded;
+      case 'marvel_groot':
+        return Icons.forest_rounded;
+      case 'marvel_captain_marvel':
+        return Icons.star_rounded;
+
+      // Disney Characters
+      case 'disney_mickey':
+        return Icons.mouse_rounded;
+      case 'disney_elsa':
+        return Icons.ac_unit_rounded;
+      case 'disney_simba':
+        return Icons.pets_rounded;
+      case 'disney_genie':
+        return Icons.auto_fix_high_rounded;
+      case 'disney_ariel':
+        return Icons.water_rounded;
+      case 'disney_donald':
+        return Icons.sailing_rounded;
+      case 'disney_pooh':
+        return Icons.savings_rounded;
+
+      // Classics
       case 'avatar_queen':
         return Icons.face_3_rounded;
       case 'avatar_wizard':
@@ -42,24 +77,6 @@ class UserProfileBar extends StatelessWidget {
         return Icons.diamond_rounded;
       case 'avatar_dice':
         return Icons.casino_rounded;
-      case 'avatar_space':
-        return Icons.rocket_launch_rounded;
-      case 'avatar_ninja':
-        return Icons.bolt_rounded;
-      case 'avatar_dragon':
-        return Icons.whatshot_rounded;
-      case 'avatar_tiger':
-        return Icons.cruelty_free_rounded;
-      case 'avatar_star':
-        return Icons.star_rounded;
-      case 'avatar_trophy':
-        return Icons.emoji_events_rounded;
-      case 'avatar_gamer_boy':
-        return Icons.headset_mic_rounded;
-      case 'avatar_agent':
-        return Icons.dark_mode_rounded;
-      case 'avatar_mystic':
-        return Icons.blur_on_rounded;
       case 'avatar_crown':
       default:
         return Icons.workspace_premium_rounded;
@@ -69,6 +86,30 @@ class UserProfileBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isNetworkAvatar = avatarUrl != null && avatarUrl!.startsWith('http');
+    final isAssetAvatar = avatarUrl != null && (avatarUrl!.startsWith('assets/') || avatarUrl!.endsWith('.webp'));
+
+    Widget avatarWidget;
+    if (isAssetAvatar) {
+      avatarWidget = Image.asset(
+        avatarUrl!,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => Center(
+          child: Icon(_getAvatarIcon(avatarUrl), color: Colors.white, size: 26),
+        ),
+      );
+    } else if (isNetworkAvatar) {
+      avatarWidget = Image.network(
+        avatarUrl!,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => Center(
+          child: Icon(_getAvatarIcon(avatarUrl), color: Colors.white, size: 26),
+        ),
+      );
+    } else {
+      avatarWidget = Center(
+        child: Icon(_getAvatarIcon(avatarUrl), color: Colors.white, size: 26),
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -112,27 +153,7 @@ class UserProfileBar extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: ClipOval(
-                      child: isNetworkAvatar
-                          ? Image.network(
-                              avatarUrl!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => Center(
-                                child: Icon(
-                                  _getAvatarIcon(avatarUrl),
-                                  color: Colors.white,
-                                  size: 26,
-                                ),
-                              ),
-                            )
-                          : Center(
-                              child: Icon(
-                                _getAvatarIcon(avatarUrl),
-                                color: Colors.white,
-                                size: 26,
-                              ),
-                            ),
-                    ),
+                    child: ClipOval(child: avatarWidget),
                   ),
                   const SizedBox(width: 10),
                   Column(
