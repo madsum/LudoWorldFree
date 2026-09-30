@@ -27,13 +27,45 @@ class AvatarItem {
 }
 
 class GuestSetupDialog extends ConsumerStatefulWidget {
-  const GuestSetupDialog({super.key});
+  final bool isEditMode;
+  final String? initialName;
+  final String? initialAvatarUrl;
+  final String? initialCountry;
+  final String? initialCountryFlag;
+
+  const GuestSetupDialog({
+    super.key,
+    this.isEditMode = false,
+    this.initialName,
+    this.initialAvatarUrl,
+    this.initialCountry,
+    this.initialCountryFlag,
+  });
 
   static void show(BuildContext context) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => const GuestSetupDialog(),
+    );
+  }
+
+  static void showEditProfile(
+    BuildContext context, {
+    required String currentName,
+    required String? currentAvatarUrl,
+    required String currentCountry,
+    required String currentCountryFlag,
+  }) {
+    showDialog(
+      context: context,
+      builder: (context) => GuestSetupDialog(
+        isEditMode: true,
+        initialName: currentName,
+        initialAvatarUrl: currentAvatarUrl,
+        initialCountry: currentCountry,
+        initialCountryFlag: currentCountryFlag,
+      ),
     );
   }
 
@@ -118,7 +150,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
     CountryItem('Guinea-Bissau', '🇬🇼'),
     CountryItem('Guyana', '🇬🇾'),
     CountryItem('Haiti', '🇭🇹'),
-    CountryItem('Honduras', '🇭HN'),
+    CountryItem('Honduras', '🇭🇳'),
     CountryItem('Hungary', '🇭🇺'),
     CountryItem('Iceland', '🇮🇸'),
     CountryItem('India', '🇮🇳'),
@@ -200,6 +232,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
     CountryItem('Serbia', '🇷🇸'),
     CountryItem('Seychelles', '🇸🇨'),
     CountryItem('Sierra Leone', '🇸🇱'),
+    CountryItem('Sierra Leone', '🇸🇱'),
     CountryItem('Singapore', '🇸🇬'),
     CountryItem('Slovakia', '🇸🇰'),
     CountryItem('Slovenia', '🇸🇮'),
@@ -260,12 +293,15 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
   void initState() {
     super.initState();
     final randomNum = (1000 + (DateTime.now().millisecondsSinceEpoch % 8999));
-    _nameController = TextEditingController(text: 'Guest_$randomNum');
+    final defaultName = widget.initialName ?? 'Guest_$randomNum';
+    _nameController = TextEditingController(text: defaultName);
+
     _selectedCountry = _allCountries.firstWhere(
-      (c) => c.name == 'Netherlands',
+      (c) => c.name == (widget.initialCountry ?? 'Netherlands'),
       orElse: () => _allCountries.first,
     );
-    _selectedAvatarId = _avatars.first.imagePath;
+
+    _selectedAvatarId = widget.initialAvatarUrl ?? _avatars.first.imagePath;
   }
 
   @override
@@ -292,16 +328,29 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
 
   void _handleSaveAndPlay() async {
     final name = _nameController.text.trim().isEmpty ? 'Guest Player' : _nameController.text.trim();
-    final success = await ref.read(authControllerProvider.notifier).signInAsGuest(
-          name: name,
-          avatarUrl: _selectedAvatarId,
-          country: _selectedCountry.name,
-          countryFlag: _selectedCountry.flag,
-        );
+    
+    bool success;
+    if (widget.isEditMode) {
+      success = await ref.read(authControllerProvider.notifier).updateUserProfile(
+            name: name,
+            avatarUrl: _selectedAvatarId,
+            country: _selectedCountry.name,
+            countryFlag: _selectedCountry.flag,
+          );
+    } else {
+      success = await ref.read(authControllerProvider.notifier).signInAsGuest(
+            name: name,
+            avatarUrl: _selectedAvatarId,
+            country: _selectedCountry.name,
+            countryFlag: _selectedCountry.flag,
+          );
+    }
 
     if (success && mounted) {
       Navigator.of(context).pop();
-      context.go('/home');
+      if (!widget.isEditMode) {
+        context.go('/home');
+      }
     }
   }
 
@@ -324,7 +373,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
             children: [
               // Header Title
               Text(
-                'GUEST PROFILE SETUP',
+                widget.isEditMode ? 'EDIT PLAYER PROFILE' : 'GUEST PROFILE SETUP',
                 style: GoogleFonts.poppins(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
@@ -334,7 +383,9 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Choose your mask avatar & country to enter the game!',
+                widget.isEditMode
+                    ? 'Update your name, country & mask avatar below!'
+                    : 'Choose your mask avatar & country to enter the game!',
                 style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
@@ -373,7 +424,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
 
               const SizedBox(height: 16),
 
-              // Select Avatar Grid (Clean Mask Images without bottom text overflow)
+              // Select Avatar Grid
               Align(
                 alignment: Alignment.centerLeft,
                 child: Row(
@@ -501,8 +552,8 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                   Expanded(
                     flex: 2,
                     child: CustomGameButton(
-                      text: 'SAVE & PLAY',
-                      icon: Icons.play_arrow_rounded,
+                      text: widget.isEditMode ? 'SAVE' : 'SAVE & PLAY',
+                      icon: widget.isEditMode ? Icons.save_rounded : Icons.play_arrow_rounded,
                       isLoading: authState.isLoading,
                       onPressed: _handleSaveAndPlay,
                     ),

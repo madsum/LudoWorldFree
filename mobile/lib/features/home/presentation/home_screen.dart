@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
+import '../../auth/presentation/widgets/guest_setup_dialog.dart';
 import 'widgets/menu_card.dart';
 import 'widgets/user_profile_bar.dart';
 
@@ -164,10 +165,26 @@ class HomeScreen extends ConsumerWidget {
         ),
         actions: [
           TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              GuestSetupDialog.showEditProfile(
+                context,
+                currentName: user.name,
+                currentAvatarUrl: user.avatarUrl,
+                currentCountry: user.country,
+                currentCountryFlag: user.countryFlag,
+              );
+            },
+            child: Text(
+              'EDIT PROFILE',
+              style: GoogleFonts.poppins(color: AppColors.gold, fontWeight: FontWeight.bold),
+            ),
+          ),
+          TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text(
               'Close',
-              style: GoogleFonts.poppins(color: AppColors.gold, fontWeight: FontWeight.bold),
+              style: GoogleFonts.poppins(color: Colors.white54),
             ),
           ),
         ],
