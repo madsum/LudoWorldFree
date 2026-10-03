@@ -52,17 +52,22 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
     final players = <PlayerModel>[];
 
     if (widget.isVsComputer) {
-      // User is Player 1
+      // Two-player games use the intended bottom-left/top-right seating:
+      // human Blue and bot Green. Four-player games keep the color selection.
+      final userColor = _playerCount == 2 ? LudoColor.blue : _selectedColor;
+
       players.add(PlayerModel.initial(
         id: 'user_1',
         name: widget.playerName,
         avatarUrl: widget.avatarUrl,
-        color: _selectedColor,
+        color: userColor,
         isBot: false,
       ));
 
       // AI Bots
-      final remainingColors = LudoColor.values.where((c) => c != _selectedColor).toList();
+      final remainingColors = _playerCount == 2
+          ? [LudoColor.green]
+          : LudoColor.values.where((c) => c != userColor).toList();
       final botNames = ['Smart Bot Alpha', 'Smart Bot Beta', 'Smart Bot Gamma'];
 
       int count = _playerCount - 1;
@@ -159,7 +164,14 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
           const SizedBox(height: 16),
 
           // Color Choice (For Vs Computer Mode)
-          if (widget.isVsComputer) ...[
+          if (widget.isVsComputer && _playerCount == 2) ...[
+            Text(
+              'You play Blue (bottom-left). The bot plays Green (top-right).',
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70),
+            ),
+          ],
+
+          if (widget.isVsComputer && _playerCount == 4) ...[
             Text(
               'SELECT YOUR COLOR',
               style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70),
