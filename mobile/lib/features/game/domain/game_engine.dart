@@ -5,8 +5,16 @@ import 'models/player_model.dart';
 class GameEngine {
   GameEngine._();
 
-  /// 8 Safe / Star Tiles: four colored entry stars and four shared safe stars.
-  static const Set<int> safeGlobalTiles = {1, 8, 14, 21, 27, 34, 40, 47};
+  /// Colored entry stars are safe; their positions match the pawn entry tiles.
+  static const Set<int> coloredEntrySafeTiles = {1, 14, 27, 40};
+
+  /// Shared safe stars shown in the reference board: (6,3), (11,6), (8,11), (3,8).
+  static const Set<int> sharedSafeTiles = {8, 21, 34, 47};
+
+  static const Set<int> safeGlobalTiles = {
+    ...coloredEntrySafeTiles,
+    ...sharedSafeTiles,
+  };
 
   /// Calculates movable pawns for a player given current dice roll
   static List<PawnModel> getMovablePawns(PlayerModel player, int diceValue) {

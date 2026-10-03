@@ -413,24 +413,23 @@ class _LudoBoardPainter extends CustomPainter {
       final rect = Rect.fromLTWH(pos.x * tileSize, pos.y * tileSize, tileSize, tileSize);
       final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(3));
 
-      // Highlight each colored start star on its actual entry square.
+      // Entry squares stay white and show a colored arrow into the track.
+      canvas.drawRRect(rrect, whitePaint);
       if (i == LudoColor.red.actualEntryTrackIndex) {
-        canvas.drawRRect(rrect, redGradient);
+        _drawStartArrow(canvas, rect, LudoColor.red, tileSize);
       } else if (i == LudoColor.green.actualEntryTrackIndex) {
-        canvas.drawRRect(rrect, greenGradient);
+        _drawStartArrow(canvas, rect, LudoColor.green, tileSize);
       } else if (i == LudoColor.yellow.actualEntryTrackIndex) {
-        canvas.drawRRect(rrect, yellowGradient);
+        _drawStartArrow(canvas, rect, LudoColor.yellow, tileSize);
       } else if (i == LudoColor.blue.actualEntryTrackIndex) {
-        canvas.drawRRect(rrect, blueGradient);
-      } else {
-        canvas.drawRRect(rrect, whitePaint);
+        _drawStartArrow(canvas, rect, LudoColor.blue, tileSize);
       }
 
       canvas.drawRRect(rrect, gridLinePaint);
 
-      // Draw 8-Point Star Medallion on Safe Tiles (1, 8, 14, 21, 27, 34, 40, 47).
-      if (GameEngine.safeGlobalTiles.contains(i)) {
-        _drawStarMedallion(canvas, rect.center, tileSize * 0.35);
+      // Entry-safe tiles use arrows. The other four safe tiles use outlined stars.
+      if (GameEngine.sharedSafeTiles.contains(i)) {
+        _drawSafeStar(canvas, rect.center, tileSize * 0.32);
       }
     }
 
@@ -451,6 +450,40 @@ class _LudoBoardPainter extends CustomPainter {
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ).createShader(const Rect.fromLTWH(0, 0, 300, 300));
+  }
+
+  void _drawStartArrow(Canvas canvas, Rect tileRect, LudoColor color, double tileSize) {
+    final arrowPaint = Paint()
+      ..color = color.color
+      ..style = PaintingStyle.fill;
+
+    final path = Path();
+    final center = tileRect.center;
+
+    switch (color) {
+      case LudoColor.red:
+        path.moveTo(center.dx - tileSize * 0.25, center.dy - tileSize * 0.25);
+        path.lineTo(center.dx + tileSize * 0.25, center.dy);
+        path.lineTo(center.dx - tileSize * 0.25, center.dy + tileSize * 0.25);
+        break;
+      case LudoColor.green:
+        path.moveTo(center.dx - tileSize * 0.25, center.dy - tileSize * 0.25);
+        path.lineTo(center.dx, center.dy + tileSize * 0.25);
+        path.lineTo(center.dx + tileSize * 0.25, center.dy - tileSize * 0.25);
+        break;
+      case LudoColor.yellow:
+        path.moveTo(center.dx + tileSize * 0.25, center.dy - tileSize * 0.25);
+        path.lineTo(center.dx - tileSize * 0.25, center.dy);
+        path.lineTo(center.dx + tileSize * 0.25, center.dy + tileSize * 0.25);
+        break;
+      case LudoColor.blue:
+        path.moveTo(center.dx - tileSize * 0.25, center.dy + tileSize * 0.25);
+        path.lineTo(center.dx, center.dy - tileSize * 0.25);
+        path.lineTo(center.dx + tileSize * 0.25, center.dy + tileSize * 0.25);
+        break;
+    }
+    path.close();
+    canvas.drawPath(path, arrowPaint);
   }
 
   void _drawYard(
@@ -516,25 +549,19 @@ class _LudoBoardPainter extends CustomPainter {
     }
   }
 
-  void _drawStarMedallion(Canvas canvas, Offset center, double radius) {
+  void _drawSafeStar(Canvas canvas, Offset center, double radius) {
     final starPaint = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFFFFEA00), Color(0xFFFF8F00)],
-      ).createShader(Rect.fromCircle(center: center, radius: radius))
-      ..style = PaintingStyle.fill;
-
-    final borderPaint = Paint()
-      ..color = Colors.black45
+      ..color = const Color(0xFF777777)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-
+      ..strokeWidth = 1.6
+      ..strokeJoin = StrokeJoin.round;
     final path = Path();
-    const numPoints = 8;
+    const numPoints = 5;
     final innerRadius = radius * 0.5;
 
     for (int i = 0; i < numPoints * 2; i++) {
       final r = i.isEven ? radius : innerRadius;
-      final angle = i * math.pi / numPoints;
+      final angle = -math.pi / 2 + i * math.pi / numPoints;
       final x = center.dx + r * math.cos(angle);
       final y = center.dy + r * math.sin(angle);
 
@@ -547,7 +574,6 @@ class _LudoBoardPainter extends CustomPainter {
     path.close();
 
     canvas.drawPath(path, starPaint);
-    canvas.drawPath(path, borderPaint);
   }
 
   void _drawCenterHome(Canvas canvas, double tileSize) {
