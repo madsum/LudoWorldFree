@@ -4,7 +4,7 @@
 *.env.example
 
 # Miscellaneous
-+.sh
+run.sh
 *.class
 *.log
 *.pyc
