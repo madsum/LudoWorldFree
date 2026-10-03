@@ -8,8 +8,9 @@ class GameEngine {
   /// Colored entry stars are safe; their positions match the pawn entry tiles.
   static const Set<int> coloredEntrySafeTiles = {1, 14, 27, 40};
 
-  /// Shared safe stars shown in the reference board: (6,3), (11,6), (8,11), (3,8).
-  static const Set<int> sharedSafeTiles = {8, 21, 34, 47};
+  /// Shared safe stars one track square forward from their previous locations:
+  /// (6,2), (12,6), (8,12), and (2,8).
+  static const Set<int> sharedSafeTiles = {9, 22, 35, 48};
 
   static const Set<int> safeGlobalTiles = {
     ...coloredEntrySafeTiles,
