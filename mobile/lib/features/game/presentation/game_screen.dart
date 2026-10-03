@@ -5,7 +5,6 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/constants/app_colors.dart';
 import 'controllers/game_controller.dart';
-import 'widgets/dice_roller_widget.dart';
 import 'widgets/ludo_board_widget.dart';
 import 'widgets/player_info_card.dart';
 import 'widgets/victory_dialog.dart';
@@ -18,6 +17,8 @@ class GameScreen extends ConsumerStatefulWidget {
 }
 
 class _GameScreenState extends ConsumerState<GameScreen> {
+  bool _completionDialogShown = false;
+
   @override
   Widget build(BuildContext context) {
     final gameState = ref.watch(gameControllerProvider);
@@ -32,14 +33,17 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         : 0;
 
     // Automatically trigger victory popup when match finishes
-    if (gameState.isGameOver) {
+    if (gameState.isGameOver && !_completionDialogShown) {
+      _completionDialogShown = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         showDialog(
           context: context,
           barrierDismissible: false,
           builder: (context) => VictoryDialog(
             gameState: gameState,
             onPlayAgain: () {
+              _completionDialogShown = false;
               Navigator.of(context).pop();
               gameNotifier.startNewGame(players: gameState.players);
             },
@@ -101,17 +105,23 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   else if (gameState.players.isNotEmpty)
                     PlayerInfoCard(
                       player: gameState.players[0],
+                      gameState: gameState,
                       isCurrentTurn: gameState.currentTurnIndex == 0,
+                      onRoll: () => gameNotifier.rollDice(),
                     ),
                   if (isTwoPlayerVsComputer)
                     PlayerInfoCard(
                       player: gameState.players[1],
+                      gameState: gameState,
                       isCurrentTurn: gameState.currentTurnIndex == 1,
+                      onRoll: () => gameNotifier.rollDice(),
                     )
                   else if (gameState.players.length > 1)
                     PlayerInfoCard(
                       player: gameState.players[1],
+                      gameState: gameState,
                       isCurrentTurn: gameState.currentTurnIndex == 1,
+                      onRoll: () => gameNotifier.rollDice(),
                     ),
                 ],
               ),
@@ -139,19 +149,25 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   if (isTwoPlayerVsComputer)
                     PlayerInfoCard(
                       player: gameState.players[0],
+                      gameState: gameState,
                       isCurrentTurn: gameState.currentTurnIndex == 0,
+                      onRoll: () => gameNotifier.rollDice(),
                     )
                   else if (gameState.players.length > 3)
                     PlayerInfoCard(
                       player: gameState.players[3],
+                      gameState: gameState,
                       isCurrentTurn: gameState.currentTurnIndex == 3,
+                      onRoll: () => gameNotifier.rollDice(),
                     ),
                   if (isTwoPlayerVsComputer)
                     const SizedBox.shrink()
                   else if (gameState.players.length > 2)
                     PlayerInfoCard(
                       player: gameState.players[2],
+                      gameState: gameState,
                       isCurrentTurn: gameState.currentTurnIndex == 2,
+                      onRoll: () => gameNotifier.rollDice(),
                     ),
                 ],
               ),
@@ -160,21 +176,39 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             // Status Banner
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              child: Text(
-                gameState.statusMessage,
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.gold,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 240),
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.96, end: 1).animate(animation),
+                    child: child,
+                  ),
                 ),
-                textAlign: TextAlign.center,
+                child: Row(
+                  key: ValueKey(gameState.statusMessage),
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      _feedbackIcon(gameState.statusMessage),
+                      color: _feedbackColor(gameState.statusMessage),
+                      size: 17,
+                    ),
+                    const SizedBox(width: 7),
+                    Flexible(
+                      child: Text(
+                        gameState.statusMessage,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _feedbackColor(gameState.statusMessage),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-
-            // Dice Roller Controls
-            DiceRollerWidget(
-              gameState: gameState,
-              onRoll: () => gameNotifier.rollDice(),
             ),
 
             const SizedBox(height: 8),
@@ -182,6 +216,32 @@ class _GameScreenState extends ConsumerState<GameScreen> {
         ),
       ),
     );
+  }
+
+  IconData _feedbackIcon(String message) {
+    final lower = message.toLowerCase();
+    if (lower.contains('captur')) return Icons.bolt_rounded;
+    if (lower.contains('home') || lower.contains('win') || lower.contains('game over')) {
+      return Icons.emoji_events_rounded;
+    }
+    if (lower.contains('six') || lower.contains('bonus') || lower.contains('extra turn')) {
+      return Icons.casino_rounded;
+    }
+    if (lower.contains('forfeit') || lower.contains('three 6')) {
+      return Icons.warning_amber_rounded;
+    }
+    if (lower.contains('rolling')) return Icons.casino_rounded;
+    return Icons.info_outline_rounded;
+  }
+
+  Color _feedbackColor(String message) {
+    final lower = message.toLowerCase();
+    if (lower.contains('captur')) return const Color(0xFFFF9F43);
+    if (lower.contains('forfeit') || lower.contains('three 6')) return AppColors.red;
+    if (lower.contains('home') || lower.contains('win') || lower.contains('game over')) {
+      return AppColors.gold;
+    }
+    return AppColors.gold;
   }
 
   void _confirmExitDialog(BuildContext context) {

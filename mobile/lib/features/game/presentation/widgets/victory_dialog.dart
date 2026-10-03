@@ -20,6 +20,11 @@ class VictoryDialog extends StatelessWidget {
     final winnerName = gameState.winnerIds.isNotEmpty
         ? gameState.players.firstWhere((p) => p.id == gameState.winnerIds.first).name
         : 'Winner';
+    final humanPlayer = gameState.players.firstWhere(
+      (player) => !player.isBot,
+      orElse: () => gameState.players.first,
+    );
+    final humanWon = gameState.winnerIds.contains(humanPlayer.id);
 
     return AlertDialog(
       backgroundColor: AppColors.bgNavy,
@@ -29,14 +34,27 @@ class VictoryDialog extends StatelessWidget {
       ),
       title: Column(
         children: [
-          const Icon(Icons.emoji_events_rounded, color: AppColors.gold, size: 54),
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.72, end: 1),
+            duration: const Duration(milliseconds: 420),
+            curve: Curves.easeOutBack,
+            builder: (context, scale, child) => Transform.scale(
+              scale: scale,
+              child: child,
+            ),
+            child: Icon(
+              humanWon ? Icons.emoji_events_rounded : Icons.flag_rounded,
+              color: humanWon ? AppColors.gold : Colors.white70,
+              size: 54,
+            ),
+          ),
           const SizedBox(height: 8),
           Text(
-            'VICTORY!',
+            humanWon ? 'VICTORY!' : 'MATCH COMPLETE',
             style: GoogleFonts.cinzel(
               fontSize: 24,
               fontWeight: FontWeight.w900,
-              color: AppColors.gold,
+              color: humanWon ? AppColors.gold : Colors.white,
               letterSpacing: 2,
             ),
           ),
@@ -46,7 +64,9 @@ class VictoryDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '$winnerName WON THE MATCH!',
+            humanWon
+                ? 'YOU WON THE MATCH!'
+                : '$winnerName won the match. Better luck next time, ${humanPlayer.name}.',
             style: GoogleFonts.poppins(
               fontSize: 16,
               fontWeight: FontWeight.bold,

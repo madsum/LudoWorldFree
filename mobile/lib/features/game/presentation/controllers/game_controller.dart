@@ -36,6 +36,7 @@ class GameNotifier extends StateNotifier<GameState> {
       players: players,
       currentTurnIndex: startingTurnIndex,
       turnPhase: GameTurnPhase.rollDice,
+      isDiceRolling: false,
       statusMessage: '${players[startingTurnIndex].name}\'s turn to roll!',
     );
 
@@ -48,20 +49,22 @@ class GameNotifier extends StateNotifier<GameState> {
 
     state = state.copyWith(
       turnPhase: GameTurnPhase.animating,
+      isDiceRolling: true,
       statusMessage: '${state.currentPlayer.name} is rolling...',
     );
 
     // Simulate dice rolling delay
-    await Future.delayed(const Duration(milliseconds: 350));
+    await Future.delayed(const Duration(milliseconds: 650));
     final diceResult = _random.nextInt(6) + 1;
 
-    int consecutive6 = state.diceValue == 6 ? state.consecutiveSixes + 1 : 0;
+    int consecutive6 = diceResult == 6 ? state.consecutiveSixes + 1 : 0;
 
     // Rule: 3 consecutive 6s penalty
     if (consecutive6 == 3) {
       state = state.copyWith(
         diceValue: diceResult,
         consecutiveSixes: 0,
+        isDiceRolling: false,
         turnPhase: GameTurnPhase.turnEnded,
         statusMessage: 'Three 6s rolled! Turn forfeited.',
       );
@@ -76,9 +79,12 @@ class GameNotifier extends StateNotifier<GameState> {
       state = state.copyWith(
         diceValue: diceResult,
         consecutiveSixes: consecutive6,
+        isDiceRolling: false,
         turnPhase: GameTurnPhase.turnEnded,
         movablePawns: const [],
-        statusMessage: 'No valid moves for $diceResult.',
+        statusMessage: diceResult == 6
+            ? 'Rolled a 6! No valid move. Bonus roll!'
+            : 'No valid moves for $diceResult.',
       );
 
       // Next turn delay
@@ -97,6 +103,7 @@ class GameNotifier extends StateNotifier<GameState> {
       state = state.copyWith(
         diceValue: diceResult,
         consecutiveSixes: consecutive6,
+        isDiceRolling: false,
         movablePawns: movable,
         turnPhase: GameTurnPhase.selectPawn,
         statusMessage: '${state.currentPlayer.name} rolled a $diceResult! Select a token.',
@@ -136,6 +143,7 @@ class GameNotifier extends StateNotifier<GameState> {
     // Check for Capture / Cutting of opponent pawn
     PawnModel? capturedPawn;
     LudoColor? capturedColor;
+    PawnCaptureEvent? captureEvent;
 
     if (!isYardMove && newStepCount <= 50) {
       capturedPawn = GameEngine.findCapturableOpponentPawn(
@@ -145,6 +153,11 @@ class GameNotifier extends StateNotifier<GameState> {
       );
       if (capturedPawn != null) {
         capturedColor = capturedPawn.color;
+        captureEvent = PawnCaptureEvent(
+          color: capturedPawn.color,
+          pawnId: capturedPawn.id,
+          globalTrackIndex: capturedPawn.globalTileIndex!,
+        );
         earnedBonusRoll = true; // Bonus roll for capturing an opponent
       }
     }
@@ -177,19 +190,21 @@ class GameNotifier extends StateNotifier<GameState> {
     final isGameOver = newWinnerIds.length >= (updatedPlayers.length - 1);
 
     String statusMsg = capturedPawn != null
-        ? '${player.name} captured an opponent token! Bonus roll!'
+        ? '${player.name} captured a token! Extra turn.'
         : newStepCount == 57
-            ? '${player.name} brought a token HOME! Bonus roll!'
+            ? '${player.name} reached HOME! Extra turn.'
             : earnedBonusRoll
-                ? '${player.name} rolled a 6! Bonus roll!'
+                ? '${player.name} rolled a 6! Extra turn.'
                 : '${player.name} moved token.';
 
     // Emit animating phase and move event to presentation layer
     state = state.copyWith(
       players: updatedPlayers,
+      diceValue: dice,
       turnPhase: GameTurnPhase.animating,
       movablePawns: const [],
       lastMoveEvent: moveEvent,
+      lastCaptureEvent: captureEvent,
       winnerIds: newWinnerIds,
       isGameOver: isGameOver,
       statusMessage: statusMsg,
@@ -202,7 +217,8 @@ class GameNotifier extends StateNotifier<GameState> {
     if (isGameOver) {
       state = state.copyWith(
         turnPhase: GameTurnPhase.turnEnded,
-        statusMessage: '🎉 Game Over! ${newWinnerIds.first} wins!',
+        statusMessage:
+            'Match complete! ${updatedPlayers.firstWhere((p) => p.id == newWinnerIds.first).name} wins.',
       );
       return;
     }

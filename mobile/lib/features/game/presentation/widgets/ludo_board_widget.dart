@@ -29,8 +29,8 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
   /// Stores active animation controllers per pawn key
   final Map<String, AnimationController> _activeControllers = {};
 
-  /// Stores current animated position (x, y) & scale for in-flight pawn moves
-  final Map<String, Map<String, double>> _animatedPawnPositions = {};
+  /// Stores paths for moving pawns so only each pawn subtree animates.
+  final Map<String, List<BoardPosition>> _animationPaths = {};
 
   @override
   void initState() {
@@ -67,6 +67,12 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
 
           // Check if pawn needs to animate to a new target step
           if (currentVisualStep != targetStep && !_activeControllers.containsKey(key)) {
+            // Captured pawns return to their yard immediately; they do not
+            // walk backward through the track.
+            if (targetStep == -1 && currentVisualStep >= 0) {
+              _visualSteps[key] = -1;
+              continue;
+            }
             _startPawnMovementAnimation(
               key: key,
               color: pawn.color,
@@ -95,6 +101,11 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
       toStep: toStep,
     );
 
+    if (pathSequence.isEmpty) {
+      _visualSteps[key] = toStep;
+      return;
+    }
+
     final totalSteps = math.max(1, pathSequence.length - 1);
     final durationMs = totalSteps * 130;
 
@@ -104,40 +115,13 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
     );
 
     _activeControllers[key] = controller;
-
-    controller.addListener(() {
-      if (!mounted) return;
-
-      final double progress = controller.value * totalSteps;
-      final int currentIdx = progress.floor().clamp(0, totalSteps - 1);
-      final int nextIdx = (currentIdx + 1).clamp(0, totalSteps);
-      final double stepProgress = progress - currentIdx;
-
-      final posA = pathSequence[currentIdx];
-      final posB = pathSequence[nextIdx];
-
-      // Interpolate x, y tile position
-      final double posX = posA.x + (posB.x - posA.x) * stepProgress;
-      final double posY = posA.y + (posB.y - posA.y) * stepProgress;
-
-      // Subtle step bounce/scale factor
-      final double bounceFactor = math.sin(stepProgress * math.pi);
-      final double pawnScale = 0.82 + (0.24 * bounceFactor);
-
-      setState(() {
-        _animatedPawnPositions[key] = {
-          'posX': posX,
-          'posY': posY,
-          'pawnScale': pawnScale,
-        };
-      });
-    });
+    _animationPaths[key] = pathSequence;
 
     controller.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         controller.dispose();
         _activeControllers.remove(key);
-        _animatedPawnPositions.remove(key);
+        _animationPaths.remove(key);
 
         if (mounted) {
           setState(() {
@@ -180,16 +164,35 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
           padding: const EdgeInsets.all(6.0),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(15),
-            child: CustomPaint(
-              painter: _LudoBoardPainter(gameState: widget.gameState),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final tileSize = constraints.maxWidth / 15.0;
-                  return Stack(
-                    children: _buildPawnWidgets(tileSize),
-                  );
-                },
-              ),
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: RepaintBoundary(
+                    child: CustomPaint(painter: const _LudoBoardPainter()),
+                  ),
+                ),
+                Positioned.fill(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final tileSize = constraints.maxWidth / 15.0;
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          ..._buildPawnWidgets(tileSize),
+                          if (widget.gameState.lastCaptureEvent != null)
+                            _CaptureBurst(
+                              key: ValueKey(
+                                widget.gameState.lastCaptureEvent!.timestamp,
+                              ),
+                              capture: widget.gameState.lastCaptureEvent!,
+                              tileSize: tileSize,
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -206,33 +209,51 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
 
     for (final player in widget.gameState.players) {
       for (final pawn in player.pawns) {
-        if (pawn.isFinished) continue;
-
         final key = '${pawn.color.name}_${pawn.id}';
-        final isAnimating = _animatedPawnPositions.containsKey(key);
+        final animationController = _activeControllers[key];
+        if (pawn.isFinished && animationController == null) continue;
 
-        if (isAnimating) {
-          // Render in-flight step-by-step moving pawn
-          final animData = _animatedPawnPositions[key]!;
-          final posX = animData['posX']!;
-          final posY = animData['posY']!;
-          final pawnScale = animData['pawnScale']!;
-
-          final size = tileSize * pawnScale;
-          final left = (posX * tileSize) + (tileSize * (1.0 - pawnScale) / 2);
-          final top = (posY * tileSize) + (tileSize * (1.0 - pawnScale) / 2);
-
+        if (animationController != null) {
+          final path = _animationPaths[key]!;
+          final totalSteps = math.max(1, path.length - 1);
+          final start = path.first;
           widgets.add(
             Positioned(
               key: ValueKey('anim_$key'),
-              left: left,
-              top: top,
-              width: size,
-              height: size,
-              child: _PawnTileWidget(
-                color: pawn.color,
-                isMovable: false,
-                size: size,
+              left: start.x * tileSize + tileSize * 0.09,
+              top: start.y * tileSize + tileSize * 0.09,
+              width: tileSize * 0.82,
+              height: tileSize * 0.82,
+              child: AnimatedBuilder(
+                animation: animationController,
+                child: RepaintBoundary(
+                  child: SizedBox(
+                    width: tileSize * 0.82,
+                    height: tileSize * 0.82,
+                    child: _PawnTileWidget(
+                      color: pawn.color,
+                      isMovable: false,
+                      size: tileSize * 0.82,
+                    ),
+                  ),
+                ),
+                builder: (context, child) {
+                  final progress = animationController.value * totalSteps;
+                  final currentIdx = progress.floor().clamp(0, totalSteps - 1).toInt();
+                  final nextIdx = (currentIdx + 1).clamp(0, totalSteps).toInt();
+                  final stepProgress = progress - currentIdx;
+                  final from = path[currentIdx];
+                  final to = path[nextIdx];
+                  final posX = from.x + (to.x - from.x) * stepProgress;
+                  final posY = from.y + (to.y - from.y) * stepProgress;
+                  final bounce = math.sin(stepProgress * math.pi);
+                  final scale = 1 + (0.16 * bounce);
+
+                  return Transform.translate(
+                    offset: Offset((posX - start.x) * tileSize, (posY - start.y) * tileSize),
+                    child: Transform.scale(scale: scale, child: child),
+                  );
+                },
               ),
             ),
           );
@@ -293,14 +314,14 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
             top: top,
             width: size,
             height: size,
-            child: GestureDetector(
-              onTap: isMovable ? () => widget.onPawnTap(pawn) : null,
-              child: _PawnTileWidget(
-                color: pawn.color,
-                isMovable: isMovable,
-                size: size,
+              child: RepaintBoundary(
+                child: _PawnTileWidget(
+                  color: pawn.color,
+                  isMovable: isMovable,
+                  size: size,
+                  onTap: isMovable ? () => widget.onPawnTap(pawn) : null,
+                ),
               ),
-            ),
           ),
         );
       }
@@ -310,81 +331,231 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
   }
 }
 
+class _CaptureBurst extends StatefulWidget {
+  final PawnCaptureEvent capture;
+  final double tileSize;
+
+  const _CaptureBurst({
+    super.key,
+    required this.capture,
+    required this.tileSize,
+  });
+
+  @override
+  State<_CaptureBurst> createState() => _CaptureBurstState();
+}
+
+class _CaptureBurstState extends State<_CaptureBurst>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 520),
+  )..forward();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final position = BoardPosition.mainTrack[widget.capture.globalTrackIndex];
+    final tile = widget.tileSize;
+    final extent = tile * 1.8;
+    final colors = [
+      widget.capture.color.color,
+      AppColors.gold,
+      Colors.white,
+      widget.capture.color.color,
+      AppColors.gold,
+      Colors.white,
+    ];
+
+    return Positioned(
+      left: (position.x + 0.5) * tile - extent / 2,
+      top: (position.y + 0.5) * tile - extent / 2,
+      width: extent,
+      height: extent,
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            final progress = _controller.value;
+            if (progress >= 1) return const SizedBox.shrink();
+            return Stack(
+              children: List.generate(colors.length, (index) {
+                final angle = (math.pi * 2 * index) / colors.length;
+                final distance = tile * 0.58 * progress;
+                final dotSize = tile * 0.10 * (1 - progress * 0.45);
+                return Positioned(
+                  left: extent / 2 + math.cos(angle) * distance - dotSize / 2,
+                  top: extent / 2 + math.sin(angle) * distance - dotSize / 2,
+                  width: dotSize,
+                  height: dotSize,
+                  child: Opacity(
+                    opacity: (1 - progress).clamp(0.0, 1.0).toDouble(),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colors[index],
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: colors[index].withValues(alpha: 0.55),
+                            blurRadius: 5,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 /// 3D Styled Pawn Token Widget
-class _PawnTileWidget extends StatelessWidget {
+class _PawnTileWidget extends StatefulWidget {
   final LudoColor color;
   final bool isMovable;
   final double size;
+  final VoidCallback? onTap;
 
   const _PawnTileWidget({
     required this.color,
     required this.isMovable,
     required this.size,
+    this.onTap,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final baseColor = color.color;
+  State<_PawnTileWidget> createState() => _PawnTileWidgetState();
+}
 
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        // Selection Halo Ring when Movable
-        if (isMovable)
-          Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: AppColors.gold, width: 2.5),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.gold.withValues(alpha: 0.85),
-                  blurRadius: 10,
-                  spreadRadius: 2,
+class _PawnTileWidgetState extends State<_PawnTileWidget>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 720),
+  );
+
+  bool _pressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncPulse();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PawnTileWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isMovable != widget.isMovable) _syncPulse();
+  }
+
+  void _syncPulse() {
+    if (widget.isMovable) {
+      _pulseController.repeat(reverse: true);
+    } else {
+      _pulseController.stop();
+      _pulseController.value = 0;
+      _pressed = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final baseColor = widget.color.color;
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: widget.onTap == null ? null : (_) => setState(() => _pressed = true),
+      onTapCancel: widget.onTap == null ? null : () => setState(() => _pressed = false),
+      onTapUp: widget.onTap == null ? null : (_) => setState(() => _pressed = false),
+      child: AnimatedBuilder(
+        animation: _pulseController,
+        builder: (context, child) {
+          final pulse = _pulseController.value;
+          return Transform.scale(
+            scale: _pressed ? 0.90 : (widget.isMovable ? 0.97 + pulse * 0.06 : 1),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (widget.isMovable)
+                  Container(
+                    width: widget.size,
+                    height: widget.size,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.gold.withValues(alpha: 0.72 + pulse * 0.28),
+                        width: 2.2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.gold.withValues(alpha: 0.36 + pulse * 0.28),
+                          blurRadius: 7 + pulse * 4,
+                          spreadRadius: 1 + pulse,
+                        ),
+                      ],
+                    ),
+                  ),
+                Container(
+                  width: widget.size * 0.88,
+                  height: widget.size * 0.88,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        widget.color.lightColor,
+                        baseColor,
+                        Color.lerp(baseColor, Colors.black, 0.45)!,
+                      ],
+                      center: const Alignment(-0.3, -0.35),
+                      radius: 0.85,
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      width: 1.8,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black54,
+                        blurRadius: 5,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: widget.isMovable
+                      ? const Icon(
+                          Icons.arrow_downward_rounded,
+                          color: Colors.white,
+                          size: 12,
+                        )
+                      : null,
                 ),
               ],
             ),
-          ),
-
-        // 3D Sphere Token Body
-        Container(
-          width: size * 0.88,
-          height: size * 0.88,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: [
-                color.lightColor,
-                baseColor,
-                Color.lerp(baseColor, Colors.black, 0.45)!,
-              ],
-              center: const Alignment(-0.3, -0.35),
-              radius: 0.85,
-            ),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.8),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black54,
-                blurRadius: 5,
-                offset: Offset(0, 3),
-              ),
-            ],
-          ),
-          child: isMovable
-              ? const Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 12)
-              : null,
-        ),
-      ],
+          );
+        },
+      ),
     );
   }
 }
 
 /// Commercial Grade Custom Painter for Ludo World Free Board
 class _LudoBoardPainter extends CustomPainter {
-  final GameState gameState;
-
-  _LudoBoardPainter({required this.gameState});
+  const _LudoBoardPainter();
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -637,6 +808,6 @@ class _LudoBoardPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _LudoBoardPainter oldDelegate) {
-    return oldDelegate.gameState != gameState;
+    return false;
   }
 }
