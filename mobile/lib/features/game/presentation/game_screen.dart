@@ -22,6 +22,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   Widget build(BuildContext context) {
     final gameState = ref.watch(gameControllerProvider);
     final gameNotifier = ref.read(gameControllerProvider.notifier);
+    final isFourPlayerVsComputer = gameState.players.length == 4 &&
+        gameState.players.where((player) => player.isBot).length == 3;
+    final humanIndex = gameState.players.indexWhere((player) => !player.isBot);
+    final humanColor = humanIndex < 0 ? null : gameState.players[humanIndex].color;
+    final boardQuarterTurns = isFourPlayerVsComputer && humanColor != null
+        ? (3 - humanColor.index) % 4
+        : 0;
 
     // Automatically trigger victory popup when match finishes
     if (gameState.isGameOver) {
@@ -105,9 +112,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             // Main Interactive Ludo Board
             Expanded(
               child: Center(
-                child: LudoBoardWidget(
-                  gameState: gameState,
-                  onPawnTap: (pawn) => gameNotifier.movePawn(pawn),
+                child: RotatedBox(
+                  quarterTurns: boardQuarterTurns,
+                  child: LudoBoardWidget(
+                    gameState: gameState,
+                    onPawnTap: (pawn) => gameNotifier.movePawn(pawn),
+                  ),
                 ),
               ),
             ),

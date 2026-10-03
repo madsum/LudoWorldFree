@@ -56,28 +56,55 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
       // human Blue and bot Green. Four-player games keep the color selection.
       final userColor = _playerCount == 2 ? LudoColor.blue : _selectedColor;
 
-      players.add(PlayerModel.initial(
-        id: 'user_1',
-        name: widget.playerName,
-        avatarUrl: widget.avatarUrl,
-        color: userColor,
-        isBot: false,
-      ));
-
-      // AI Bots
-      final remainingColors = _playerCount == 2
-          ? [LudoColor.green]
-          : LudoColor.values.where((c) => c != userColor).toList();
       final botNames = ['Smart Bot Alpha', 'Smart Bot Beta', 'Smart Bot Gamma'];
 
-      int count = _playerCount - 1;
-      for (int i = 0; i < count; i++) {
+      if (_playerCount == 2) {
         players.add(PlayerModel.initial(
-          id: 'bot_${i + 1}',
-          name: botNames[i],
-          color: remainingColors[i],
+          id: 'user_1',
+          name: widget.playerName,
+          avatarUrl: widget.avatarUrl,
+          color: userColor,
+          isBot: false,
+        ));
+        players.add(PlayerModel.initial(
+          id: 'bot_1',
+          name: botNames.first,
+          color: LudoColor.green,
           isBot: true,
         ));
+      } else {
+        // Keep list/card order aligned with the board's four corners after
+        // rotating the selected guest color into the bottom-left seat.
+        final quarterTurns = (3 - userColor.index) % LudoColor.values.length;
+        final seatColors = List<LudoColor>.filled(4, LudoColor.red);
+        for (final color in LudoColor.values) {
+          seatColors[(color.index + quarterTurns) % seatColors.length] = color;
+        }
+
+        var botIndex = 0;
+        for (final color in seatColors) {
+          if (color == userColor) continue;
+          botIndex++;
+          players.add(PlayerModel.initial(
+            id: 'bot_$botIndex',
+            name: botNames[botIndex - 1],
+            color: color,
+            isBot: true,
+          ));
+        }
+
+        // The game screen uses [0, 1, 2, 3] as top-left, top-right,
+        // bottom-right, bottom-left. Insert the guest at their seat.
+        players.insert(
+          seatColors.indexOf(userColor),
+          PlayerModel.initial(
+            id: 'user_1',
+            name: widget.playerName,
+            avatarUrl: widget.avatarUrl,
+            color: userColor,
+            isBot: false,
+          ),
+        );
       }
     } else {
       // Local Pass & Play Mode (2 or 4 Human Players)

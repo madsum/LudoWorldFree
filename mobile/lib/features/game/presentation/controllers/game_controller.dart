@@ -30,11 +30,13 @@ class GameNotifier extends StateNotifier<GameState> {
     required List<PlayerModel> players,
   }) {
     _botTimer?.cancel();
+    final humanTurnIndex = players.indexWhere((player) => !player.isBot);
+    final startingTurnIndex = humanTurnIndex < 0 ? 0 : humanTurnIndex;
     state = GameState(
       players: players,
-      currentTurnIndex: 0,
+      currentTurnIndex: startingTurnIndex,
       turnPhase: GameTurnPhase.rollDice,
-      statusMessage: '${players.first.name}\'s turn to roll!',
+      statusMessage: '${players[startingTurnIndex].name}\'s turn to roll!',
     );
 
     _checkBotTurn();
