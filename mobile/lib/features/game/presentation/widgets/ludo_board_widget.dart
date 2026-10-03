@@ -413,17 +413,17 @@ class _LudoBoardPainter extends CustomPainter {
       final rect = Rect.fromLTWH(pos.x * tileSize, pos.y * tileSize, tileSize, tileSize);
       final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(3));
 
-      // Check if start tile
-      if (i == 0) {
+      // Draw Colored Visual Start Markers & Arrows on indices 0, 13, 26, 39
+      if (i == LudoColor.red.visualStartMarkerIndex) {
         canvas.drawRRect(rrect, redGradient);
         _drawStartArrow(canvas, rect, LudoColor.red, tileSize);
-      } else if (i == 13) {
+      } else if (i == LudoColor.green.visualStartMarkerIndex) {
         canvas.drawRRect(rrect, greenGradient);
         _drawStartArrow(canvas, rect, LudoColor.green, tileSize);
-      } else if (i == 26) {
+      } else if (i == LudoColor.yellow.visualStartMarkerIndex) {
         canvas.drawRRect(rrect, yellowGradient);
         _drawStartArrow(canvas, rect, LudoColor.yellow, tileSize);
-      } else if (i == 39) {
+      } else if (i == LudoColor.blue.visualStartMarkerIndex) {
         canvas.drawRRect(rrect, blueGradient);
         _drawStartArrow(canvas, rect, LudoColor.blue, tileSize);
       } else {
@@ -432,7 +432,7 @@ class _LudoBoardPainter extends CustomPainter {
 
       canvas.drawRRect(rrect, gridLinePaint);
 
-      // Draw 8-Point Star Medallion on Safe Tiles (8, 21, 34, 47 and start tiles)
+      // Draw 8-Point Star Medallion on Safe Tiles (0, 8, 13, 21, 26, 34, 39, 47)
       if (GameEngine.safeGlobalTiles.contains(i)) {
         _drawStarMedallion(canvas, rect.center, tileSize * 0.35);
       }

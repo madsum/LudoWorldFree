@@ -46,19 +46,36 @@ enum LudoColor {
     }
   }
 
-  /// Starting track tile index (step 0 entry) on the 52-tile main track
-  int get startTileIndex {
+  /// Global main-track index of the colored Visual Start Indicator Marker
+  int get visualStartMarkerIndex {
     switch (this) {
       case LudoColor.red:
-        return 1; // Tile (1, 6)
+        return 0; // BoardPosition(0, 6)
       case LudoColor.green:
-        return 14; // Tile (8, 1)
+        return 13; // BoardPosition(8, 0)
       case LudoColor.yellow:
-        return 27; // Tile (13, 8)
+        return 26; // BoardPosition(14, 8)
       case LudoColor.blue:
-        return 40; // Tile (6, 13)
+        return 39; // BoardPosition(6, 14)
     }
   }
+
+  /// Global main-track index of the Actual Pawn Entry Track Tile (step 0)
+  int get actualEntryTrackIndex {
+    switch (this) {
+      case LudoColor.red:
+        return 1; // BoardPosition(1, 6)
+      case LudoColor.green:
+        return 14; // BoardPosition(8, 1)
+      case LudoColor.yellow:
+        return 27; // BoardPosition(13, 8)
+      case LudoColor.blue:
+        return 40; // BoardPosition(6, 13)
+    }
+  }
+
+  /// Alias for actualEntryTrackIndex for game engine compatibility
+  int get startTileIndex => actualEntryTrackIndex;
 
   /// Track index immediately preceding the Home Stretch turn
   int get homeEntryIndex {

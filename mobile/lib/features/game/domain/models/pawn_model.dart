@@ -19,7 +19,7 @@ class PawnModel {
   /// Returns the global 0..51 main track tile index if on the main track
   int? get globalTileIndex {
     if (stepCount < 0 || stepCount > 50) return null;
-    return (color.startTileIndex + stepCount) % 52;
+    return (color.actualEntryTrackIndex + stepCount) % 52;
   }
 
   PawnModel copyWith({

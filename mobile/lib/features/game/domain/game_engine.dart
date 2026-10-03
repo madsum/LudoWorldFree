@@ -40,7 +40,8 @@ class GameEngine {
   }) {
     if (targetStep < 0 || targetStep > 50) return null; // Only main track allows capture
 
-    final targetGlobalIndex = (currentPlayerColor.startTileIndex + targetStep) % 52;
+    final targetGlobalIndex =
+        (currentPlayerColor.actualEntryTrackIndex + targetStep) % 52;
 
     // Safe / Star tiles do NOT allow captures
     if (safeGlobalTiles.contains(targetGlobalIndex)) return null;
@@ -97,7 +98,8 @@ class GameEngine {
 
       // 5. LAND ON SAFE / STAR TILE (+200)
       if (targetStep <= 50) {
-        final globalIdx = (botPlayer.color.startTileIndex + targetStep) % 52;
+        final globalIdx =
+            (botPlayer.color.actualEntryTrackIndex + targetStep) % 52;
         if (safeGlobalTiles.contains(globalIdx)) score += 200;
       }
 

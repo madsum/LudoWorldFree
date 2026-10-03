@@ -71,7 +71,8 @@ class BoardPosition {
     if (step == -1) {
       return getYardPositions(color)[pawnId];
     } else if (step >= 0 && step <= 50) {
-      final globalIdx = (color.startTileIndex + step) % 52;
+      // Step 0 is the first playable tile after the colored start marker.
+      final globalIdx = (color.actualEntryTrackIndex + step) % 52;
       return mainTrack[globalIdx];
     } else if (step >= 51 && step <= 56) {
       return getHomeStretch(color)[step - 51];
@@ -91,7 +92,7 @@ class BoardPosition {
     final path = <BoardPosition>[];
 
     if (fromStep == -1) {
-      // Leaving Yard to Start Tile (step 0)
+      // Leaving the yard and entering the main track at step 0.
       path.add(getYardPositions(color)[pawnId]);
       path.add(getPositionForStep(color, pawnId, 0));
     } else {
