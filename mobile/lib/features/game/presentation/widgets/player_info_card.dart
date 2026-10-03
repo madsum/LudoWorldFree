@@ -12,6 +12,7 @@ class PlayerInfoCard extends StatefulWidget {
   final GameState gameState;
   final bool isCurrentTurn;
   final VoidCallback onRoll;
+  final bool showName;
 
   const PlayerInfoCard({
     super.key,
@@ -19,6 +20,7 @@ class PlayerInfoCard extends StatefulWidget {
     required this.gameState,
     required this.isCurrentTurn,
     required this.onRoll,
+    this.showName = true,
   });
 
   @override
@@ -83,13 +85,16 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
               color: AppColors.bgNavy,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: widget.isCurrentTurn ? AppColors.gold : widget.player.color.color,
+                color: widget.isCurrentTurn
+                    ? AppColors.gold
+                    : widget.player.color.color,
                 width: widget.isCurrentTurn ? 2.5 : 1.5,
               ),
               boxShadow: [
                 if (widget.isCurrentTurn)
                   BoxShadow(
-                    color: AppColors.gold.withValues(alpha: 0.30 + pulse * 0.16),
+                    color:
+                        AppColors.gold.withValues(alpha: 0.30 + pulse * 0.16),
                     blurRadius: 8 + pulse * 4,
                     spreadRadius: 0.5 + pulse * 0.8,
                   ),
@@ -113,16 +118,17 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        widget.player.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                      if (widget.showName)
+                        Text(
+                          widget.player.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
                       Text(
                         'Home: ${widget.player.finishedPawnsCount}/4',
                         style: GoogleFonts.poppins(
@@ -135,7 +141,8 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                 ),
                 const SizedBox(width: 7),
                 _PlayerDie(
-                  value: widget.isCurrentTurn ? widget.gameState.diceValue : null,
+                  value:
+                      widget.isCurrentTurn ? widget.gameState.diceValue : null,
                   isRolling: isRolling,
                   isActive: widget.isCurrentTurn &&
                       widget.gameState.turnPhase == GameTurnPhase.rollDice &&
@@ -174,10 +181,11 @@ class _PlayerDie extends StatefulWidget {
   State<_PlayerDie> createState() => _PlayerDieState();
 }
 
-class _PlayerDieState extends State<_PlayerDie> with SingleTickerProviderStateMixin {
+class _PlayerDieState extends State<_PlayerDie>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _rollController = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 460),
+    duration: const Duration(milliseconds: 650),
   );
 
   @override
@@ -194,7 +202,7 @@ class _PlayerDieState extends State<_PlayerDie> with SingleTickerProviderStateMi
 
   void _syncRolling() {
     if (widget.isRolling) {
-      _rollController.repeat();
+      _rollController.forward(from: 0);
     } else {
       _rollController.stop();
       _rollController.value = 0;
@@ -217,38 +225,77 @@ class _PlayerDieState extends State<_PlayerDie> with SingleTickerProviderStateMi
           final value = widget.isRolling
               ? (_rollController.value * 6).floor().clamp(0, 5).toInt() + 1
               : widget.value;
-          final angle = widget.isRolling
-              ? math.sin(_rollController.value * math.pi * 2) * 0.15
+          final rollPhase = _rollController.value;
+          final hopHeight =
+              widget.isRolling ? math.sin(rollPhase * math.pi) * 18 : 0.0;
+          final rotationX = widget.isRolling
+              ? rollPhase * math.pi * 4 +
+                  math.sin(rollPhase * math.pi * 4) * 0.22
               : 0.0;
+          final rotationY = widget.isRolling
+              ? rollPhase * math.pi * 5 +
+                  math.sin(rollPhase * math.pi * 3) * 0.18
+              : 0.0;
+          final rotationZ = widget.isRolling ? rollPhase * math.pi * 4 : 0.0;
+          final landingSquash = widget.isRolling && rollPhase > 0.82
+              ? 1 - math.sin((rollPhase - 0.82) / 0.18 * math.pi) * 0.08
+              : 1.0;
 
-          return Transform.rotate(
-            angle: angle,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              width: 38,
-              height: 38,
-              padding: const EdgeInsets.all(5),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(9),
-                border: Border.all(
-                  color: widget.isActive || widget.isRolling
-                      ? AppColors.gold
-                      : Colors.white70,
-                  width: widget.isActive || widget.isRolling ? 2 : 1,
-                ),
-                boxShadow: [
-                  if (widget.isRolling || widget.isActive)
-                    BoxShadow(
-                      color: AppColors.gold.withValues(alpha: widget.isRolling ? 0.65 : 0.32),
-                      blurRadius: widget.isRolling ? 11 : 7,
-                      spreadRadius: widget.isRolling ? 1.5 : 0.5,
+          return Transform.translate(
+            offset: Offset(0, -hopHeight),
+            child: Transform(
+              alignment: Alignment.center,
+              transform: Matrix4.identity()
+                ..setEntry(3, 2, 0.004)
+                ..rotateX(rotationX)
+                ..rotateY(rotationY)
+                ..rotateZ(rotationZ),
+              child: Transform.scale(
+                scale: (1 + hopHeight / 180) * landingSquash,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 38,
+                  height: 38,
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white,
+                        Color(0xFFF4F6FA),
+                        Color(0xFFD5DBE5)
+                      ],
                     ),
-                ],
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: widget.isActive || widget.isRolling
+                          ? const Color(0xFFFFE28A)
+                          : Colors.white,
+                      width: widget.isActive || widget.isRolling ? 1.7 : 1.2,
+                    ),
+                    boxShadow: [
+                      const BoxShadow(
+                        color: Color(0x66000000),
+                        blurRadius: 4,
+                        offset: Offset(1.5, 2.5),
+                      ),
+                      if (widget.isRolling || widget.isActive)
+                        BoxShadow(
+                          color: AppColors.gold.withValues(
+                            alpha: widget.isRolling ? 0.65 : 0.32,
+                          ),
+                          blurRadius: widget.isRolling ? 11 : 7,
+                          spreadRadius: widget.isRolling ? 1.5 : 0.5,
+                        ),
+                    ],
+                  ),
+                  child: value == null
+                      ? Icon(Icons.casino_rounded,
+                          color: widget.color, size: 24)
+                      : _DicePips(value: value),
+                ),
               ),
-              child: value == null
-                  ? Icon(Icons.casino_rounded, color: widget.color, size: 24)
-                  : _DicePips(value: value),
             ),
           );
         },
@@ -291,9 +338,19 @@ class _DicePips extends StatelessWidget {
             child: Container(
               width: 5,
               height: 5,
-              decoration: const BoxDecoration(
-                color: Color(0xFF172033),
+              decoration: BoxDecoration(
+                gradient: const RadialGradient(
+                  center: Alignment(-0.3, -0.35),
+                  colors: [Color(0xFF536174), Color(0xFF101827)],
+                ),
                 shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    blurRadius: 1,
+                    offset: const Offset(0.5, 0.7),
+                  ),
+                ],
               ),
             ),
           ),

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../domain/game_engine.dart';
@@ -22,7 +23,8 @@ class LudoBoardWidget extends StatefulWidget {
   State<LudoBoardWidget> createState() => _LudoBoardWidgetState();
 }
 
-class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderStateMixin {
+class _LudoBoardWidgetState extends State<LudoBoardWidget>
+    with TickerProviderStateMixin {
   /// Stores current visual step for each pawn: key = "${color.name}_${pawnId}"
   final Map<String, int> _visualSteps = {};
 
@@ -66,7 +68,8 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
           final currentVisualStep = _visualSteps[key] ?? targetStep;
 
           // Check if pawn needs to animate to a new target step
-          if (currentVisualStep != targetStep && !_activeControllers.containsKey(key)) {
+          if (currentVisualStep != targetStep &&
+              !_activeControllers.containsKey(key)) {
             // Captured pawns return to their yard immediately; they do not
             // walk backward through the track.
             if (targetStep == -1 && currentVisualStep >= 0) {
@@ -187,6 +190,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
                               capture: widget.gameState.lastCaptureEvent!,
                               tileSize: tileSize,
                             ),
+                          ..._buildPlayerNamePlates(tileSize),
                         ],
                       );
                     },
@@ -239,7 +243,8 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
                 ),
                 builder: (context, child) {
                   final progress = animationController.value * totalSteps;
-                  final currentIdx = progress.floor().clamp(0, totalSteps - 1).toInt();
+                  final currentIdx =
+                      progress.floor().clamp(0, totalSteps - 1).toInt();
                   final nextIdx = (currentIdx + 1).clamp(0, totalSteps).toInt();
                   final stepProgress = progress - currentIdx;
                   final from = path[currentIdx];
@@ -250,7 +255,8 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
                   final scale = 1 + (0.16 * bounce);
 
                   return Transform.translate(
-                    offset: Offset((posX - start.x) * tileSize, (posY - start.y) * tileSize),
+                    offset: Offset((posX - start.x) * tileSize,
+                        (posY - start.y) * tileSize),
                     child: Transform.scale(scale: scale, child: child),
                   );
                 },
@@ -260,12 +266,15 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
         } else {
           // Static pawn position based on current visual step
           final visualStep = _visualSteps[key] ?? pawn.stepCount;
-          final pos = BoardPosition.getPositionForStep(pawn.color, pawn.id, visualStep);
+          final pos =
+              BoardPosition.getPositionForStep(pawn.color, pawn.id, visualStep);
 
           final tileKey = '${pos.x}_${pos.y}';
-          final isMovable = widget.gameState.turnPhase == GameTurnPhase.selectPawn &&
-              widget.gameState.currentPlayer.color == pawn.color &&
-              widget.gameState.movablePawns.any((p) => p.id == pawn.id && p.color == pawn.color);
+          final isMovable =
+              widget.gameState.turnPhase == GameTurnPhase.selectPawn &&
+                  widget.gameState.currentPlayer.color == pawn.color &&
+                  widget.gameState.movablePawns
+                      .any((p) => p.id == pawn.id && p.color == pawn.color);
 
           staticTileOccupants.putIfAbsent(tileKey, () => []);
           staticTileOccupants[tileKey]!.add({
@@ -303,8 +312,10 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
           offsetY = (row == 0 ? -0.20 : 0.20) * tileSize;
         }
 
-        final left = (pos.x * tileSize) + (tileSize * (1.0 - pawnScale) / 2) + offsetX;
-        final top = (pos.y * tileSize) + (tileSize * (1.0 - pawnScale) / 2) + offsetY;
+        final left =
+            (pos.x * tileSize) + (tileSize * (1.0 - pawnScale) / 2) + offsetX;
+        final top =
+            (pos.y * tileSize) + (tileSize * (1.0 - pawnScale) / 2) + offsetY;
         final size = tileSize * pawnScale;
 
         widgets.add(
@@ -314,20 +325,153 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
             top: top,
             width: size,
             height: size,
-              child: RepaintBoundary(
-                child: _PawnTileWidget(
-                  color: pawn.color,
-                  isMovable: isMovable,
-                  size: size,
-                  onTap: isMovable ? () => widget.onPawnTap(pawn) : null,
-                ),
+            child: RepaintBoundary(
+              child: _PawnTileWidget(
+                color: pawn.color,
+                isMovable: isMovable,
+                size: size,
+                onTap: isMovable ? () => widget.onPawnTap(pawn) : null,
               ),
+            ),
           ),
         );
       }
     });
 
     return widgets;
+  }
+
+  List<Widget> _buildPlayerNamePlates(double tileSize) {
+    return widget.gameState.players.map((player) {
+      final isTop =
+          player.color == LudoColor.red || player.color == LudoColor.green;
+      final isLeft =
+          player.color == LudoColor.red || player.color == LudoColor.blue;
+      final left = isLeft ? tileSize * 0.55 : tileSize * 9.5;
+      final top = isTop ? tileSize * 0.12 : tileSize * 14.08;
+
+      return Positioned(
+        key: ValueKey('name_plate_${player.color.name}'),
+        left: left,
+        top: top,
+        width: tileSize * 5,
+        height: tileSize * 0.78,
+        child: IgnorePointer(
+          child: RepaintBoundary(
+            child: _PlayerNamePlate(
+              name: player.name,
+              color: player.color,
+              isActive: widget.gameState.currentPlayer.id == player.id &&
+                  !widget.gameState.isGameOver,
+            ),
+          ),
+        ),
+      );
+    }).toList();
+  }
+}
+
+class _PlayerNamePlate extends StatefulWidget {
+  final String name;
+  final LudoColor color;
+  final bool isActive;
+
+  const _PlayerNamePlate({
+    required this.name,
+    required this.color,
+    required this.isActive,
+  });
+
+  @override
+  State<_PlayerNamePlate> createState() => _PlayerNamePlateState();
+}
+
+class _PlayerNamePlateState extends State<_PlayerNamePlate>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 680),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _syncPulse();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlayerNamePlate oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive != widget.isActive) _syncPulse();
+  }
+
+  void _syncPulse() {
+    if (widget.isActive) {
+      _pulse.repeat(reverse: true);
+    } else {
+      _pulse.stop();
+      _pulse.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, _) {
+        final amount = _pulse.value;
+        return Opacity(
+          opacity: widget.isActive ? 0.82 + amount * 0.18 : 1,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFF10182F).withValues(
+                alpha: widget.isActive ? 0.82 : 0.92,
+              ),
+              border: Border.all(
+                color: widget.color.color.withValues(
+                  alpha: widget.isActive ? 0.55 + amount * 0.45 : 0.8,
+                ),
+                width: widget.isActive ? 1.2 : 0.8,
+              ),
+              borderRadius: BorderRadius.circular(3),
+              boxShadow: [
+                if (widget.isActive)
+                  BoxShadow(
+                    color: widget.color.color
+                        .withValues(alpha: 0.24 + amount * 0.2),
+                    blurRadius: 6 + amount * 3,
+                  ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    widget.name,
+                    maxLines: 1,
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -479,15 +623,19 @@ class _PawnTileWidgetState extends State<_PawnTileWidget>
 
     return GestureDetector(
       onTap: widget.onTap,
-      onTapDown: widget.onTap == null ? null : (_) => setState(() => _pressed = true),
-      onTapCancel: widget.onTap == null ? null : () => setState(() => _pressed = false),
-      onTapUp: widget.onTap == null ? null : (_) => setState(() => _pressed = false),
+      onTapDown:
+          widget.onTap == null ? null : (_) => setState(() => _pressed = true),
+      onTapCancel:
+          widget.onTap == null ? null : () => setState(() => _pressed = false),
+      onTapUp:
+          widget.onTap == null ? null : (_) => setState(() => _pressed = false),
       child: AnimatedBuilder(
         animation: _pulseController,
         builder: (context, child) {
           final pulse = _pulseController.value;
           return Transform.scale(
-            scale: _pressed ? 0.90 : (widget.isMovable ? 0.97 + pulse * 0.06 : 1),
+            scale:
+                _pressed ? 0.90 : (widget.isMovable ? 0.97 + pulse * 0.06 : 1),
             child: Stack(
               alignment: Alignment.center,
               children: [
@@ -498,12 +646,14 @@ class _PawnTileWidgetState extends State<_PawnTileWidget>
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: AppColors.gold.withValues(alpha: 0.72 + pulse * 0.28),
+                        color: AppColors.gold
+                            .withValues(alpha: 0.72 + pulse * 0.28),
                         width: 2.2,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: AppColors.gold.withValues(alpha: 0.36 + pulse * 0.28),
+                          color: AppColors.gold
+                              .withValues(alpha: 0.36 + pulse * 0.28),
                           blurRadius: 7 + pulse * 4,
                           spreadRadius: 1 + pulse,
                         ),
@@ -562,9 +712,12 @@ class _LudoBoardPainter extends CustomPainter {
     final tileSize = size.width / 15.0;
 
     final redGradient = _createGradient(AppColors.red, const Color(0xFFD32F2F));
-    final greenGradient = _createGradient(AppColors.green, const Color(0xFF2E7D32));
-    final yellowGradient = _createGradient(AppColors.gold, const Color(0xFFF57F17));
-    final blueGradient = _createGradient(AppColors.royalBlue, const Color(0xFF1565C0));
+    final greenGradient =
+        _createGradient(AppColors.green, const Color(0xFF2E7D32));
+    final yellowGradient =
+        _createGradient(AppColors.gold, const Color(0xFFF57F17));
+    final blueGradient =
+        _createGradient(AppColors.royalBlue, const Color(0xFF1565C0));
 
     final whitePaint = Paint()..color = const Color(0xFFFAFAFA);
     final gridLinePaint = Paint()
@@ -574,14 +727,18 @@ class _LudoBoardPainter extends CustomPainter {
 
     // 1. Draw 4 Corner Home Yards (6x6 cells with 3D Pawn Seats)
     _drawYard(canvas, 0, 0, tileSize * 6, LudoColor.red, redGradient, tileSize);
-    _drawYard(canvas, tileSize * 9, 0, tileSize * 6, LudoColor.green, greenGradient, tileSize);
-    _drawYard(canvas, tileSize * 9, tileSize * 9, tileSize * 6, LudoColor.yellow, yellowGradient, tileSize);
-    _drawYard(canvas, 0, tileSize * 9, tileSize * 6, LudoColor.blue, blueGradient, tileSize);
+    _drawYard(canvas, tileSize * 9, 0, tileSize * 6, LudoColor.green,
+        greenGradient, tileSize);
+    _drawYard(canvas, tileSize * 9, tileSize * 9, tileSize * 6,
+        LudoColor.yellow, yellowGradient, tileSize);
+    _drawYard(canvas, 0, tileSize * 9, tileSize * 6, LudoColor.blue,
+        blueGradient, tileSize);
 
     // 2. Draw 52 Main Track Tiles
     for (int i = 0; i < BoardPosition.mainTrack.length; i++) {
       final pos = BoardPosition.mainTrack[i];
-      final rect = Rect.fromLTWH(pos.x * tileSize, pos.y * tileSize, tileSize, tileSize);
+      final rect =
+          Rect.fromLTWH(pos.x * tileSize, pos.y * tileSize, tileSize, tileSize);
       final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(3));
 
       // Entry squares stay white and show a colored arrow into the track.
@@ -605,10 +762,14 @@ class _LudoBoardPainter extends CustomPainter {
     }
 
     // 3. Draw Home Stretches
-    _drawHomeStretch(canvas, BoardPosition.getHomeStretch(LudoColor.red), redGradient, gridLinePaint, tileSize);
-    _drawHomeStretch(canvas, BoardPosition.getHomeStretch(LudoColor.green), greenGradient, gridLinePaint, tileSize);
-    _drawHomeStretch(canvas, BoardPosition.getHomeStretch(LudoColor.yellow), yellowGradient, gridLinePaint, tileSize);
-    _drawHomeStretch(canvas, BoardPosition.getHomeStretch(LudoColor.blue), blueGradient, gridLinePaint, tileSize);
+    _drawHomeStretch(canvas, BoardPosition.getHomeStretch(LudoColor.red),
+        redGradient, gridLinePaint, tileSize);
+    _drawHomeStretch(canvas, BoardPosition.getHomeStretch(LudoColor.green),
+        greenGradient, gridLinePaint, tileSize);
+    _drawHomeStretch(canvas, BoardPosition.getHomeStretch(LudoColor.yellow),
+        yellowGradient, gridLinePaint, tileSize);
+    _drawHomeStretch(canvas, BoardPosition.getHomeStretch(LudoColor.blue),
+        blueGradient, gridLinePaint, tileSize);
 
     // 4. Draw Center 4-Triangle Victory Home (3x3 Center Area)
     _drawCenterHome(canvas, tileSize);
@@ -623,7 +784,8 @@ class _LudoBoardPainter extends CustomPainter {
       ).createShader(const Rect.fromLTWH(0, 0, 300, 300));
   }
 
-  void _drawStartArrow(Canvas canvas, Rect tileRect, LudoColor color, double tileSize) {
+  void _drawStartArrow(
+      Canvas canvas, Rect tileRect, LudoColor color, double tileSize) {
     final arrowPaint = Paint()
       ..color = color.color
       ..style = PaintingStyle.fill;
@@ -674,7 +836,8 @@ class _LudoBoardPainter extends CustomPainter {
 
     // Inner White Box with Drop Shadow
     final innerRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(left + tileSize, top + tileSize, tileSize * 4, tileSize * 4),
+      Rect.fromLTWH(
+          left + tileSize, top + tileSize, tileSize * 4, tileSize * 4),
       const Radius.circular(10),
     );
 
@@ -694,7 +857,8 @@ class _LudoBoardPainter extends CustomPainter {
         (pos.y + 0.5) * tileSize,
       );
 
-      final seatBgPaint = Paint()..color = color.lightColor.withValues(alpha: 0.35);
+      final seatBgPaint = Paint()
+        ..color = color.lightColor.withValues(alpha: 0.35);
       canvas.drawCircle(seatCenter, tileSize * 0.38, seatBgPaint);
 
       final seatBorderPaint = Paint()
@@ -713,7 +877,8 @@ class _LudoBoardPainter extends CustomPainter {
     double tileSize,
   ) {
     for (final pos in stretch) {
-      final rect = Rect.fromLTWH(pos.x * tileSize, pos.y * tileSize, tileSize, tileSize);
+      final rect =
+          Rect.fromLTWH(pos.x * tileSize, pos.y * tileSize, tileSize, tileSize);
       final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(3));
       canvas.drawRRect(rrect, stretchPaint);
       canvas.drawRRect(rrect, borderPaint);
@@ -751,7 +916,8 @@ class _LudoBoardPainter extends CustomPainter {
     final centerLeft = tileSize * 6;
     final centerTop = tileSize * 6;
     final centerSize = tileSize * 3;
-    final centerOffset = Offset(centerLeft + centerSize / 2, centerTop + centerSize / 2);
+    final centerOffset =
+        Offset(centerLeft + centerSize / 2, centerTop + centerSize / 2);
 
     final pRed = Paint()..color = AppColors.red;
     final pGreen = Paint()..color = AppColors.green;
@@ -794,7 +960,8 @@ class _LudoBoardPainter extends CustomPainter {
     final centerMedallionPaint = Paint()
       ..shader = const RadialGradient(
         colors: [Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFB76E00)],
-      ).createShader(Rect.fromCircle(center: centerOffset, radius: tileSize * 0.75))
+      ).createShader(
+          Rect.fromCircle(center: centerOffset, radius: tileSize * 0.75))
       ..style = PaintingStyle.fill;
 
     canvas.drawCircle(centerOffset, tileSize * 0.75, centerMedallionPaint);

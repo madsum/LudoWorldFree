@@ -106,7 +106,8 @@ class GameNotifier extends StateNotifier<GameState> {
         isDiceRolling: false,
         movablePawns: movable,
         turnPhase: GameTurnPhase.selectPawn,
-        statusMessage: '${state.currentPlayer.name} rolled a $diceResult! Select a token.',
+        statusMessage:
+            '${state.currentPlayer.name} rolled a $diceResult! Select a token.',
       );
 
       // Auto-move for Bot
@@ -118,26 +119,36 @@ class GameNotifier extends StateNotifier<GameState> {
 
   /// Moves the selected pawn along the Ludo track with step-by-step animation
   Future<void> movePawn(PawnModel selectedPawn) async {
-    if (state.turnPhase != GameTurnPhase.selectPawn || state.diceValue == null) return;
-    if (!state.movablePawns.any((p) => p.id == selectedPawn.id && p.color == selectedPawn.color)) {
+    if (state.turnPhase != GameTurnPhase.selectPawn ||
+        state.diceValue == null) {
+      return;
+    }
+    if (!state.movablePawns
+        .any((p) => p.id == selectedPawn.id && p.color == selectedPawn.color)) {
       return;
     }
 
     final dice = state.diceValue!;
     final player = state.currentPlayer;
-    final isYardMove = selectedPawn.isYard;
+    // Resolve the pawn from the latest game state rather than trusting the
+    // model captured by the board tap. This keeps a stale/rebuilt board from
+    // advancing from an outdated square and appearing one tile too far ahead.
+    final pawn = player.pawns.firstWhere(
+      (candidate) => candidate.id == selectedPawn.id,
+    );
+    final isYardMove = pawn.isYard;
 
-    final fromStep = selectedPawn.stepCount;
+    final fromStep = pawn.stepCount;
     final newStepCount = isYardMove ? 0 : (fromStep + dice);
 
     final moveEvent = PawnMoveEvent(
-      color: selectedPawn.color,
-      pawnId: selectedPawn.id,
+      color: pawn.color,
+      pawnId: pawn.id,
       fromStep: fromStep,
       toStep: newStepCount,
     );
 
-    final updatedPawn = selectedPawn.copyWith(stepCount: newStepCount);
+    final updatedPawn = pawn.copyWith(stepCount: newStepCount);
     bool earnedBonusRoll = dice == 6;
 
     // Check for Capture / Cutting of opponent pawn
@@ -170,20 +181,29 @@ class GameNotifier extends StateNotifier<GameState> {
     // Apply pawn moves and captures to players list
     final updatedPlayers = state.players.map((p) {
       if (p.color == player.color) {
-        final newPawns = p.pawns.map((pawn) => pawn.id == selectedPawn.id ? updatedPawn : pawn).toList();
+        final newPawns = p.pawns
+            .map((candidate) =>
+                candidate.id == pawn.id ? updatedPawn : candidate)
+            .toList();
         return p.copyWith(pawns: newPawns);
       } else if (capturedColor != null && p.color == capturedColor) {
-        final newPawns = p.pawns.map((pawn) => pawn.id == capturedPawn!.id ? pawn.copyWith(stepCount: -1) : pawn).toList();
+        final newPawns = p.pawns
+            .map((pawn) => pawn.id == capturedPawn!.id
+                ? pawn.copyWith(stepCount: -1)
+                : pawn)
+            .toList();
         return p.copyWith(pawns: newPawns);
       }
       return p;
     }).toList();
 
     // Check player completion / ranking
-    final updatedCurrentPlayer = updatedPlayers.firstWhere((p) => p.color == player.color);
+    final updatedCurrentPlayer =
+        updatedPlayers.firstWhere((p) => p.color == player.color);
     List<String> newWinnerIds = List.from(state.winnerIds);
 
-    if (updatedCurrentPlayer.hasAllPawnsHome && !newWinnerIds.contains(updatedCurrentPlayer.id)) {
+    if (updatedCurrentPlayer.hasAllPawnsHome &&
+        !newWinnerIds.contains(updatedCurrentPlayer.id)) {
       newWinnerIds.add(updatedCurrentPlayer.id);
     }
 
@@ -253,7 +273,9 @@ class GameNotifier extends StateNotifier<GameState> {
   }
 
   void _checkBotTurn() {
-    if (state.isCurrentPlayerBot && !state.isGameOver && state.turnPhase == GameTurnPhase.rollDice) {
+    if (state.isCurrentPlayerBot &&
+        !state.isGameOver &&
+        state.turnPhase == GameTurnPhase.rollDice) {
       _botTimer?.cancel();
       _botTimer = Timer(const Duration(milliseconds: 800), () {
         rollDice();
