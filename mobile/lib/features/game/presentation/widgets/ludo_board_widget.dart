@@ -8,7 +8,7 @@ import '../../domain/models/game_state.dart';
 import '../../domain/models/ludo_color.dart';
 import '../../domain/models/pawn_model.dart';
 
-class LudoBoardWidget extends StatelessWidget {
+class LudoBoardWidget extends StatefulWidget {
   final GameState gameState;
   final ValueChanged<PawnModel> onPawnTap;
 
@@ -17,6 +17,138 @@ class LudoBoardWidget extends StatelessWidget {
     required this.gameState,
     required this.onPawnTap,
   });
+
+  @override
+  State<LudoBoardWidget> createState() => _LudoBoardWidgetState();
+}
+
+class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderStateMixin {
+  /// Stores current visual step for each pawn: key = "${color.name}_${pawnId}"
+  final Map<String, int> _visualSteps = {};
+
+  /// Stores active animation controllers per pawn key
+  final Map<String, AnimationController> _activeControllers = {};
+
+  /// Stores current animated position (x, y) & scale for in-flight pawn moves
+  final Map<String, Map<String, double>> _animatedPawnPositions = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _syncVisualStepsWithGameState(isInitial: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant LudoBoardWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncVisualStepsWithGameState(isInitial: false);
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _activeControllers.values) {
+      controller.dispose();
+    }
+    _activeControllers.clear();
+    super.dispose();
+  }
+
+  /// Synchronizes logical GameState positions with Visual Animated Positions
+  void _syncVisualStepsWithGameState({required bool isInitial}) {
+    for (final player in widget.gameState.players) {
+      for (final pawn in player.pawns) {
+        final key = '${pawn.color.name}_${pawn.id}';
+        final targetStep = pawn.stepCount;
+
+        if (isInitial) {
+          _visualSteps[key] = targetStep;
+        } else {
+          final currentVisualStep = _visualSteps[key] ?? targetStep;
+
+          // Check if pawn needs to animate to a new target step
+          if (currentVisualStep != targetStep && !_activeControllers.containsKey(key)) {
+            _startPawnMovementAnimation(
+              key: key,
+              color: pawn.color,
+              pawnId: pawn.id,
+              fromStep: currentVisualStep,
+              toStep: targetStep,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  /// Animates pawn square-by-square from [fromStep] to [toStep]
+  void _startPawnMovementAnimation({
+    required String key,
+    required LudoColor color,
+    required int pawnId,
+    required int fromStep,
+    required int toStep,
+  }) {
+    final pathSequence = BoardPosition.calculatePathSequence(
+      color: color,
+      pawnId: pawnId,
+      fromStep: fromStep,
+      toStep: toStep,
+    );
+
+    final totalSteps = math.max(1, pathSequence.length - 1);
+    final durationMs = totalSteps * 130;
+
+    final controller = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: durationMs),
+    );
+
+    _activeControllers[key] = controller;
+
+    controller.addListener(() {
+      if (!mounted) return;
+
+      final double progress = controller.value * totalSteps;
+      final int currentIdx = progress.floor().clamp(0, totalSteps - 1);
+      final int nextIdx = (currentIdx + 1).clamp(0, totalSteps);
+      final double stepProgress = progress - currentIdx;
+
+      final posA = pathSequence[currentIdx];
+      final posB = pathSequence[nextIdx];
+
+      // Interpolate x, y tile position
+      final double posX = posA.x + (posB.x - posA.x) * stepProgress;
+      final double posY = posA.y + (posB.y - posA.y) * stepProgress;
+
+      // Subtle step bounce/scale factor
+      final double bounceFactor = math.sin(stepProgress * math.pi);
+      final double pawnScale = 0.82 + (0.24 * bounceFactor);
+
+      setState(() {
+        _animatedPawnPositions[key] = {
+          'posX': posX,
+          'posY': posY,
+          'pawnScale': pawnScale,
+        };
+      });
+    });
+
+    controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        controller.dispose();
+        _activeControllers.remove(key);
+        _animatedPawnPositions.remove(key);
+
+        if (mounted) {
+          setState(() {
+            _visualSteps[key] = toStep;
+          });
+        }
+      }
+    });
+
+    controller.forward();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +181,7 @@ class LudoBoardWidget extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(15),
             child: CustomPaint(
-              painter: _LudoBoardPainter(gameState: gameState),
+              painter: _LudoBoardPainter(gameState: widget.gameState),
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final tileSize = constraints.maxWidth / 15.0;
@@ -65,44 +197,67 @@ class LudoBoardWidget extends StatelessWidget {
     );
   }
 
-  /// Calculates pawn positions with multi-token stacking offsets
+  /// Renders all pawns driven by single visual source of truth
   List<Widget> _buildPawnWidgets(double tileSize) {
     final widgets = <Widget>[];
 
-    // Map to group pawns by target tile coordinate key "x_y"
-    final Map<String, List<Map<String, dynamic>>> tileOccupants = {};
+    // Group static pawns by current visual tile coordinate key "x_y"
+    final Map<String, List<Map<String, dynamic>>> staticTileOccupants = {};
 
-    for (final player in gameState.players) {
+    for (final player in widget.gameState.players) {
       for (final pawn in player.pawns) {
         if (pawn.isFinished) continue;
 
-        BoardPosition pos;
-        if (pawn.isYard) {
-          pos = BoardPosition.getYardPositions(pawn.color)[pawn.id];
-        } else if (pawn.isInHomeStretch) {
-          final stretch = BoardPosition.getHomeStretch(pawn.color);
-          pos = stretch[pawn.stepCount - 51];
+        final key = '${pawn.color.name}_${pawn.id}';
+        final isAnimating = _animatedPawnPositions.containsKey(key);
+
+        if (isAnimating) {
+          // Render in-flight step-by-step moving pawn
+          final animData = _animatedPawnPositions[key]!;
+          final posX = animData['posX']!;
+          final posY = animData['posY']!;
+          final pawnScale = animData['pawnScale']!;
+
+          final size = tileSize * pawnScale;
+          final left = (posX * tileSize) + (tileSize * (1.0 - pawnScale) / 2);
+          final top = (posY * tileSize) + (tileSize * (1.0 - pawnScale) / 2);
+
+          widgets.add(
+            Positioned(
+              key: ValueKey('anim_$key'),
+              left: left,
+              top: top,
+              width: size,
+              height: size,
+              child: _PawnTileWidget(
+                color: pawn.color,
+                isMovable: false,
+                size: size,
+              ),
+            ),
+          );
         } else {
-          final globalIdx = pawn.globalTileIndex!;
-          pos = BoardPosition.mainTrack[globalIdx];
+          // Static pawn position based on current visual step
+          final visualStep = _visualSteps[key] ?? pawn.stepCount;
+          final pos = BoardPosition.getPositionForStep(pawn.color, pawn.id, visualStep);
+
+          final tileKey = '${pos.x}_${pos.y}';
+          final isMovable = widget.gameState.turnPhase == GameTurnPhase.selectPawn &&
+              widget.gameState.currentPlayer.color == pawn.color &&
+              widget.gameState.movablePawns.any((p) => p.id == pawn.id && p.color == pawn.color);
+
+          staticTileOccupants.putIfAbsent(tileKey, () => []);
+          staticTileOccupants[tileKey]!.add({
+            'pawn': pawn,
+            'pos': pos,
+            'isMovable': isMovable,
+          });
         }
-
-        final key = '${pos.x}_${pos.y}';
-        final isMovable = gameState.turnPhase == GameTurnPhase.selectPawn &&
-            gameState.currentPlayer.color == pawn.color &&
-            gameState.movablePawns.any((p) => p.id == pawn.id && p.color == pawn.color);
-
-        tileOccupants.putIfAbsent(key, () => []);
-        tileOccupants[key]!.add({
-          'pawn': pawn,
-          'pos': pos,
-          'isMovable': isMovable,
-        });
       }
     }
 
-    // Generate pawn widgets with sub-grid offsets for stacked pawns
-    tileOccupants.forEach((key, occupantList) {
+    // Generate static pawn widgets with sub-grid offsets for stacked pawns
+    staticTileOccupants.forEach((tileKey, occupantList) {
       final totalOnTile = occupantList.length;
 
       for (int i = 0; i < totalOnTile; i++) {
@@ -132,15 +287,14 @@ class LudoBoardWidget extends StatelessWidget {
         final size = tileSize * pawnScale;
 
         widgets.add(
-          AnimatedPositioned(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeInOutQuad,
+          Positioned(
+            key: ValueKey('static_${pawn.color.name}_${pawn.id}'),
             left: left,
             top: top,
             width: size,
             height: size,
             child: GestureDetector(
-              onTap: isMovable ? () => onPawnTap(pawn) : null,
+              onTap: isMovable ? () => widget.onPawnTap(pawn) : null,
               child: _PawnTileWidget(
                 color: pawn.color,
                 isMovable: isMovable,

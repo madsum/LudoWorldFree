@@ -36,8 +36,9 @@ void main() {
     });
 
     test('Captures opponent pawn on non-safe tile', () {
-      final redPawn = const PawnModel(id: 0, color: LudoColor.red, stepCount: 2);
-      final greenPawn = const PawnModel(id: 0, color: LudoColor.green, stepCount: 2); // Global tile 15
+      // Red entry 1 + step 14 = Global 15. Green entry 14 + step 1 = Global 15.
+      final redPawn = const PawnModel(id: 0, color: LudoColor.red, stepCount: 14);
+      final greenPawn = const PawnModel(id: 0, color: LudoColor.green, stepCount: 1); // Global tile 15
 
       final redPlayer = PlayerModel(
         id: 'red',
@@ -58,7 +59,7 @@ void main() {
       final capturable = GameEngine.findCapturableOpponentPawn(
         players: [redPlayer, greenPlayer],
         currentPlayerColor: LudoColor.red,
-        targetStep: 15, // Red step 15 = Global tile 15 (Green step 2 = Global tile 15)
+        targetStep: 14, // Red step 14 = Global tile 15
       );
 
       expect(capturable, isNotNull);
@@ -66,8 +67,9 @@ void main() {
     });
 
     test('Safe / Star tiles prevent capturing', () {
-      // Global Tile 0 is Red Start & Safe Tile
-      final greenPawnOnRedStart = const PawnModel(id: 0, color: LudoColor.green, stepCount: 39); // Global 0
+      // Global Tile 0 is Red Star Tile (Safe)
+      // Green entry 14 + step 38 = Global 0
+      final greenPawnOnRedStart = const PawnModel(id: 0, color: LudoColor.green, stepCount: 38);
 
       final redPlayer = PlayerModel.initial(
         id: 'red',
@@ -87,7 +89,7 @@ void main() {
       final capturable = GameEngine.findCapturableOpponentPawn(
         players: [redPlayer, greenPlayer],
         currentPlayerColor: LudoColor.red,
-        targetStep: 0, // Target is Safe Tile 0
+        targetStep: 50, // Red entry 1 + step 50 = Global Tile 0 (Red Star Tile)
       );
 
       expect(capturable, isNull);
@@ -95,9 +97,9 @@ void main() {
 
     test('Smart AI Bot prioritizes capturing opponent', () {
       final pawn1 = const PawnModel(id: 0, color: LudoColor.red, stepCount: 5);
-      final pawn2 = const PawnModel(id: 1, color: LudoColor.red, stepCount: 10); // Move 5 steps to capture Green pawn at global 15
+      final pawn2 = const PawnModel(id: 1, color: LudoColor.red, stepCount: 9); // Move 5 steps to step 14 (Global 15)
 
-      final greenPawn = const PawnModel(id: 0, color: LudoColor.green, stepCount: 2); // Global 15
+      final greenPawn = const PawnModel(id: 0, color: LudoColor.green, stepCount: 1); // Global 15
 
       final redBot = PlayerModel(
         id: 'red_bot',

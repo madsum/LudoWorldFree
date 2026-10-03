@@ -46,31 +46,31 @@ enum LudoColor {
     }
   }
 
-  /// Starting index on the 52-tile main track
+  /// Starting track tile index (step 0 entry) on the 52-tile main track
   int get startTileIndex {
     switch (this) {
       case LudoColor.red:
-        return 0;
+        return 1; // Tile (1, 6)
       case LudoColor.green:
-        return 13;
+        return 14; // Tile (8, 1)
       case LudoColor.yellow:
-        return 26;
+        return 27; // Tile (13, 8)
       case LudoColor.blue:
-        return 39;
+        return 40; // Tile (6, 13)
     }
   }
 
-  /// Entry tile index before turning into Home Stretch
+  /// Track index immediately preceding the Home Stretch turn
   int get homeEntryIndex {
     switch (this) {
       case LudoColor.red:
-        return 50;
+        return 51; // Left Turn Tile (0, 7)
       case LudoColor.green:
-        return 11;
+        return 12; // Top Turn Tile (7, 0)
       case LudoColor.yellow:
-        return 24;
+        return 25; // Right Turn Tile (14, 7)
       case LudoColor.blue:
-        return 37;
+        return 38; // Bottom Turn Tile (7, 14)
     }
   }
 }

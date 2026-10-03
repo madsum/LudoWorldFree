@@ -107,7 +107,7 @@ class GameNotifier extends StateNotifier<GameState> {
     }
   }
 
-  /// Moves the selected pawn along the Ludo track
+  /// Moves the selected pawn along the Ludo track with step-by-step animation
   Future<void> movePawn(PawnModel selectedPawn) async {
     if (state.turnPhase != GameTurnPhase.selectPawn || state.diceValue == null) return;
     if (!state.movablePawns.any((p) => p.id == selectedPawn.id && p.color == selectedPawn.color)) {
@@ -118,12 +118,15 @@ class GameNotifier extends StateNotifier<GameState> {
     final player = state.currentPlayer;
     final isYardMove = selectedPawn.isYard;
 
-    int newStepCount;
-    if (isYardMove) {
-      newStepCount = 0; // Move onto Start Tile
-    } else {
-      newStepCount = selectedPawn.stepCount + dice;
-    }
+    final fromStep = selectedPawn.stepCount;
+    final newStepCount = isYardMove ? 0 : (fromStep + dice);
+
+    final moveEvent = PawnMoveEvent(
+      color: selectedPawn.color,
+      pawnId: selectedPawn.id,
+      fromStep: fromStep,
+      toStep: newStepCount,
+    );
 
     final updatedPawn = selectedPawn.copyWith(stepCount: newStepCount);
     bool earnedBonusRoll = dice == 6;
@@ -179,16 +182,20 @@ class GameNotifier extends StateNotifier<GameState> {
                 ? '${player.name} rolled a 6! Bonus roll!'
                 : '${player.name} moved token.';
 
+    // Emit animating phase and move event to presentation layer
     state = state.copyWith(
       players: updatedPlayers,
       turnPhase: GameTurnPhase.animating,
       movablePawns: const [],
+      lastMoveEvent: moveEvent,
       winnerIds: newWinnerIds,
       isGameOver: isGameOver,
       statusMessage: statusMsg,
     );
 
-    await Future.delayed(const Duration(milliseconds: 300));
+    // Calculate animation duration based on steps count (130ms per step + 200ms settling)
+    final animDurationMs = moveEvent.stepsCount * 130 + 200;
+    await Future.delayed(Duration(milliseconds: animDurationMs));
 
     if (isGameOver) {
       state = state.copyWith(
