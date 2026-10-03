@@ -413,26 +413,22 @@ class _LudoBoardPainter extends CustomPainter {
       final rect = Rect.fromLTWH(pos.x * tileSize, pos.y * tileSize, tileSize, tileSize);
       final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(3));
 
-      // Draw Colored Visual Start Markers & Arrows on indices 0, 13, 26, 39
-      if (i == LudoColor.red.visualStartMarkerIndex) {
+      // Highlight each colored start star on its actual entry square.
+      if (i == LudoColor.red.actualEntryTrackIndex) {
         canvas.drawRRect(rrect, redGradient);
-        _drawStartArrow(canvas, rect, LudoColor.red, tileSize);
-      } else if (i == LudoColor.green.visualStartMarkerIndex) {
+      } else if (i == LudoColor.green.actualEntryTrackIndex) {
         canvas.drawRRect(rrect, greenGradient);
-        _drawStartArrow(canvas, rect, LudoColor.green, tileSize);
-      } else if (i == LudoColor.yellow.visualStartMarkerIndex) {
+      } else if (i == LudoColor.yellow.actualEntryTrackIndex) {
         canvas.drawRRect(rrect, yellowGradient);
-        _drawStartArrow(canvas, rect, LudoColor.yellow, tileSize);
-      } else if (i == LudoColor.blue.visualStartMarkerIndex) {
+      } else if (i == LudoColor.blue.actualEntryTrackIndex) {
         canvas.drawRRect(rrect, blueGradient);
-        _drawStartArrow(canvas, rect, LudoColor.blue, tileSize);
       } else {
         canvas.drawRRect(rrect, whitePaint);
       }
 
       canvas.drawRRect(rrect, gridLinePaint);
 
-      // Draw 8-Point Star Medallion on Safe Tiles (0, 8, 13, 21, 26, 34, 39, 47)
+      // Draw 8-Point Star Medallion on Safe Tiles (1, 8, 14, 21, 27, 34, 40, 47).
       if (GameEngine.safeGlobalTiles.contains(i)) {
         _drawStarMedallion(canvas, rect.center, tileSize * 0.35);
       }
@@ -518,41 +514,6 @@ class _LudoBoardPainter extends CustomPainter {
       canvas.drawRRect(rrect, stretchPaint);
       canvas.drawRRect(rrect, borderPaint);
     }
-  }
-
-  void _drawStartArrow(Canvas canvas, Rect tileRect, LudoColor color, double tileSize) {
-    final arrowPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.9)
-      ..style = PaintingStyle.fill;
-
-    final path = Path();
-    final center = tileRect.center;
-
-    // Arrow pointing into main path
-    switch (color) {
-      case LudoColor.red: // Arrow points right
-        path.moveTo(center.dx - tileSize * 0.25, center.dy - tileSize * 0.25);
-        path.lineTo(center.dx + tileSize * 0.25, center.dy);
-        path.lineTo(center.dx - tileSize * 0.25, center.dy + tileSize * 0.25);
-        break;
-      case LudoColor.green: // Arrow points down
-        path.moveTo(center.dx - tileSize * 0.25, center.dy - tileSize * 0.25);
-        path.lineTo(center.dx, center.dy + tileSize * 0.25);
-        path.lineTo(center.dx + tileSize * 0.25, center.dy - tileSize * 0.25);
-        break;
-      case LudoColor.yellow: // Arrow points left
-        path.moveTo(center.dx + tileSize * 0.25, center.dy - tileSize * 0.25);
-        path.lineTo(center.dx - tileSize * 0.25, center.dy);
-        path.lineTo(center.dx + tileSize * 0.25, center.dy + tileSize * 0.25);
-        break;
-      case LudoColor.blue: // Arrow points up
-        path.moveTo(center.dx - tileSize * 0.25, center.dy + tileSize * 0.25);
-        path.lineTo(center.dx, center.dy - tileSize * 0.25);
-        path.lineTo(center.dx + tileSize * 0.25, center.dy + tileSize * 0.25);
-        break;
-    }
-    path.close();
-    canvas.drawPath(path, arrowPaint);
   }
 
   void _drawStarMedallion(Canvas canvas, Offset center, double radius) {
