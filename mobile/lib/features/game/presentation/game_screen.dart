@@ -22,11 +22,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   Widget build(BuildContext context) {
     final gameState = ref.watch(gameControllerProvider);
     final gameNotifier = ref.read(gameControllerProvider.notifier);
-    final isFourPlayerVsComputer = gameState.players.length == 4 &&
-        gameState.players.where((player) => player.isBot).length == 3;
+    final botCount = gameState.players.where((player) => player.isBot).length;
+    final isVsComputer = botCount == gameState.players.length - 1 && botCount > 0;
+    final isTwoPlayerVsComputer = isVsComputer && gameState.players.length == 2;
     final humanIndex = gameState.players.indexWhere((player) => !player.isBot);
     final humanColor = humanIndex < 0 ? null : gameState.players[humanIndex].color;
-    final boardQuarterTurns = isFourPlayerVsComputer && humanColor != null
+    final boardQuarterTurns = isVsComputer && humanColor != null
         ? (3 - humanColor.index) % 4
         : 0;
 
@@ -95,12 +96,19 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  if (gameState.players.isNotEmpty)
+                  if (isTwoPlayerVsComputer)
+                    const SizedBox.shrink()
+                  else if (gameState.players.isNotEmpty)
                     PlayerInfoCard(
                       player: gameState.players[0],
                       isCurrentTurn: gameState.currentTurnIndex == 0,
                     ),
-                  if (gameState.players.length > 1)
+                  if (isTwoPlayerVsComputer)
+                    PlayerInfoCard(
+                      player: gameState.players[1],
+                      isCurrentTurn: gameState.currentTurnIndex == 1,
+                    )
+                  else if (gameState.players.length > 1)
                     PlayerInfoCard(
                       player: gameState.players[1],
                       isCurrentTurn: gameState.currentTurnIndex == 1,
@@ -128,12 +136,19 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  if (gameState.players.length > 3)
+                  if (isTwoPlayerVsComputer)
+                    PlayerInfoCard(
+                      player: gameState.players[0],
+                      isCurrentTurn: gameState.currentTurnIndex == 0,
+                    )
+                  else if (gameState.players.length > 3)
                     PlayerInfoCard(
                       player: gameState.players[3],
                       isCurrentTurn: gameState.currentTurnIndex == 3,
                     ),
-                  if (gameState.players.length > 2)
+                  if (isTwoPlayerVsComputer)
+                    const SizedBox.shrink()
+                  else if (gameState.players.length > 2)
                     PlayerInfoCard(
                       player: gameState.players[2],
                       isCurrentTurn: gameState.currentTurnIndex == 2,
