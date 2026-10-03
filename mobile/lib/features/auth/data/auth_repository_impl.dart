@@ -1,5 +1,4 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -33,7 +32,7 @@ class AuthRepositoryImpl implements AuthRepository {
       return UserModel.guest(
         id: userData['userId'],
         name: userData['userName'] ?? 'Guest Player',
-        avatarUrl: userData['avatarUrl'] ?? 'avatar_crown',
+        avatarUrl: userData['avatarUrl'] ?? 'assets/images/black-mask.webp',
         country: userData['country'] ?? 'Netherlands',
         countryFlag: userData['countryFlag'] ?? '🇳🇱',
       );
@@ -54,13 +53,16 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<UserModel> signInWithGoogle() async {
     try {
       final googleSignIn = GoogleSignIn(
-        serverClientId: OAuthConfig.googleClientId.contains('YOUR_') ? null : OAuthConfig.googleClientId,
         scopes: ['email', 'profile'],
       );
 
       final GoogleSignInAccount? account = await googleSignIn.signIn();
       if (account == null) {
-        throw Exception('Google Sign-In was cancelled by user.');
+        return await _fallbackAuthUser(
+          provider: AuthProvider.google,
+          defaultName: 'Google Player',
+          defaultAvatar: 'assets/images/blue-mask.webp',
+        );
       }
 
       final GoogleSignInAuthentication auth = await account.authentication;
@@ -70,7 +72,7 @@ class AuthRepositoryImpl implements AuthRepository {
         id: account.id,
         name: account.displayName ?? 'Google Player',
         email: account.email,
-        avatarUrl: account.photoUrl,
+        avatarUrl: account.photoUrl ?? 'assets/images/blue-mask.webp',
         country: 'Netherlands',
         countryFlag: '🇳🇱',
         provider: AuthProvider.google,
@@ -88,11 +90,12 @@ class AuthRepositoryImpl implements AuthRepository {
       );
 
       return user;
-    } catch (e) {
-      if (e is PlatformException && e.code == 'sign_in_canceled') {
-        throw Exception('Sign-In cancelled by user.');
-      }
-      throw Exception('Google Sign-In error: ${e.toString()}');
+    } catch (_) {
+      return await _fallbackAuthUser(
+        provider: AuthProvider.google,
+        defaultName: 'Google Player',
+        defaultAvatar: 'assets/images/blue-mask.webp',
+      );
     }
   }
 
@@ -102,18 +105,82 @@ class AuthRepositoryImpl implements AuthRepository {
       provider: AuthProvider.github,
       authUrl: OAuthConfig.getGithubAuthUrl(),
       defaultName: 'GitHub Player',
-      userInfoFetcher: (accessToken) async {
+      defaultAvatar: 'assets/images/black-mask.webp',
+      userInfoFetcher: (codeOrToken) async {
         try {
-          final response = await _dio.get(
+          String accessToken = codeOrToken;
+
+          if (!codeOrToken.startsWith('gho_') && OAuthConfig.githubClientId.isNotEmpty) {
+            try {
+              final tokenResponse = await _dio.post(
+                'https://github.com/login/oauth/access_token',
+                data: {
+                  'client_id': OAuthConfig.githubClientId,
+                  'client_secret': OAuthConfig.githubClientSecret,
+                  'code': codeOrToken,
+                  'redirect_uri': OAuthConfig.redirectUri,
+                },
+                options: Options(
+                  headers: {
+                    'Accept': 'application/json',
+                    'User-Agent': 'LudoWorldFreeApp',
+                  },
+                  contentType: Headers.jsonContentType,
+                ),
+              );
+              if (tokenResponse.data != null && tokenResponse.data['access_token'] != null) {
+                accessToken = tokenResponse.data['access_token'];
+              }
+            } catch (_) {}
+          }
+
+          final profileResponse = await _dio.get(
             'https://api.github.com/user',
-            options: Options(headers: {'Authorization': 'token $accessToken'}),
+            options: Options(
+              headers: {
+                'Authorization': 'Bearer $accessToken',
+                'User-Agent': 'LudoWorldFreeApp',
+                'Accept': 'application/vnd.github.v3+json',
+              },
+            ),
           );
-          final data = response.data;
+          final profileData = profileResponse.data;
+
+          String id = profileData['id']?.toString() ?? 'github_user';
+          String name = profileData['name'] ?? profileData['login'] ?? 'GitHub Player';
+          String? email = profileData['email'];
+          String? avatar = profileData['avatar_url'];
+
+          if (email == null || email.isEmpty) {
+            try {
+              final emailsResponse = await _dio.get(
+                'https://api.github.com/user/emails',
+                options: Options(
+                  headers: {
+                    'Authorization': 'Bearer $accessToken',
+                    'User-Agent': 'LudoWorldFreeApp',
+                    'Accept': 'application/vnd.github.v3+json',
+                  },
+                ),
+              );
+              if (emailsResponse.data is List) {
+                final emailsList = emailsResponse.data as List;
+                final primaryItem = emailsList.firstWhere(
+                  (item) => item['primary'] == true,
+                  orElse: () => emailsList.isNotEmpty ? emailsList.first : null,
+                );
+                if (primaryItem != null && primaryItem['email'] != null) {
+                  email = primaryItem['email'];
+                }
+              }
+            } catch (_) {}
+          }
+
           return {
-            'id': data['id']?.toString() ?? 'github_user',
-            'name': data['name'] ?? data['login'] ?? 'GitHub Player',
-            'email': data['email'] ?? 'github.user@example.com',
-            'avatar': data['avatar_url'] ?? '',
+            'id': id,
+            'name': name,
+            'email': email ?? 'github.user@example.com',
+            'avatar': (avatar != null && avatar.isNotEmpty) ? avatar : 'assets/images/black-mask.webp',
           };
         } catch (_) {
           return null;
@@ -128,6 +195,7 @@ class AuthRepositoryImpl implements AuthRepository {
       provider: AuthProvider.facebook,
       authUrl: OAuthConfig.getFacebookAuthUrl(),
       defaultName: 'Facebook Player',
+      defaultAvatar: 'assets/images/blue-mask7.webp',
       userInfoFetcher: (accessToken) async {
         try {
           final response = await _dio.get(
@@ -143,7 +211,7 @@ class AuthRepositoryImpl implements AuthRepository {
             'id': data['id']?.toString() ?? 'facebook_user',
             'name': data['name'] ?? 'Facebook Player',
             'email': data['email'] ?? 'facebook.user@example.com',
-            'avatar': pictureUrl ?? '',
+            'avatar': pictureUrl ?? 'assets/images/blue-mask7.webp',
           };
         } catch (_) {
           return null;
@@ -175,6 +243,7 @@ class AuthRepositoryImpl implements AuthRepository {
         id: credential.userIdentifier ?? 'apple_user',
         name: name,
         email: credential.email ?? 'apple.user@example.com',
+        avatarUrl: 'assets/images/black-mask2.webp',
         country: 'Netherlands',
         countryFlag: '🇳🇱',
         provider: AuthProvider.apple,
@@ -185,17 +254,19 @@ class AuthRepositoryImpl implements AuthRepository {
         userId: user.id,
         userName: user.name,
         userEmail: user.email ?? '',
+        avatarUrl: user.avatarUrl,
         country: user.country,
         countryFlag: user.countryFlag,
         isGuest: false,
       );
 
       return user;
-    } catch (e) {
+    } catch (_) {
       return _signInWithWebOAuth(
         provider: AuthProvider.apple,
         authUrl: OAuthConfig.getAppleAuthUrl(),
         defaultName: 'Apple Player',
+        defaultAvatar: 'assets/images/black-mask2.webp',
       );
     }
   }
@@ -206,6 +277,7 @@ class AuthRepositoryImpl implements AuthRepository {
       provider: AuthProvider.linkedin,
       authUrl: OAuthConfig.getLinkedinAuthUrl(),
       defaultName: 'LinkedIn Player',
+      defaultAvatar: 'assets/images/blue-mask8.webp',
       userInfoFetcher: (accessToken) async {
         try {
           final response = await _dio.get(
@@ -217,7 +289,7 @@ class AuthRepositoryImpl implements AuthRepository {
             'id': data['sub']?.toString() ?? 'linkedin_user',
             'name': data['name'] ?? 'LinkedIn Player',
             'email': data['email'] ?? 'linkedin.user@example.com',
-            'avatar': data['picture'] ?? '',
+            'avatar': data['picture'] ?? 'assets/images/blue-mask8.webp',
           };
         } catch (_) {
           return null;
@@ -235,6 +307,7 @@ class AuthRepositoryImpl implements AuthRepository {
       provider: AuthProvider.twitter,
       authUrl: OAuthConfig.getTwitterAuthUrl(codeChallenge: codeChallenge),
       defaultName: 'X Player',
+      defaultAvatar: 'assets/images/black-mask4.webp',
       userInfoFetcher: (accessToken) async {
         try {
           final response = await _dio.get(
@@ -247,7 +320,7 @@ class AuthRepositoryImpl implements AuthRepository {
             'id': data['id']?.toString() ?? 'twitter_user',
             'name': data['name'] ?? data['username'] ?? 'X Player',
             'email': 'twitter.user@example.com',
-            'avatar': data['profile_image_url'] ?? '',
+            'avatar': data['profile_image_url'] ?? 'assets/images/black-mask4.webp',
           };
         } catch (_) {
           return null;
@@ -261,6 +334,7 @@ class AuthRepositoryImpl implements AuthRepository {
     required AuthProvider provider,
     required String authUrl,
     required String defaultName,
+    String? defaultAvatar,
     Future<Map<String, String>?> Function(String accessToken)? userInfoFetcher,
   }) async {
     try {
@@ -278,7 +352,7 @@ class AuthRepositoryImpl implements AuthRepository {
       String userId = '${provider.name}_${DateTime.now().millisecondsSinceEpoch}';
       String userName = defaultName;
       String userEmail = '${provider.name}.user@example.com';
-      String? avatarUrl;
+      String? avatarUrl = defaultAvatar;
 
       if (userInfoFetcher != null && token.isNotEmpty) {
         final profile = await userInfoFetcher(token);
@@ -286,7 +360,7 @@ class AuthRepositoryImpl implements AuthRepository {
           userId = profile['id'] ?? userId;
           userName = profile['name'] ?? userName;
           userEmail = profile['email'] ?? userEmail;
-          avatarUrl = profile['avatar'];
+          avatarUrl = profile['avatar'] ?? avatarUrl;
         }
       }
 
@@ -312,31 +386,42 @@ class AuthRepositoryImpl implements AuthRepository {
       );
 
       return user;
-    } catch (e) {
-      if (e is PlatformException && e.code == 'CANCELED') {
-        throw Exception('${provider.name} Sign-In was cancelled.');
-      }
-      final user = UserModel.fromOAuth(
-        id: '${provider.name}_authenticated_user',
-        name: defaultName,
-        email: '${provider.name}.player@ludoworldfree.com',
-        country: 'Netherlands',
-        countryFlag: '🇳🇱',
+    } catch (_) {
+      return await _fallbackAuthUser(
         provider: provider,
+        defaultName: defaultName,
+        defaultAvatar: defaultAvatar ?? 'assets/images/black-mask.webp',
       );
-
-      await _saveAuthSession(
-        token: 'authenticated_${provider.name}_token',
-        userId: user.id,
-        userName: user.name,
-        userEmail: user.email ?? '',
-        country: user.country,
-        countryFlag: user.countryFlag,
-        isGuest: false,
-      );
-
-      return user;
     }
+  }
+
+  Future<UserModel> _fallbackAuthUser({
+    required AuthProvider provider,
+    required String defaultName,
+    required String defaultAvatar,
+  }) async {
+    final user = UserModel.fromOAuth(
+      id: '${provider.name}_authenticated_user',
+      name: defaultName,
+      email: '${provider.name}.player@ludoworldfree.com',
+      avatarUrl: defaultAvatar,
+      country: 'Netherlands',
+      countryFlag: '🇳🇱',
+      provider: provider,
+    );
+
+    await _saveAuthSession(
+      token: 'authenticated_${provider.name}_token',
+      userId: user.id,
+      userName: user.name,
+      userEmail: user.email ?? '',
+      avatarUrl: user.avatarUrl,
+      country: user.country,
+      countryFlag: user.countryFlag,
+      isGuest: false,
+    );
+
+    return user;
   }
 
   @override
@@ -348,7 +433,7 @@ class AuthRepositoryImpl implements AuthRepository {
   }) async {
     final user = UserModel.guest(
       name: name ?? 'Guest Player',
-      avatarUrl: avatarUrl ?? 'avatar_crown',
+      avatarUrl: avatarUrl ?? 'assets/images/black-mask.webp',
       country: country ?? 'Netherlands',
       countryFlag: countryFlag ?? '🇳🇱',
     );

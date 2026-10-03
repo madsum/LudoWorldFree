@@ -23,12 +23,12 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
-            <!-- OAuth Callback Intent Filter -->
+            <!-- OAuth Deep Link Redirect Scheme -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="ludoworldfree" android:host="oauth-callback"/>
+                <data android:scheme="ludoworldfree"/>
             </intent-filter>
         </activity>
 

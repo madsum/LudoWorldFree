@@ -8,6 +8,7 @@ class OAuthConfig {
   static const String callbackScheme = 'ludoworldfree';
   static const String callbackHost = 'oauth-callback';
   static const String redirectUri = '$callbackScheme://$callbackHost';
+  static const String facebookRedirectUri = 'https://ludoworldfree.com/oauth-callback';
 
   // --------------------------------------------------------------------------
   // OAuth Credentials (Loaded dynamically from .env file)
@@ -67,7 +68,7 @@ class OAuthConfig {
   static String getFacebookAuthUrl() {
     return 'https://www.facebook.com/v18.0/dialog/oauth'
         '?client_id=$facebookAppId'
-        '&redirect_uri=${Uri.encodeComponent(redirectUri)}'
+        '&redirect_uri=${Uri.encodeComponent(facebookRedirectUri)}'
         '&scope=email,public_profile'
         '&response_type=token';
   }

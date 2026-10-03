@@ -7,50 +7,22 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
 import '../../auth/presentation/widgets/guest_setup_dialog.dart';
-import 'widgets/menu_card.dart';
-import 'widgets/user_profile_bar.dart';
+import '../../game/presentation/controllers/game_controller.dart';
+import '../../game/presentation/widgets/mode_config_dialog.dart';
+import 'widgets/lobby_bottom_nav.dart';
+import 'widgets/lobby_center_graphic.dart';
+import 'widgets/lobby_game_card.dart';
+import 'widgets/lobby_header_bar.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
-  static const List<MenuCardData> _menuCards = [
-    MenuCardData(
-      title: 'Online Multiplayer',
-      subtitle: 'Play live with players worldwide',
-      icon: Icons.public_rounded,
-      gradientColors: [AppColors.royalBlue, Color(0xFF1E3A8A)],
-    ),
-    MenuCardData(
-      title: 'Team Up 2v2',
-      subtitle: 'Join forces with a teammate',
-      icon: Icons.groups_rounded,
-      gradientColors: [Color(0xFF8B5CF6), Color(0xFF5B21B6)],
-    ),
-    MenuCardData(
-      title: 'Play with Friends',
-      subtitle: 'Create room & invite friends',
-      icon: Icons.diversity_3_rounded,
-      gradientColors: [Color(0xFFEC4899), Color(0xFF9D174D)],
-    ),
-    MenuCardData(
-      title: 'Vs Computer',
-      subtitle: 'Offline practice vs smart AI',
-      icon: Icons.smart_toy_rounded,
-      gradientColors: [AppColors.green, Color(0xFF15803D)],
-    ),
-    MenuCardData(
-      title: 'Pass & Play',
-      subtitle: 'Local play on same device',
-      icon: Icons.phone_android_rounded,
-      gradientColors: [Color(0xFFF97316), Color(0xFFC2410C)],
-    ),
-    MenuCardData(
-      title: 'Tournament',
-      subtitle: 'Compete for mega coin rewards',
-      icon: Icons.emoji_events_rounded,
-      gradientColors: [AppColors.gold, Color(0xFFB45309)],
-    ),
-  ];
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  int _currentNavIndex = 0;
 
   void _showComingSoonSnackBar(BuildContext context, String modeName) {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -81,7 +53,25 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  void _showProfileInfoDialog(BuildContext context, WidgetRef ref) {
+  void _launchGameMode(BuildContext context, {required bool isVsComputer, required String title}) {
+    final user = ref.read(authControllerProvider).user;
+    final playerName = user?.name ?? 'Player 1';
+    final avatarUrl = user?.avatarUrl;
+
+    ModeConfigDialog.show(
+      context,
+      title: title,
+      isVsComputer: isVsComputer,
+      playerName: playerName,
+      avatarUrl: avatarUrl,
+      onStartGame: (players) {
+        ref.read(gameControllerProvider.notifier).startNewGame(players: players);
+        context.push('/game');
+      },
+    );
+  }
+
+  void _showProfileInfoDialog(BuildContext context) {
     final user = ref.read(authControllerProvider).user;
     if (user == null) return;
 
@@ -192,7 +182,7 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  void _showSettingsDialog(BuildContext context, WidgetRef ref) {
+  void _showSettingsDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -269,138 +259,125 @@ class HomeScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
     final user = authState.user;
     final playerName = user?.name ?? 'Guest Player';
     final avatarUrl = user?.avatarUrl;
-    final country = user?.country ?? 'Netherlands';
     final countryFlag = user?.countryFlag ?? '🇳🇱';
-    final diamonds = user?.diamonds ?? 50;
-    final coins = user?.coins ?? 2350;
+    final diamonds = user?.diamonds ?? 150;
+    final coins = user?.coins ?? 50;
 
     final mediaQuery = MediaQuery.sizeOf(context);
     final isTablet = mediaQuery.width >= 650;
-    final crossAxisCount = isTablet ? 3 : 2;
 
     return Scaffold(
-      backgroundColor: AppColors.bgDark,
+      backgroundColor: const Color(0xFF07122E),
       body: Column(
         children: [
-          // Top User Profile Bar
-          UserProfileBar(
+          // Top Header Bar
+          LobbyHeaderBar(
             playerName: playerName,
             avatarUrl: avatarUrl,
-            country: country,
             countryFlag: countryFlag,
             diamonds: diamonds,
             coins: coins,
-            onProfilePressed: () => _showProfileInfoDialog(context, ref),
-            onSettingsPressed: () => _showSettingsDialog(context, ref),
+            level: 3,
+            onProfilePressed: () => _showProfileInfoDialog(context),
+            onSettingsPressed: () => _showSettingsDialog(context),
+            onInboxPressed: () => _showComingSoonSnackBar(context, 'Mailbox Inbox'),
+            onShopPressed: () => _showComingSoonSnackBar(context, 'Coin & Diamond Store'),
           ),
 
-          // Main Game Modes Grid
+          // Main Lobby Content Area
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
               physics: const BouncingScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Banner Header
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppColors.bgNavy, AppColors.bgCard],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: AppColors.gold.withValues(alpha: 0.5), width: 1.5),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.gold.withValues(alpha: 0.15),
-                          blurRadius: 15,
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'WELCOME TO LUDO WORLD FREE!',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.gold,
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Select a game mode below to start playing. All modes are 100% free!',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ],
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: isTablet ? 600 : double.infinity,
+                  ),
+                  child: Column(
+                    children: [
+                      // Top Logo & Centerpiece Graphic
+                      const LobbyCenterGraphic(),
+
+                      const SizedBox(height: 12),
+
+                      // Row 1: 3 Vibrant Gold Game Cards (ONLINE, TEAM UP, FRIENDS)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: LobbyGameCard(
+                              title: 'ONLINE',
+                              playerCount: '218,675',
+                              cardType: LobbyCardType.online,
+                              onTap: () => _showComingSoonSnackBar(context, 'Online Multiplayer'),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Icon(
-                          Icons.sports_esports_rounded,
-                          size: 42,
-                          color: AppColors.gold,
-                        ),
-                      ],
-                    ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: LobbyGameCard(
+                              title: 'TEAM UP',
+                              playerCount: '4,144',
+                              cardType: LobbyCardType.teamUp,
+                              onTap: () => _showComingSoonSnackBar(context, 'Team Up 2v2'),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: LobbyGameCard(
+                              title: 'FRIENDS',
+                              playerCount: '16,393',
+                              cardType: LobbyCardType.friends,
+                              onTap: () => _showComingSoonSnackBar(context, 'Play with Friends'),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Row 2: 2 Vibrant Gold Game Cards (COMPUTER & PASS N PLAY)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: LobbyGameCard(
+                              title: 'COMPUTER',
+                              cardType: LobbyCardType.computer,
+                              onTap: () => _launchGameMode(context, isVsComputer: true, title: 'Vs Computer'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: LobbyGameCard(
+                              title: 'PASS N PLAY',
+                              cardType: LobbyCardType.passNPlay,
+                              onTap: () => _launchGameMode(context, isVsComputer: false, title: 'Pass & Play'),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 10),
+                    ],
                   ),
-
-                  const SizedBox(height: 20),
-
-                  // Menu Section Label
-                  Text(
-                    'SELECT GAME MODE',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                      color: Colors.white70,
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Grid of 6 Menu Cards
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _menuCards.length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxisCount,
-                      crossAxisSpacing: 14,
-                      mainAxisSpacing: 14,
-                      childAspectRatio: isTablet ? 1.35 : 1.15,
-                    ),
-                    itemBuilder: (context, index) {
-                      final cardData = _menuCards[index];
-                      return MenuCard(
-                        data: cardData,
-                        onTap: () => _showComingSoonSnackBar(context, cardData.title),
-                      );
-                    },
-                  ),
-
-                  const SizedBox(height: 20),
-                ],
+                ),
               ),
             ),
+          ),
+
+          // Bottom Navigation Bar (HOME, LIVE CHAT, SOCIAL)
+          LobbyBottomNav(
+            selectedIndex: _currentNavIndex,
+            onTap: (index) {
+              setState(() => _currentNavIndex = index);
+              if (index != 0) {
+                _showComingSoonSnackBar(context, index == 1 ? 'Live Voice Chat' : 'Social Hub');
+              }
+            },
           ),
         ],
       ),
