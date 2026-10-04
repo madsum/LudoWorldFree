@@ -141,8 +141,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                 ),
                 const SizedBox(width: 7),
                 _PlayerDie(
-                  value:
-                      widget.isCurrentTurn ? widget.gameState.diceValue : null,
+                  value: widget.gameState.playerDiceValues[widget.player.id],
                   isRolling: isRolling,
                   isActive: widget.isCurrentTurn &&
                       widget.gameState.turnPhase == GameTurnPhase.rollDice &&

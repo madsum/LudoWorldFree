@@ -38,6 +38,7 @@ class GameState {
   final List<PlayerModel> players;
   final int currentTurnIndex;
   final int? diceValue;
+  final Map<String, int> playerDiceValues;
   final GameTurnPhase turnPhase;
   final int consecutiveSixes;
   final bool isDiceRolling;
@@ -52,6 +53,7 @@ class GameState {
     required this.players,
     this.currentTurnIndex = 0,
     this.diceValue,
+    this.playerDiceValues = const {},
     this.turnPhase = GameTurnPhase.rollDice,
     this.consecutiveSixes = 0,
     this.isDiceRolling = false,
@@ -70,6 +72,7 @@ class GameState {
     List<PlayerModel>? players,
     int? currentTurnIndex,
     int? diceValue,
+    Map<String, int>? playerDiceValues,
     bool clearDiceValue = false,
     GameTurnPhase? turnPhase,
     int? consecutiveSixes,
@@ -85,6 +88,7 @@ class GameState {
       players: players ?? this.players,
       currentTurnIndex: currentTurnIndex ?? this.currentTurnIndex,
       diceValue: clearDiceValue ? null : (diceValue ?? this.diceValue),
+      playerDiceValues: playerDiceValues ?? this.playerDiceValues,
       turnPhase: turnPhase ?? this.turnPhase,
       consecutiveSixes: consecutiveSixes ?? this.consecutiveSixes,
       isDiceRolling: isDiceRolling ?? this.isDiceRolling,

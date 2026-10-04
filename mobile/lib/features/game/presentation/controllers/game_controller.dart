@@ -63,6 +63,10 @@ class GameNotifier extends StateNotifier<GameState> {
     if (consecutive6 == 3) {
       state = state.copyWith(
         diceValue: diceResult,
+        playerDiceValues: {
+          ...state.playerDiceValues,
+          state.currentPlayer.id: diceResult,
+        },
         consecutiveSixes: 0,
         isDiceRolling: false,
         turnPhase: GameTurnPhase.turnEnded,
@@ -78,6 +82,10 @@ class GameNotifier extends StateNotifier<GameState> {
     if (movable.isEmpty) {
       state = state.copyWith(
         diceValue: diceResult,
+        playerDiceValues: {
+          ...state.playerDiceValues,
+          state.currentPlayer.id: diceResult,
+        },
         consecutiveSixes: consecutive6,
         isDiceRolling: false,
         turnPhase: GameTurnPhase.turnEnded,
@@ -102,6 +110,10 @@ class GameNotifier extends StateNotifier<GameState> {
     } else {
       state = state.copyWith(
         diceValue: diceResult,
+        playerDiceValues: {
+          ...state.playerDiceValues,
+          state.currentPlayer.id: diceResult,
+        },
         consecutiveSixes: consecutive6,
         isDiceRolling: false,
         movablePawns: movable,
