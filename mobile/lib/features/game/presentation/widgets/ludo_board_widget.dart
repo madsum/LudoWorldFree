@@ -70,12 +70,6 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
           // Check if pawn needs to animate to a new target step
           if (currentVisualStep != targetStep &&
               !_activeControllers.containsKey(key)) {
-            // Captured pawns return to their yard immediately; they do not
-            // walk backward through the track.
-            if (targetStep == -1 && currentVisualStep >= 0) {
-              _visualSteps[key] = -1;
-              continue;
-            }
             _startPawnMovementAnimation(
               key: key,
               color: pawn.color,
@@ -110,11 +104,12 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     }
 
     final totalSteps = math.max(1, pathSequence.length - 1);
-    final durationMs = totalSteps * 130;
+    final durationMicroseconds =
+        toStep == -1 ? totalSteps * 130000 ~/ 3 : totalSteps * 130000;
 
     final controller = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: durationMs),
+      duration: Duration(microseconds: durationMicroseconds),
     );
 
     _activeControllers[key] = controller;

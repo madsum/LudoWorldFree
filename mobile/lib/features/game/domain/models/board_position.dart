@@ -95,6 +95,13 @@ class BoardPosition {
       // Leaving the yard and entering the main track at step 0.
       path.add(getYardPositions(color)[pawnId]);
       path.add(getPositionForStep(color, pawnId, 0));
+    } else if (toStep == -1) {
+      // Captured pawns walk backward along their route before returning to
+      // their yard.
+      for (int step = fromStep; step >= 0; step--) {
+        path.add(getPositionForStep(color, pawnId, step));
+      }
+      path.add(getYardPositions(color)[pawnId]);
     } else {
       // Moving step-by-step along main track & home stretch
       for (int step = fromStep; step <= toStep; step++) {

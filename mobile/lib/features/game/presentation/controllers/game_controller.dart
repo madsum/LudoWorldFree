@@ -242,9 +242,21 @@ class GameNotifier extends StateNotifier<GameState> {
       statusMessage: statusMsg,
     );
 
-    // Calculate animation duration based on steps count (130ms per step + 200ms settling)
-    final animDurationMs = moveEvent.stepsCount * 130 + 200;
-    await Future.delayed(Duration(milliseconds: animDurationMs));
+    // Keep the turn animating until both the selected pawn's move and any
+    // captured pawn's return to its yard have completed.
+    final moveAnimationSteps = moveEvent.stepsCount;
+    final captureAnimationSteps = capturedPawn == null
+        ? 0
+        : capturedPawn.stepCount + 1; // Back to step 0, then into the yard.
+    final moveDurationMicroseconds = moveAnimationSteps * 130000;
+    final captureDurationMicroseconds = captureAnimationSteps * 130000 ~/ 3;
+    final animDurationMicroseconds = math
+            .max(moveDurationMicroseconds, captureDurationMicroseconds)
+            .toInt() +
+        200000;
+    await Future.delayed(
+      Duration(microseconds: animDurationMicroseconds),
+    );
 
     if (isGameOver) {
       state = state.copyWith(
