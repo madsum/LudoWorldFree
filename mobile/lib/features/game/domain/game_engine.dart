@@ -32,7 +32,8 @@ class GameEngine {
       } else {
         // On board or in home stretch
         final targetStep = pawn.stepCount + diceValue;
-        if (targetStep <= 57) {
+        // Ludo requires an exact roll to reach the finish step.
+        if (targetStep >= 0 && targetStep <= 57) {
           movable.add(pawn);
         }
       }

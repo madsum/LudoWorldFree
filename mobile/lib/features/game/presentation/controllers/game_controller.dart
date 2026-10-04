@@ -152,6 +152,9 @@ class GameNotifier extends StateNotifier<GameState> {
 
     final fromStep = pawn.stepCount;
     final newStepCount = isYardMove ? 0 : (fromStep + dice);
+    // Revalidate against the latest pawn position so stale movable-pawn data
+    // cannot let a pawn overshoot the exact finish step.
+    if (!isYardMove && newStepCount > 57) return;
 
     final moveEvent = PawnMoveEvent(
       color: pawn.color,

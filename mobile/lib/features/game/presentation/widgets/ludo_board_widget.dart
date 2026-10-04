@@ -210,7 +210,6 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
       for (final pawn in player.pawns) {
         final key = '${pawn.color.name}_${pawn.id}';
         final animationController = _activeControllers[key];
-        if (pawn.isFinished && animationController == null) continue;
 
         if (animationController != null) {
           final path = _animationPaths[key]!;
