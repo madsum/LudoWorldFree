@@ -70,6 +70,7 @@ class GameState {
     List<PlayerModel>? players,
     int? currentTurnIndex,
     int? diceValue,
+    bool clearDiceValue = false,
     GameTurnPhase? turnPhase,
     int? consecutiveSixes,
     bool? isDiceRolling,
@@ -83,7 +84,7 @@ class GameState {
     return GameState(
       players: players ?? this.players,
       currentTurnIndex: currentTurnIndex ?? this.currentTurnIndex,
-      diceValue: diceValue,
+      diceValue: clearDiceValue ? null : (diceValue ?? this.diceValue),
       turnPhase: turnPhase ?? this.turnPhase,
       consecutiveSixes: consecutiveSixes ?? this.consecutiveSixes,
       isDiceRolling: isDiceRolling ?? this.isDiceRolling,
