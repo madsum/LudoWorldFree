@@ -5,7 +5,9 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../domain/models/game_state.dart';
+import '../../domain/models/ludo_color.dart';
 import '../../domain/models/player_model.dart';
+import 'ludo_pawn_icon.dart';
 
 class PlayerInfoCard extends StatefulWidget {
   final PlayerModel player;
@@ -100,56 +102,78 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                   ),
               ],
             ),
-            child: Row(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 13,
-                  height: 13,
-                  decoration: BoxDecoration(
-                    color: widget.player.color.color,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (widget.showName)
-                        Text(
-                          widget.player.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.poppins(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      Text(
-                        'Home: ${widget.player.finishedPawnsCount}/4',
-                        style: GoogleFonts.poppins(
-                          fontSize: 9,
-                          color: Colors.white70,
-                        ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 13,
+                      height: 13,
+                      decoration: BoxDecoration(
+                        color: widget.player.color.color,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
                       ),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (widget.showName)
+                            Text(
+                              widget.player.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          Text(
+                            'Home: ${widget.player.finishedPawnsCount}/4',
+                            style: GoogleFonts.poppins(
+                              fontSize: 9,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    _PlayerDie(
+                      value:
+                          widget.gameState.playerDiceValues[widget.player.id],
+                      isRolling: isRolling,
+                      isActive: widget.isCurrentTurn &&
+                          widget.gameState.turnPhase ==
+                              GameTurnPhase.rollDice &&
+                          !widget.gameState.isGameOver,
+                      canRoll: canRoll,
+                      color: widget.player.color.color,
+                      onTap: widget.onRoll,
+                    ),
+                  ],
+                ),
+                if (_opponentColors.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 2,
+                    children: [
+                      for (final color in _opponentColors)
+                        _OpponentKillStat(
+                          color: color,
+                          count: widget.player.killCounts[color] ?? 0,
+                        ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 7),
-                _PlayerDie(
-                  value: widget.gameState.playerDiceValues[widget.player.id],
-                  isRolling: isRolling,
-                  isActive: widget.isCurrentTurn &&
-                      widget.gameState.turnPhase == GameTurnPhase.rollDice &&
-                      !widget.gameState.isGameOver,
-                  canRoll: canRoll,
-                  color: widget.player.color.color,
-                  onTap: widget.onRoll,
-                ),
+                ],
               ],
             ),
           ),
@@ -157,6 +181,48 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
       },
     );
   }
+
+  List<LudoColor> get _opponentColors => widget.gameState.players
+      .map((player) => player.color)
+      .where((color) => color != widget.player.color)
+      .toSet()
+      .toList(growable: false);
+}
+
+class _OpponentKillStat extends StatelessWidget {
+  final LudoColor color;
+  final int count;
+
+  const _OpponentKillStat({required this.color, required this.count});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        label: '${color.displayName} tokens killed: $count',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            LudoPawnIcon(color: color, size: 15),
+            const SizedBox(width: 3),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(scale: animation, child: child),
+              ),
+              child: Text(
+                'Killed: $count',
+                key: ValueKey(count),
+                style: GoogleFonts.poppins(
+                  fontSize: 8,
+                  height: 1.1,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class _PlayerDie extends StatefulWidget {

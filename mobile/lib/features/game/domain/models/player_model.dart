@@ -9,6 +9,7 @@ class PlayerModel {
   final bool isBot;
   final List<PawnModel> pawns;
   final int rank; // 0: Not finished, 1: 1st Place, 2: 2nd, 3: 3rd, 4: 4th
+  final Map<LudoColor, int> killCounts;
 
   const PlayerModel({
     required this.id,
@@ -18,6 +19,7 @@ class PlayerModel {
     required this.isBot,
     required this.pawns,
     this.rank = 0,
+    this.killCounts = const {},
   });
 
   bool get isWinner => rank > 0;
@@ -41,6 +43,9 @@ class PlayerModel {
         4,
         (index) => PawnModel(id: index, color: color, stepCount: -1),
       ),
+      killCounts: {
+        for (final opponentColor in LudoColor.values) opponentColor: 0
+      },
     );
   }
 
@@ -49,6 +54,7 @@ class PlayerModel {
     String? avatarUrl,
     List<PawnModel>? pawns,
     int? rank,
+    Map<LudoColor, int>? killCounts,
   }) {
     return PlayerModel(
       id: id,
@@ -58,6 +64,7 @@ class PlayerModel {
       isBot: isBot,
       pawns: pawns ?? this.pawns,
       rank: rank ?? this.rank,
+      killCounts: killCounts ?? this.killCounts,
     );
   }
 }

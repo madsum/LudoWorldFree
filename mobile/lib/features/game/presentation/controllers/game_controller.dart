@@ -232,7 +232,15 @@ class GameNotifier extends StateNotifier<GameState> {
             .map((candidate) =>
                 candidate.id == pawn.id ? updatedPawn : candidate)
             .toList();
-        return p.copyWith(pawns: newPawns);
+        final newKillCounts = Map<LudoColor, int>.from(p.killCounts);
+        if (capturedColor != null) {
+          newKillCounts.update(
+            capturedColor,
+            (count) => count + 1,
+            ifAbsent: () => 1,
+          );
+        }
+        return p.copyWith(pawns: newPawns, killCounts: newKillCounts);
       } else if (capturedColor != null && p.color == capturedColor) {
         final newPawns = p.pawns
             .map((pawn) => pawn.id == capturedPawn!.id
