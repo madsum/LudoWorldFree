@@ -33,6 +33,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
 
   /// Stores paths for moving pawns so only each pawn subtree animates.
   final Map<String, List<BoardPosition>> _animationPaths = {};
+  final Set<String> _pendingCaptureReturns = {};
 
   @override
   void initState() {
@@ -70,6 +71,14 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
           // Check if pawn needs to animate to a new target step
           if (currentVisualStep != targetStep &&
               !_activeControllers.containsKey(key)) {
+            final capture = widget.gameState.lastCaptureEvent;
+            if (targetStep == -1 &&
+                currentVisualStep >= 0 &&
+                capture?.color == pawn.color &&
+                capture?.pawnId == pawn.id) {
+              _pendingCaptureReturns.add(key);
+              continue;
+            }
             _startPawnMovementAnimation(
               key: key,
               color: pawn.color,
@@ -81,6 +90,24 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
         }
       }
     }
+  }
+
+  void _startCapturedPawnReturn(PawnCaptureEvent capture) {
+    final key = '${capture.color.name}_${capture.pawnId}';
+    if (!mounted || !_pendingCaptureReturns.remove(key)) return;
+
+    final fromStep = _visualSteps[key];
+    if (fromStep == null || fromStep < 0) return;
+
+    setState(() {
+      _startPawnMovementAnimation(
+        key: key,
+        color: capture.color,
+        pawnId: capture.pawnId,
+        fromStep: fromStep,
+        toStep: -1,
+      );
+    });
   }
 
   /// Animates pawn square-by-square from [fromStep] to [toStep]
@@ -111,7 +138,6 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
       vsync: this,
       duration: Duration(microseconds: durationMicroseconds),
     );
-
     _activeControllers[key] = controller;
     _animationPaths[key] = pathSequence;
 
@@ -184,6 +210,9 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                               ),
                               capture: widget.gameState.lastCaptureEvent!,
                               tileSize: tileSize,
+                              onComplete: () => _startCapturedPawnReturn(
+                                widget.gameState.lastCaptureEvent!,
+                              ),
                             ),
                           ..._buildPlayerNamePlates(tileSize),
                         ],
@@ -214,6 +243,8 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
         if (animationController != null) {
           final path = _animationPaths[key]!;
           final totalSteps = math.max(1, path.length - 1);
+          final finishCenter =
+              pawn.isFinished ? _finishedPawnCenter(pawn.color, pawn.id) : null;
           final start = path.first;
           widgets.add(
             Positioned(
@@ -243,14 +274,24 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                   final stepProgress = progress - currentIdx;
                   final from = path[currentIdx];
                   final to = path[nextIdx];
-                  final posX = from.x + (to.x - from.x) * stepProgress;
-                  final posY = from.y + (to.y - from.y) * stepProgress;
+                  final toX = finishCenter != null && nextIdx == totalSteps
+                      ? finishCenter.dx - 0.5
+                      : to.x.toDouble();
+                  final toY = finishCenter != null && nextIdx == totalSteps
+                      ? finishCenter.dy - 0.5
+                      : to.y.toDouble();
+                  final animatedPosX = from.x + (toX - from.x) * stepProgress;
+                  final animatedPosY = from.y + (toY - from.y) * stepProgress;
                   final bounce = math.sin(stepProgress * math.pi);
-                  final scale = 1 + (0.16 * bounce);
+                  final finishShrink =
+                      finishCenter != null && nextIdx == totalSteps
+                          ? 1 - stepProgress * (1 - (0.40 / 0.82))
+                          : 1.0;
+                  final scale = (1 + (0.16 * bounce)) * finishShrink;
 
                   return Transform.translate(
-                    offset: Offset((posX - start.x) * tileSize,
-                        (posY - start.y) * tileSize),
+                    offset: Offset((animatedPosX - start.x) * tileSize,
+                        (animatedPosY - start.y) * tileSize),
                     child: Transform.scale(scale: scale, child: child),
                   );
                 },
@@ -263,7 +304,10 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
           final pos =
               BoardPosition.getPositionForStep(pawn.color, pawn.id, visualStep);
 
-          final tileKey = '${pos.x}_${pos.y}';
+          final isFinishedPawn = pawn.isFinished;
+          final tileKey = isFinishedPawn
+              ? 'finished_${pawn.color.name}'
+              : '${pos.x}_${pos.y}';
           final isMovable =
               widget.gameState.turnPhase == GameTurnPhase.selectPawn &&
                   widget.gameState.currentPlayer.color == pawn.color &&
@@ -274,6 +318,9 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
           staticTileOccupants[tileKey]!.add({
             'pawn': pawn,
             'pos': pos,
+            'finishCenter': isFinishedPawn
+                ? _finishedPawnCenter(pawn.color, pawn.id)
+                : null,
             'isMovable': isMovable,
           });
         }
@@ -288,6 +335,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
         final item = occupantList[i];
         final PawnModel pawn = item['pawn'];
         final BoardPosition pos = item['pos'];
+        final Offset? finishCenter = item['finishCenter'];
         final bool isMovable = item['isMovable'];
 
         // Sub-grid stacking offsets
@@ -295,7 +343,11 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
         double offsetY = 0.0;
         double pawnScale = 0.82;
 
-        if (totalOnTile == 2) {
+        if (finishCenter != null) {
+          // Reserve a distinct spot for each finished pawn inside its own
+          // colored triangle so all four remain visible.
+          pawnScale = 0.40;
+        } else if (totalOnTile == 2) {
           pawnScale = 0.58;
           offsetX = (i == 0 ? -0.18 : 0.18) * tileSize;
         } else if (totalOnTile >= 3) {
@@ -306,10 +358,12 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
           offsetY = (row == 0 ? -0.20 : 0.20) * tileSize;
         }
 
-        final left =
-            (pos.x * tileSize) + (tileSize * (1.0 - pawnScale) / 2) + offsetX;
-        final top =
-            (pos.y * tileSize) + (tileSize * (1.0 - pawnScale) / 2) + offsetY;
+        final left = finishCenter != null
+            ? finishCenter.dx * tileSize - tileSize * pawnScale / 2
+            : (pos.x * tileSize) + (tileSize * (1.0 - pawnScale) / 2) + offsetX;
+        final top = finishCenter != null
+            ? finishCenter.dy * tileSize - tileSize * pawnScale / 2
+            : (pos.y * tileSize) + (tileSize * (1.0 - pawnScale) / 2) + offsetY;
         final size = tileSize * pawnScale;
 
         widgets.add(
@@ -335,6 +389,18 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     return widgets;
   }
 
+  Offset _finishedPawnCenter(LudoColor color, int pawnId) {
+    final wedgeCenter = switch (color) {
+      LudoColor.red => const Offset(6.45, 7.5),
+      LudoColor.green => const Offset(7.5, 6.45),
+      LudoColor.yellow => const Offset(8.55, 7.5),
+      LudoColor.blue => const Offset(7.5, 8.55),
+    };
+    final xOffset = pawnId.isEven ? -0.20 : 0.20;
+    final yOffset = pawnId < 2 ? -0.20 : 0.20;
+    return Offset(wedgeCenter.dx + xOffset, wedgeCenter.dy + yOffset);
+  }
+
   List<Widget> _buildPlayerNamePlates(double tileSize) {
     return widget.gameState.players.map((player) {
       final isTop =
@@ -355,6 +421,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
             child: _PlayerNamePlate(
               name: player.name,
               color: player.color,
+              rank: player.rank,
               isActive: widget.gameState.currentPlayer.id == player.id &&
                   !widget.gameState.isGameOver,
             ),
@@ -368,11 +435,13 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
 class _PlayerNamePlate extends StatefulWidget {
   final String name;
   final LudoColor color;
+  final int rank;
   final bool isActive;
 
   const _PlayerNamePlate({
     required this.name,
     required this.color,
+    required this.rank,
     required this.isActive,
   });
 
@@ -445,21 +514,77 @@ class _PlayerNamePlateState extends State<_PlayerNamePlate>
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    widget.name,
-                    maxLines: 1,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          widget.name,
+                          maxLines: 1,
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  if (widget.rank > 0) ...[
+                    const SizedBox(width: 4),
+                    TweenAnimationBuilder<double>(
+                      key: ValueKey('rank_${widget.rank}'),
+                      tween: Tween(begin: 0, end: 1),
+                      duration: const Duration(milliseconds: 620),
+                      curve: Curves.easeOutBack,
+                      builder: (context, progress, child) => Transform.scale(
+                        scale: progress,
+                        child: child,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [
+                              Color(0xFFFFF1A8),
+                              Color(0xFFFFC928),
+                              Color(0xFFD98B00),
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.gold.withValues(alpha: 0.7),
+                              blurRadius: 7,
+                              spreadRadius: 0.5,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.emoji_events_rounded,
+                                size: 10, color: Color(0xFF593500)),
+                            const SizedBox(width: 2),
+                            Text(
+                              '${widget.rank}',
+                              style: GoogleFonts.poppins(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: const Color(0xFF593500),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
@@ -472,11 +597,13 @@ class _PlayerNamePlateState extends State<_PlayerNamePlate>
 class _CaptureBurst extends StatefulWidget {
   final PawnCaptureEvent capture;
   final double tileSize;
+  final VoidCallback onComplete;
 
   const _CaptureBurst({
     super.key,
     required this.capture,
     required this.tileSize,
+    required this.onComplete,
   });
 
   @override
@@ -487,8 +614,17 @@ class _CaptureBurstState extends State<_CaptureBurst>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 520),
-  )..forward();
+    duration: const Duration(milliseconds: 620),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) widget.onComplete();
+    });
+    _controller.forward();
+  }
 
   @override
   void dispose() {
@@ -500,14 +636,14 @@ class _CaptureBurstState extends State<_CaptureBurst>
   Widget build(BuildContext context) {
     final position = BoardPosition.mainTrack[widget.capture.globalTrackIndex];
     final tile = widget.tileSize;
-    final extent = tile * 1.8;
+    final extent = tile * 2.2;
     final colors = [
-      widget.capture.color.color,
-      AppColors.gold,
+      Colors.deepOrange,
+      Colors.orange,
+      Colors.amber,
       Colors.white,
       widget.capture.color.color,
-      AppColors.gold,
-      Colors.white,
+      Colors.redAccent,
     ];
 
     return Positioned(
@@ -521,33 +657,95 @@ class _CaptureBurstState extends State<_CaptureBurst>
           builder: (context, _) {
             final progress = _controller.value;
             if (progress >= 1) return const SizedBox.shrink();
+            final fade = (1 - progress).clamp(0.0, 1.0).toDouble();
+            final flameScale = 0.72 + math.sin(progress * math.pi) * 0.55;
             return Stack(
-              children: List.generate(colors.length, (index) {
-                final angle = (math.pi * 2 * index) / colors.length;
-                final distance = tile * 0.58 * progress;
-                final dotSize = tile * 0.10 * (1 - progress * 0.45);
-                return Positioned(
-                  left: extent / 2 + math.cos(angle) * distance - dotSize / 2,
-                  top: extent / 2 + math.sin(angle) * distance - dotSize / 2,
-                  width: dotSize,
-                  height: dotSize,
-                  child: Opacity(
-                    opacity: (1 - progress).clamp(0.0, 1.0).toDouble(),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: colors[index],
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: colors[index].withValues(alpha: 0.55),
-                            blurRadius: 5,
+              alignment: Alignment.center,
+              children: [
+                Opacity(
+                  opacity: fade * 0.8,
+                  child: Container(
+                    width: tile * (0.55 + progress * 0.35),
+                    height: tile * (0.55 + progress * 0.35),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.deepOrange.withValues(alpha: 0.22),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.deepOrange.withValues(alpha: 0.75),
+                          blurRadius: tile * (0.22 + progress * 0.18),
+                          spreadRadius: tile * 0.06,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Transform.translate(
+                  offset: Offset(0, -tile * 0.18 * progress),
+                  child: Transform.scale(
+                    scale: flameScale,
+                    child: Opacity(
+                      opacity: fade,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Icon(
+                            Icons.local_fire_department_rounded,
+                            size: tile * 1.28,
+                            color: Colors.redAccent.withValues(alpha: 0.88),
+                            shadows: const [
+                              Shadow(color: Colors.deepOrange, blurRadius: 16),
+                            ],
+                          ),
+                          Icon(
+                            Icons.local_fire_department_rounded,
+                            size: tile * 0.92,
+                            color: Colors.orange,
+                          ),
+                          Positioned(
+                            bottom: tile * 0.20,
+                            child: Icon(
+                              Icons.local_fire_department_rounded,
+                              size: tile * 0.44,
+                              color: Colors.yellowAccent,
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ),
-                );
-              }),
+                ),
+                ...List.generate(colors.length, (index) {
+                  final angle = (math.pi * 2 * index) / colors.length;
+                  final distance = tile * (0.22 + 0.55 * progress);
+                  final sparkSize = tile * 0.11 * (1 - progress * 0.55);
+                  return Positioned(
+                    left:
+                        extent / 2 + math.cos(angle) * distance - sparkSize / 2,
+                    top:
+                        extent / 2 + math.sin(angle) * distance - sparkSize / 2,
+                    width: sparkSize,
+                    height: sparkSize,
+                    child: Opacity(
+                      opacity: fade,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: RadialGradient(
+                            colors: [Colors.white, colors[index]],
+                          ),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: colors[index].withValues(alpha: 0.8),
+                              blurRadius: 6,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
             );
           },
         ),
@@ -654,39 +852,24 @@ class _PawnTileWidgetState extends State<_PawnTileWidget>
                       ],
                     ),
                   ),
-                Container(
+                SizedBox(
                   width: widget.size * 0.88,
                   height: widget.size * 0.88,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        widget.color.lightColor,
-                        baseColor,
-                        Color.lerp(baseColor, Colors.black, 0.45)!,
-                      ],
-                      center: const Alignment(-0.3, -0.35),
-                      radius: 0.85,
+                  child: CustomPaint(
+                    painter: _GlossyPawnPainter(
+                      color: baseColor,
+                      highlightColor: widget.color.lightColor,
                     ),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      width: 1.8,
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Colors.black54,
-                        blurRadius: 5,
-                        offset: Offset(0, 3),
-                      ),
-                    ],
+                    child: widget.isMovable
+                        ? Center(
+                            child: Icon(
+                              Icons.arrow_downward_rounded,
+                              color: Colors.white.withValues(alpha: 0.95),
+                              size: widget.size * 0.24,
+                            ),
+                          )
+                        : null,
                   ),
-                  child: widget.isMovable
-                      ? const Icon(
-                          Icons.arrow_downward_rounded,
-                          color: Colors.white,
-                          size: 12,
-                        )
-                      : null,
                 ),
               ],
             ),
@@ -695,6 +878,131 @@ class _PawnTileWidgetState extends State<_PawnTileWidget>
       ),
     );
   }
+}
+
+class _GlossyPawnPainter extends CustomPainter {
+  final Color color;
+  final Color highlightColor;
+
+  const _GlossyPawnPainter({
+    required this.color,
+    required this.highlightColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final unit = math.min(size.width, size.height);
+    final cx = size.width / 2;
+
+    final body = Path()
+      ..moveTo(cx - unit * 0.12, unit * 0.37)
+      ..cubicTo(cx - unit * 0.11, unit * 0.48, cx - unit * 0.27, unit * 0.53,
+          cx - unit * 0.35, unit * 0.68)
+      ..cubicTo(cx - unit * 0.44, unit * 0.83, cx - unit * 0.41, unit * 0.94,
+          cx - unit * 0.29, unit * 0.97)
+      ..cubicTo(cx - unit * 0.16, unit * 1.01, cx + unit * 0.16, unit * 1.01,
+          cx + unit * 0.29, unit * 0.97)
+      ..cubicTo(cx + unit * 0.41, unit * 0.94, cx + unit * 0.44, unit * 0.83,
+          cx + unit * 0.35, unit * 0.68)
+      ..cubicTo(cx + unit * 0.27, unit * 0.53, cx + unit * 0.11, unit * 0.48,
+          cx + unit * 0.12, unit * 0.37)
+      ..close();
+
+    final headCenter = Offset(cx, unit * 0.245);
+    final headRadius = unit * 0.225;
+    final silhouette = Path()
+      ..addPath(body, Offset.zero)
+      ..addOval(Rect.fromCircle(center: headCenter, radius: headRadius));
+
+    canvas.drawPath(
+      silhouette.shift(Offset(0, unit * 0.035)),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.50)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, unit * 0.10),
+    );
+
+    final bodyBounds = body.getBounds();
+    final bodyPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color.lerp(highlightColor, Colors.white, 0.28)!,
+          highlightColor,
+          color,
+          Color.lerp(color, Colors.black, 0.62)!,
+        ],
+        stops: const [0, 0.22, 0.62, 1],
+      ).createShader(bodyBounds);
+    canvas.drawPath(body, bodyPaint);
+
+    final bodyOutline = Paint()
+      ..color = Color.lerp(color, Colors.black, 0.48)!
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = unit * 0.025;
+    canvas.drawPath(body, bodyOutline);
+
+    final bodyGloss = Path()
+      ..moveTo(cx - unit * 0.27, unit * 0.68)
+      ..cubicTo(cx - unit * 0.34, unit * 0.77, cx - unit * 0.32, unit * 0.91,
+          cx - unit * 0.23, unit * 0.94)
+      ..cubicTo(cx - unit * 0.18, unit * 0.95, cx - unit * 0.19, unit * 0.90,
+          cx - unit * 0.21, unit * 0.84)
+      ..cubicTo(cx - unit * 0.22, unit * 0.78, cx - unit * 0.17, unit * 0.72,
+          cx - unit * 0.13, unit * 0.66)
+      ..close();
+    canvas.drawPath(
+      bodyGloss,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0.52),
+            Colors.white.withValues(alpha: 0.08),
+          ],
+        ).createShader(bodyBounds),
+    );
+
+    final headBounds = Rect.fromCircle(center: headCenter, radius: headRadius);
+    canvas.drawCircle(
+      headCenter,
+      headRadius,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(-0.42, -0.58),
+          radius: 1.25,
+          colors: [
+            Color.lerp(highlightColor, Colors.white, 0.68)!,
+            highlightColor,
+            color,
+            Color.lerp(color, Colors.black, 0.55)!,
+          ],
+          stops: const [0, 0.22, 0.68, 1],
+        ).createShader(headBounds),
+    );
+    canvas.drawCircle(
+      headCenter,
+      headRadius,
+      Paint()
+        ..color = Color.lerp(color, Colors.black, 0.36)!
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = unit * 0.022,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(cx - unit * 0.075, unit * 0.17),
+        width: unit * 0.13,
+        height: unit * 0.055,
+      ),
+      Paint()..color = Colors.white.withValues(alpha: 0.58),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _GlossyPawnPainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.highlightColor != highlightColor;
 }
 
 /// Commercial Grade Custom Painter for Ludo World Free Board

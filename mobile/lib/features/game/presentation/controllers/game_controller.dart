@@ -32,14 +32,25 @@ class GameNotifier extends StateNotifier<GameState> {
   }) {
     _botTimer?.cancel();
     _sixSequenceSnapshot = null;
-    final humanTurnIndex = players.indexWhere((player) => !player.isBot);
+    final freshPlayers = players
+        .map(
+          (player) => PlayerModel.initial(
+            id: player.id,
+            name: player.name,
+            avatarUrl: player.avatarUrl,
+            color: player.color,
+            isBot: player.isBot,
+          ),
+        )
+        .toList();
+    final humanTurnIndex = freshPlayers.indexWhere((player) => !player.isBot);
     final startingTurnIndex = humanTurnIndex < 0 ? 0 : humanTurnIndex;
     state = GameState(
-      players: players,
+      players: freshPlayers,
       currentTurnIndex: startingTurnIndex,
       turnPhase: GameTurnPhase.rollDice,
       isDiceRolling: false,
-      statusMessage: '${players[startingTurnIndex].name}\'s turn to roll!',
+      statusMessage: '${freshPlayers[startingTurnIndex].name}\'s turn to roll!',
     );
 
     _checkBotTurn();
@@ -142,6 +153,9 @@ class GameNotifier extends StateNotifier<GameState> {
       // Auto-move for Bot
       if (state.isCurrentPlayerBot) {
         _scheduleBotMove();
+      } else if (movable.length == 1) {
+        // No choice is needed when only one pawn can legally move.
+        await movePawn(movable.single);
       }
     }
   }
@@ -206,12 +220,13 @@ class GameNotifier extends StateNotifier<GameState> {
     }
 
     // Check for Reaching Home Finish (step 57)
-    if (newStepCount == 57) {
-      earnedBonusRoll = true; // Bonus roll for completing a pawn
+    final reachedHome = newStepCount == 57;
+    if (reachedHome) {
+      earnedBonusRoll = true; // Achievement reward for completing a pawn.
     }
 
     // Apply pawn moves and captures to players list
-    final updatedPlayers = state.players.map((p) {
+    var updatedPlayers = state.players.map((p) {
       if (p.color == player.color) {
         final newPawns = p.pawns
             .map((candidate) =>
@@ -233,21 +248,39 @@ class GameNotifier extends StateNotifier<GameState> {
     final updatedCurrentPlayer =
         updatedPlayers.firstWhere((p) => p.color == player.color);
     List<String> newWinnerIds = List.from(state.winnerIds);
+    int? achievedRank;
 
     if (updatedCurrentPlayer.hasAllPawnsHome &&
         !newWinnerIds.contains(updatedCurrentPlayer.id)) {
       newWinnerIds.add(updatedCurrentPlayer.id);
+      achievedRank = newWinnerIds.length;
+      updatedPlayers = updatedPlayers
+          .map((finishedPlayer) => finishedPlayer.id == updatedCurrentPlayer.id
+              ? finishedPlayer.copyWith(rank: achievedRank)
+              : finishedPlayer)
+          .toList();
     }
 
-    final isGameOver = newWinnerIds.length >= (updatedPlayers.length - 1);
+    final isGameOver = updatedPlayers.length == 2
+        ? newWinnerIds.isNotEmpty
+        : newWinnerIds.length == updatedPlayers.length;
+    if (isGameOver && updatedPlayers.length == 2) {
+      updatedPlayers = updatedPlayers
+          .map((finishedPlayer) => finishedPlayer.rank == 0
+              ? finishedPlayer.copyWith(rank: 2)
+              : finishedPlayer)
+          .toList();
+    }
 
     String statusMsg = capturedPawn != null
         ? '${player.name} captured a token! Extra turn.'
-        : newStepCount == 57
-            ? '${player.name} reached HOME! Extra turn.'
-            : earnedBonusRoll
-                ? '${player.name} rolled a 6! Extra turn.'
-                : '${player.name} moved token.';
+        : achievedRank != null
+            ? '${player.name} takes rank $achievedRank!'
+            : reachedHome
+                ? '${player.name} reached HOME! Achievement unlocked: extra roll.'
+                : earnedBonusRoll
+                    ? '${player.name} rolled a 6! Extra turn.'
+                    : '${player.name} moved token.';
 
     // Emit animating phase and move event to presentation layer
     state = state.copyWith(
@@ -258,7 +291,8 @@ class GameNotifier extends StateNotifier<GameState> {
       lastMoveEvent: moveEvent,
       lastCaptureEvent: captureEvent,
       winnerIds: newWinnerIds,
-      isGameOver: isGameOver,
+      // Keep controls active until the winning pawn's move animation lands.
+      isGameOver: false,
       statusMessage: statusMsg,
     );
 
@@ -270,8 +304,12 @@ class GameNotifier extends StateNotifier<GameState> {
         : capturedPawn.stepCount + 1; // Back to step 0, then into the yard.
     final moveDurationMicroseconds = moveAnimationSteps * 130000;
     final captureDurationMicroseconds = captureAnimationSteps * 130000 ~/ 3;
+    const captureFlameDurationMicroseconds = 620000;
+    final captureReturnDurationMicroseconds = capturedPawn == null
+        ? 0
+        : captureFlameDurationMicroseconds + captureDurationMicroseconds;
     final animDurationMicroseconds = math
-            .max(moveDurationMicroseconds, captureDurationMicroseconds)
+            .max(moveDurationMicroseconds, captureReturnDurationMicroseconds)
             .toInt() +
         200000;
     await Future.delayed(
@@ -280,14 +318,17 @@ class GameNotifier extends StateNotifier<GameState> {
 
     if (isGameOver) {
       state = state.copyWith(
+        isGameOver: true,
         turnPhase: GameTurnPhase.turnEnded,
         statusMessage:
-            'Match complete! ${updatedPlayers.firstWhere((p) => p.id == newWinnerIds.first).name} wins.',
+            '${updatedPlayers.firstWhere((p) => p.id == newWinnerIds.first).name} wins!',
       );
       return;
     }
 
-    if (earnedBonusRoll) {
+    if (achievedRank != null) {
+      _nextTurn();
+    } else if (earnedBonusRoll) {
       state = state.copyWith(
         turnPhase: GameTurnPhase.rollDice,
       );
