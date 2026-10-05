@@ -16,6 +16,7 @@ final gameControllerProvider =
 class GameNotifier extends StateNotifier<GameState> {
   final math.Random _random = math.Random();
   Timer? _botTimer;
+  GameState? _sixSequenceSnapshot;
 
   GameNotifier() : super(const GameState(players: []));
 
@@ -30,6 +31,7 @@ class GameNotifier extends StateNotifier<GameState> {
     required List<PlayerModel> players,
   }) {
     _botTimer?.cancel();
+    _sixSequenceSnapshot = null;
     final humanTurnIndex = players.indexWhere((player) => !player.isBot);
     final startingTurnIndex = humanTurnIndex < 0 ? 0 : humanTurnIndex;
     state = GameState(
@@ -57,23 +59,38 @@ class GameNotifier extends StateNotifier<GameState> {
     await Future.delayed(const Duration(milliseconds: 650));
     final diceResult = _random.nextInt(6) + 1;
 
+    if (diceResult == 6 && state.consecutiveSixes == 0) {
+      _sixSequenceSnapshot = state;
+    } else if (diceResult != 6) {
+      _sixSequenceSnapshot = null;
+    }
+
     int consecutive6 = diceResult == 6 ? state.consecutiveSixes + 1 : 0;
 
-    // Rule: 3 consecutive 6s penalty
+    // Three consecutive sixes undo every move made during that six sequence.
     if (consecutive6 == 3) {
-      state = state.copyWith(
+      final snapshot = _sixSequenceSnapshot;
+      _sixSequenceSnapshot = null;
+      final currentPlayerId = state.currentPlayer.id;
+      state = GameState(
+        players: snapshot?.players ?? state.players,
+        currentTurnIndex: snapshot?.currentTurnIndex ?? state.currentTurnIndex,
         diceValue: diceResult,
-        playerDiceValues: {
+        playerDiceValues: Map<String, int>.unmodifiable({
           ...state.playerDiceValues,
-          state.currentPlayer.id: diceResult,
-        },
+          currentPlayerId: diceResult,
+        }),
         consecutiveSixes: 0,
         isDiceRolling: false,
-        turnPhase: GameTurnPhase.turnEnded,
-        statusMessage: 'Three 6s rolled! Turn forfeited.',
+        turnPhase: GameTurnPhase.rollDice,
+        movablePawns: const [],
+        lastMoveEvent: snapshot?.lastMoveEvent,
+        lastCaptureEvent: snapshot?.lastCaptureEvent,
+        isGameOver: snapshot?.isGameOver ?? state.isGameOver,
+        winnerIds: snapshot?.winnerIds ?? state.winnerIds,
+        statusMessage: 'Three 6s! Moves reverted. Roll again.',
       );
-      await Future.delayed(const Duration(milliseconds: 800));
-      _nextTurn();
+      _checkBotTurn();
       return;
     }
 
@@ -281,6 +298,7 @@ class GameNotifier extends StateNotifier<GameState> {
   }
 
   void _nextTurn() {
+    _sixSequenceSnapshot = null;
     int nextIndex = (state.currentTurnIndex + 1) % state.players.length;
 
     // Skip players who have already finished all pawns
