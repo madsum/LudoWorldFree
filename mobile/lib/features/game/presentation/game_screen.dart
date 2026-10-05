@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/constants/app_colors.dart';
-import '../domain/models/game_state.dart';
 import 'controllers/game_controller.dart';
 import 'widgets/ludo_board_widget.dart';
 import 'widgets/player_info_card.dart';
@@ -102,7 +101,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
             // Top Player Info Cards Row
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -112,7 +111,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     PlayerInfoCard(
                       player: gameState.players[0],
                       gameState: gameState,
-                      showName: false,
                       isCurrentTurn: gameState.currentTurnIndex == 0,
                       onRoll: () => gameNotifier.rollDice(),
                     ),
@@ -120,7 +118,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     PlayerInfoCard(
                       player: gameState.players[1],
                       gameState: gameState,
-                      showName: false,
                       isCurrentTurn: gameState.currentTurnIndex == 1,
                       onRoll: () => gameNotifier.rollDice(),
                     )
@@ -128,7 +125,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     PlayerInfoCard(
                       player: gameState.players[1],
                       gameState: gameState,
-                      showName: false,
                       isCurrentTurn: gameState.currentTurnIndex == 1,
                       onRoll: () => gameNotifier.rollDice(),
                     ),
@@ -151,7 +147,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
             // Bottom Player Info Cards Row
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -159,7 +155,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     PlayerInfoCard(
                       player: gameState.players[0],
                       gameState: gameState,
-                      showName: false,
                       isCurrentTurn: gameState.currentTurnIndex == 0,
                       onRoll: () => gameNotifier.rollDice(),
                     )
@@ -167,7 +162,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     PlayerInfoCard(
                       player: gameState.players[3],
                       gameState: gameState,
-                      showName: false,
                       isCurrentTurn: gameState.currentTurnIndex == 3,
                       onRoll: () => gameNotifier.rollDice(),
                     ),
@@ -177,7 +171,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                     PlayerInfoCard(
                       player: gameState.players[2],
                       gameState: gameState,
-                      showName: false,
                       isCurrentTurn: gameState.currentTurnIndex == 2,
                       onRoll: () => gameNotifier.rollDice(),
                     ),
@@ -185,57 +178,11 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               ),
             ),
 
-            // Status Banner
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              child: _TurnStatusBanner(
-                message: gameState.statusMessage,
-                isActive: gameState.turnPhase == GameTurnPhase.rollDice &&
-                    !gameState.isGameOver,
-                icon: _feedbackIcon(gameState.statusMessage),
-                color: _feedbackColor(gameState.statusMessage),
-              ),
-            ),
-
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
           ],
         ),
       ),
     );
-  }
-
-  IconData _feedbackIcon(String message) {
-    final lower = message.toLowerCase();
-    if (lower.contains('captur')) return Icons.bolt_rounded;
-    if (lower.contains('home') ||
-        lower.contains('win') ||
-        lower.contains('game over')) {
-      return Icons.emoji_events_rounded;
-    }
-    if (lower.contains('six') ||
-        lower.contains('bonus') ||
-        lower.contains('extra turn')) {
-      return Icons.casino_rounded;
-    }
-    if (lower.contains('forfeit') || lower.contains('three 6')) {
-      return Icons.warning_amber_rounded;
-    }
-    if (lower.contains('rolling')) return Icons.casino_rounded;
-    return Icons.info_outline_rounded;
-  }
-
-  Color _feedbackColor(String message) {
-    final lower = message.toLowerCase();
-    if (lower.contains('captur')) return const Color(0xFFFF9F43);
-    if (lower.contains('forfeit') || lower.contains('three 6')) {
-      return AppColors.red;
-    }
-    if (lower.contains('home') ||
-        lower.contains('win') ||
-        lower.contains('game over')) {
-      return AppColors.gold;
-    }
-    return AppColors.gold;
   }
 
   void _confirmExitDialog(BuildContext context) {
@@ -273,124 +220,6 @@ class _GameScreenState extends ConsumerState<GameScreen> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _TurnStatusBanner extends StatefulWidget {
-  final String message;
-  final bool isActive;
-  final IconData icon;
-  final Color color;
-
-  const _TurnStatusBanner({
-    required this.message,
-    required this.isActive,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  State<_TurnStatusBanner> createState() => _TurnStatusBannerState();
-}
-
-class _TurnStatusBannerState extends State<_TurnStatusBanner>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 780),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    _syncPulse();
-  }
-
-  @override
-  void didUpdateWidget(covariant _TurnStatusBanner oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.isActive != widget.isActive) _syncPulse();
-  }
-
-  void _syncPulse() {
-    if (widget.isActive) {
-      _pulse.repeat(reverse: true);
-    } else {
-      _pulse.stop();
-      _pulse.value = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _pulse,
-      builder: (context, _) {
-        final amount = _pulse.value;
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            color: widget.isActive
-                ? const Color(0xFF172033)
-                    .withValues(alpha: 0.84 + amount * 0.12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border: widget.isActive
-                ? Border.all(
-                    color:
-                        AppColors.gold.withValues(alpha: 0.35 + amount * 0.45),
-                  )
-                : null,
-            boxShadow: widget.isActive
-                ? [
-                    BoxShadow(
-                      color: AppColors.gold
-                          .withValues(alpha: 0.12 + amount * 0.16),
-                      blurRadius: 8 + amount * 4,
-                    ),
-                  ]
-                : const [],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 240),
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.96, end: 1).animate(animation),
-                  child: child,
-                ),
-              ),
-              child: Row(
-                key: ValueKey(widget.message),
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(widget.icon, color: widget.color, size: 17),
-                  const SizedBox(width: 7),
-                  Flexible(
-                    child: Text(
-                      widget.message,
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: widget.color,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }

@@ -9,6 +9,10 @@ class ModeConfigDialog extends StatefulWidget {
   final bool isVsComputer;
   final String playerName;
   final String? avatarUrl;
+  final String country;
+  final String countryFlag;
+  final int coins;
+  final int diamonds;
   final void Function(List<PlayerModel> players) onStartGame;
 
   const ModeConfigDialog({
@@ -17,6 +21,10 @@ class ModeConfigDialog extends StatefulWidget {
     required this.isVsComputer,
     required this.playerName,
     this.avatarUrl,
+    this.country = 'Local Player',
+    this.countryFlag = '🌐',
+    this.coins = 0,
+    this.diamonds = 0,
     required this.onStartGame,
   });
 
@@ -26,6 +34,10 @@ class ModeConfigDialog extends StatefulWidget {
     required bool isVsComputer,
     required String playerName,
     String? avatarUrl,
+    String country = 'Local Player',
+    String countryFlag = '🌐',
+    int coins = 0,
+    int diamonds = 0,
     required void Function(List<PlayerModel> players) onStartGame,
   }) {
     showDialog(
@@ -35,6 +47,10 @@ class ModeConfigDialog extends StatefulWidget {
         isVsComputer: isVsComputer,
         playerName: playerName,
         avatarUrl: avatarUrl,
+        country: country,
+        countryFlag: countryFlag,
+        coins: coins,
+        diamonds: diamonds,
         onStartGame: onStartGame,
       ),
     );
@@ -61,6 +77,10 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
           id: 'user_1',
           name: widget.playerName,
           avatarUrl: widget.avatarUrl,
+          country: widget.country,
+          countryFlag: widget.countryFlag,
+          coins: widget.coins,
+          diamonds: widget.diamonds,
           color: userColor,
           isBot: false,
         ));
@@ -68,9 +88,8 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
           id: 'bot_1',
           name: botNames.first,
           // The opponent occupies the opposite corner from the guest.
-          color: LudoColor.values[
-            (userColor.index + 2) % LudoColor.values.length
-          ],
+          color:
+              LudoColor.values[(userColor.index + 2) % LudoColor.values.length],
           isBot: true,
         ));
       } else {
@@ -102,6 +121,10 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
             id: 'user_1',
             name: widget.playerName,
             avatarUrl: widget.avatarUrl,
+            country: widget.country,
+            countryFlag: widget.countryFlag,
+            coins: widget.coins,
+            diamonds: widget.diamonds,
             color: userColor,
             isBot: false,
           ),
@@ -117,6 +140,11 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
         players.add(PlayerModel.initial(
           id: 'player_${i + 1}',
           name: i == 0 ? widget.playerName : 'Player ${i + 1}',
+          avatarUrl: i == 0 ? widget.avatarUrl : null,
+          country: i == 0 ? widget.country : 'Local Player',
+          countryFlag: i == 0 ? widget.countryFlag : '🌐',
+          coins: i == 0 ? widget.coins : 0,
+          diamonds: i == 0 ? widget.diamonds : 0,
           color: colors[i],
           isBot: false,
         ));
@@ -137,7 +165,9 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
       title: Row(
         children: [
           Icon(
-            widget.isVsComputer ? Icons.smart_toy_rounded : Icons.phone_android_rounded,
+            widget.isVsComputer
+                ? Icons.smart_toy_rounded
+                : Icons.phone_android_rounded,
             color: AppColors.gold,
           ),
           const SizedBox(width: 10),
@@ -160,29 +190,40 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
           // Player Count Selection (2 Players or 4 Players)
           Text(
             'SELECT PLAYERS',
-            style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70),
+            style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.white70),
           ),
           const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
                 child: ChoiceChip(
-                  label: Center(child: Text('2 PLAYERS', style: GoogleFonts.poppins(fontWeight: FontWeight.bold))),
+                  label: Center(
+                      child: Text('2 PLAYERS',
+                          style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.bold))),
                   selected: _playerCount == 2,
                   selectedColor: AppColors.gold,
                   backgroundColor: AppColors.bgCard,
-                  labelStyle: TextStyle(color: _playerCount == 2 ? Colors.black87 : Colors.white),
+                  labelStyle: TextStyle(
+                      color: _playerCount == 2 ? Colors.black87 : Colors.white),
                   onSelected: (selected) => setState(() => _playerCount = 2),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: ChoiceChip(
-                  label: Center(child: Text('4 PLAYERS', style: GoogleFonts.poppins(fontWeight: FontWeight.bold))),
+                  label: Center(
+                      child: Text('4 PLAYERS',
+                          style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.bold))),
                   selected: _playerCount == 4,
                   selectedColor: AppColors.gold,
                   backgroundColor: AppColors.bgCard,
-                  labelStyle: TextStyle(color: _playerCount == 4 ? Colors.black87 : Colors.white),
+                  labelStyle: TextStyle(
+                      color: _playerCount == 4 ? Colors.black87 : Colors.white),
                   onSelected: (selected) => setState(() => _playerCount = 4),
                 ),
               ),
@@ -195,7 +236,10 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
           if (widget.isVsComputer) ...[
             Text(
               'SELECT YOUR COLOR',
-              style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white70),
+              style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white70),
             ),
             const SizedBox(height: 8),
             Row(
@@ -222,7 +266,9 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
                           ),
                       ],
                     ),
-                    child: isSelected ? const Icon(Icons.check, color: Colors.white) : null,
+                    child: isSelected
+                        ? const Icon(Icons.check, color: Colors.white)
+                        : null,
                   ),
                 );
               }).toList(),
@@ -233,13 +279,15 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.white54)),
+          child:
+              Text('Cancel', style: GoogleFonts.poppins(color: Colors.white54)),
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.gold,
             foregroundColor: Colors.black87,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
           onPressed: () {
             Navigator.of(context).pop();

@@ -53,7 +53,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  void _launchGameMode(BuildContext context, {required bool isVsComputer, required String title}) {
+  void _launchGameMode(BuildContext context,
+      {required bool isVsComputer, required String title}) {
     final user = ref.read(authControllerProvider).user;
     final playerName = user?.name ?? 'Player 1';
     final avatarUrl = user?.avatarUrl;
@@ -64,8 +65,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       isVsComputer: isVsComputer,
       playerName: playerName,
       avatarUrl: avatarUrl,
+      country: user?.country ?? 'Local Player',
+      countryFlag: user?.countryFlag ?? '🌐',
+      coins: user?.coins ?? 0,
+      diamonds: user?.diamonds ?? 0,
       onStartGame: (players) {
-        ref.read(gameControllerProvider.notifier).startNewGame(players: players);
+        ref
+            .read(gameControllerProvider.notifier)
+            .startNewGame(players: players);
         context.push('/game');
       },
     );
@@ -137,16 +144,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               children: [
                 Column(
                   children: [
-                    const Icon(Icons.monetization_on_rounded, color: AppColors.coinGold, size: 28),
+                    const Icon(Icons.monetization_on_rounded,
+                        color: AppColors.coinGold, size: 28),
                     const SizedBox(height: 4),
-                    Text('${user.coins} Coins', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                    Text('${user.coins} Coins',
+                        style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white)),
                   ],
                 ),
                 Column(
                   children: [
-                    const Icon(Icons.diamond_rounded, color: AppColors.diamondBlue, size: 28),
+                    const Icon(Icons.diamond_rounded,
+                        color: AppColors.diamondBlue, size: 28),
                     const SizedBox(height: 4),
-                    Text('${user.diamonds} Diamonds', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                    Text('${user.diamonds} Diamonds',
+                        style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white)),
                   ],
                 ),
               ],
@@ -167,7 +184,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             },
             child: Text(
               'EDIT PROFILE',
-              style: GoogleFonts.poppins(color: AppColors.gold, fontWeight: FontWeight.bold),
+              style: GoogleFonts.poppins(
+                  color: AppColors.gold, fontWeight: FontWeight.bold),
             ),
           ),
           TextButton(
@@ -285,14 +303,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             level: 3,
             onProfilePressed: () => _showProfileInfoDialog(context),
             onSettingsPressed: () => _showSettingsDialog(context),
-            onInboxPressed: () => _showComingSoonSnackBar(context, 'Mailbox Inbox'),
-            onShopPressed: () => _showComingSoonSnackBar(context, 'Coin & Diamond Store'),
+            onInboxPressed: () =>
+                _showComingSoonSnackBar(context, 'Mailbox Inbox'),
+            onShopPressed: () =>
+                _showComingSoonSnackBar(context, 'Coin & Diamond Store'),
           ),
 
           // Main Lobby Content Area
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
               physics: const BouncingScrollPhysics(),
               child: Center(
                 child: ConstrainedBox(
@@ -314,7 +335,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               title: 'ONLINE',
                               playerCount: '218,675',
                               cardType: LobbyCardType.online,
-                              onTap: () => _showComingSoonSnackBar(context, 'Online Multiplayer'),
+                              onTap: () => _showComingSoonSnackBar(
+                                  context, 'Online Multiplayer'),
                             ),
                           ),
                           const SizedBox(width: 6),
@@ -323,7 +345,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               title: 'TEAM UP',
                               playerCount: '4,144',
                               cardType: LobbyCardType.teamUp,
-                              onTap: () => _showComingSoonSnackBar(context, 'Team Up 2v2'),
+                              onTap: () => _showComingSoonSnackBar(
+                                  context, 'Team Up 2v2'),
                             ),
                           ),
                           const SizedBox(width: 6),
@@ -332,7 +355,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               title: 'FRIENDS',
                               playerCount: '16,393',
                               cardType: LobbyCardType.friends,
-                              onTap: () => _showComingSoonSnackBar(context, 'Play with Friends'),
+                              onTap: () => _showComingSoonSnackBar(
+                                  context, 'Play with Friends'),
                             ),
                           ),
                         ],
@@ -347,7 +371,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             child: LobbyGameCard(
                               title: 'COMPUTER',
                               cardType: LobbyCardType.computer,
-                              onTap: () => _launchGameMode(context, isVsComputer: true, title: 'Vs Computer'),
+                              onTap: () => _launchGameMode(context,
+                                  isVsComputer: true, title: 'Vs Computer'),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -355,7 +380,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             child: LobbyGameCard(
                               title: 'PASS N PLAY',
                               cardType: LobbyCardType.passNPlay,
-                              onTap: () => _launchGameMode(context, isVsComputer: false, title: 'Pass & Play'),
+                              onTap: () => _launchGameMode(context,
+                                  isVsComputer: false, title: 'Pass & Play'),
                             ),
                           ),
                         ],
@@ -375,7 +401,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onTap: (index) {
               setState(() => _currentNavIndex = index);
               if (index != 0) {
-                _showComingSoonSnackBar(context, index == 1 ? 'Live Voice Chat' : 'Social Hub');
+                _showComingSoonSnackBar(
+                    context, index == 1 ? 'Live Voice Chat' : 'Social Hub');
               }
             },
           ),

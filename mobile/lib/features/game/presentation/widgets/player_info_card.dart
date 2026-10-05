@@ -14,7 +14,6 @@ class PlayerInfoCard extends StatefulWidget {
   final GameState gameState;
   final bool isCurrentTurn;
   final VoidCallback onRoll;
-  final bool showName;
 
   const PlayerInfoCard({
     super.key,
@@ -22,7 +21,6 @@ class PlayerInfoCard extends StatefulWidget {
     required this.gameState,
     required this.isCurrentTurn,
     required this.onRoll,
-    this.showName = true,
   });
 
   @override
@@ -73,112 +71,222 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
         !widget.player.isBot &&
         widget.gameState.turnPhase == GameTurnPhase.rollDice &&
         !widget.gameState.isGameOver;
+    final cardWidth =
+        math.min(184.0, (MediaQuery.sizeOf(context).width - 44) / 2);
 
     return AnimatedBuilder(
       animation: _turnPulse,
       builder: (context, _) {
         final pulse = _turnPulse.value;
+        final profileAccent = widget.isCurrentTurn
+            ? const Color(0xFF27D17F)
+            : widget.player.color.color;
         return Transform.scale(
           scale: widget.isCurrentTurn ? 1 + pulse * 0.012 : 1,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 220),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            width: cardWidth,
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.bgNavy,
-              borderRadius: BorderRadius.circular(12),
+              color: AppColors.bgNavy.withValues(alpha: 0.97),
+              borderRadius: BorderRadius.circular(11),
               border: Border.all(
-                color: widget.isCurrentTurn
-                    ? AppColors.gold
-                    : widget.player.color.color,
+                color: profileAccent,
                 width: widget.isCurrentTurn ? 2.5 : 1.5,
               ),
               boxShadow: [
-                if (widget.isCurrentTurn)
-                  BoxShadow(
-                    color:
-                        AppColors.gold.withValues(alpha: 0.30 + pulse * 0.16),
-                    blurRadius: 8 + pulse * 4,
-                    spreadRadius: 0.5 + pulse * 0.8,
+                BoxShadow(
+                  color: profileAccent.withValues(
+                    alpha: widget.isCurrentTurn ? 0.32 + pulse * 0.12 : 0.16,
                   ),
+                  blurRadius: widget.isCurrentTurn ? 9 + pulse * 3 : 5,
+                  spreadRadius: widget.isCurrentTurn ? 0.6 : 0,
+                ),
               ],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      width: 13,
-                      height: 13,
-                      decoration: BoxDecoration(
-                        color: widget.player.color.color,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 1.5),
+                    Text(widget.player.countryFlag,
+                        style: const TextStyle(fontSize: 11)),
+                    const SizedBox(width: 2),
+                    Expanded(
+                      child: Text(
+                        widget.player.country,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                          fontSize: 8,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Flexible(
+                    const Icon(Icons.diamond_rounded,
+                        color: AppColors.diamondBlue, size: 10),
+                    const SizedBox(width: 1),
+                    Text(
+                      _formatBalance(widget.player.diamonds),
+                      style: GoogleFonts.poppins(
+                        fontSize: 7,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.monetization_on_rounded,
+                        color: AppColors.coinGold, size: 11),
+                    const SizedBox(width: 1),
+                    Text(
+                      _formatBalance(widget.player.coins),
+                      maxLines: 1,
+                      style: GoogleFonts.poppins(
+                        fontSize: 7,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (widget.showName)
-                            Text(
-                              widget.player.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.poppins(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                          Container(
+                            width: 40,
+                            height: 35,
+                            decoration: BoxDecoration(
+                              color: AppColors.bgCard,
+                              borderRadius: BorderRadius.circular(7),
+                              border: Border.all(
+                                color: profileAccent.withValues(alpha: 0.9),
+                                width: 1.5,
                               ),
                             ),
-                          Text(
-                            'Home: ${widget.player.finishedPawnsCount}/4',
-                            style: GoogleFonts.poppins(
-                              fontSize: 9,
-                              color: Colors.white70,
-                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: _buildAvatar(),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 7),
-                    _PlayerDie(
-                      value:
-                          widget.gameState.playerDiceValues[widget.player.id],
-                      isRolling: isRolling,
-                      isActive: widget.isCurrentTurn &&
-                          widget.gameState.turnPhase ==
-                              GameTurnPhase.rollDice &&
-                          !widget.gameState.isGameOver,
-                      canRoll: canRoll,
-                      color: widget.player.color.color,
-                      onTap: widget.onRoll,
+                    const SizedBox(width: 3),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: List.generate(
+                        5,
+                        (_) => Container(
+                          width: 6,
+                          height: 6,
+                          margin: const EdgeInsets.symmetric(vertical: 0.7),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF20C866),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0xFF9BFFC2),
+                              width: 0.7,
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                  color: Color(0x8020C866), blurRadius: 3),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
+                    const SizedBox(width: 3),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _PlayerDie(
+                          value: widget
+                              .gameState.playerDiceValues[widget.player.id],
+                          isRolling: isRolling,
+                          isActive: widget.isCurrentTurn &&
+                              widget.gameState.turnPhase ==
+                                  GameTurnPhase.rollDice &&
+                              !widget.gameState.isGameOver,
+                          canRoll: canRoll,
+                          color: widget.player.color.color,
+                          onTap: widget.onRoll,
+                        ),
+                      ],
+                    ),
+                    if (_opponentColors.isNotEmpty) ...[
+                      const SizedBox(width: 4),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (var index = 0;
+                              index < _opponentColors.length;
+                              index++) ...[
+                            if (index > 0) const SizedBox(height: 1),
+                            _OpponentKillStat(
+                              color: _opponentColors[index],
+                              count: widget.player
+                                      .killCounts[_opponentColors[index]] ??
+                                  0,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
                   ],
                 ),
-                if (_opponentColors.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 2,
-                    children: [
-                      for (final color in _opponentColors)
-                        _OpponentKillStat(
-                          color: color,
-                          count: widget.player.killCounts[color] ?? 0,
-                        ),
-                    ],
-                  ),
-                ],
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  String _formatBalance(int value) {
+    final digits = value.toString();
+    final grouped = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i > 0 && (digits.length - i) % 3 == 0) grouped.write(',');
+      grouped.write(digits[i]);
+    }
+    return grouped.toString();
+  }
+
+  Widget _buildAvatar() {
+    final avatarUrl = widget.player.avatarUrl;
+    if (avatarUrl == null || avatarUrl.isEmpty) {
+      return Icon(
+        widget.player.isBot ? Icons.smart_toy_rounded : Icons.person_rounded,
+        color: Colors.white70,
+        size: 23,
+      );
+    }
+    if (avatarUrl.startsWith('http')) {
+      return Image.network(
+        avatarUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+            const Icon(Icons.person_rounded, color: Colors.white70, size: 23),
+      );
+    }
+    if (avatarUrl.startsWith('assets/') || avatarUrl.endsWith('.webp')) {
+      return Image.asset(
+        avatarUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+            const Icon(Icons.person_rounded, color: Colors.white70, size: 23),
+      );
+    }
+    return Icon(
+      widget.player.isBot ? Icons.smart_toy_rounded : Icons.person_rounded,
+      color: Colors.white70,
+      size: 23,
     );
   }
 
@@ -201,16 +309,18 @@ class _OpponentKillStat extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            LudoPawnIcon(color: color, size: 15),
-            const SizedBox(width: 3),
+            LudoPawnIcon(color: color, size: 12),
+            const SizedBox(width: 1),
+            const Icon(Icons.close_rounded, color: Color(0xFFFF655F), size: 9),
+            const SizedBox(width: 1),
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
+              duration: const Duration(milliseconds: 160),
               transitionBuilder: (child, animation) => FadeTransition(
                 opacity: animation,
                 child: ScaleTransition(scale: animation, child: child),
               ),
               child: Text(
-                'Killed: $count',
+                '$count',
                 key: ValueKey(count),
                 style: GoogleFonts.poppins(
                   fontSize: 8,
@@ -342,9 +452,9 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
                     (widget.canRoll ? 1 + flashPhase * 0.07 : 1),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  width: 38,
-                  height: 38,
-                  padding: const EdgeInsets.all(5),
+                  width: 34,
+                  height: 34,
+                  padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       begin: Alignment.topLeft,
