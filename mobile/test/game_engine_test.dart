@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/features/game/domain/models/board_position.dart';
 import 'package:mobile/features/game/domain/game_engine.dart';
 import 'package:mobile/features/game/domain/models/ludo_color.dart';
 import 'package:mobile/features/game/domain/models/pawn_model.dart';
@@ -6,6 +7,31 @@ import 'package:mobile/features/game/domain/models/player_model.dart';
 
 void main() {
   group('Ludo GameEngine Tests', () {
+    test('Each color has five home squares before the finish', () {
+      for (final color in LudoColor.values) {
+        expect(BoardPosition.getHomeStretch(color), hasLength(5));
+        final finish = BoardPosition.getPositionForStep(color, 0, 56);
+        expect(finish.x, 7);
+        expect(finish.y, 7);
+      }
+    });
+
+    test('Captured pawns return directly to their own yard', () {
+      for (final color in LudoColor.values) {
+        final path = BoardPosition.calculatePathSequence(
+          color: color,
+          pawnId: 0,
+          fromStep: 24,
+          toStep: -1,
+        );
+        final yard = BoardPosition.getYardPositions(color).first;
+
+        expect(path, hasLength(2));
+        expect(path.last.x, yard.x);
+        expect(path.last.y, yard.y);
+      }
+    });
+
     test('Yard pawn requires rolling a 6 to move', () {
       final player = PlayerModel.initial(
         id: 'player_1',
@@ -21,7 +47,7 @@ void main() {
       expect(movableOn6.length, equals(4));
     });
 
-    test('On board pawn moves with any roll <= 57 target', () {
+    test('On board pawn moves with any roll that does not overshoot home', () {
       final pawn = const PawnModel(id: 0, color: LudoColor.red, stepCount: 10);
       final player = PlayerModel(
         id: 'player_1',
@@ -33,6 +59,57 @@ void main() {
 
       final movableOn3 = GameEngine.getMovablePawns(player, 3);
       expect(movableOn3.length, equals(1));
+    });
+
+    test('Five home stretch squares require the exact roll to finish', () {
+      for (var step = 51; step <= 55; step++) {
+        for (var diceValue = 1; diceValue <= 6; diceValue++) {
+          final pawn = PawnModel(
+            id: 0,
+            color: LudoColor.blue,
+            stepCount: step,
+          );
+
+          expect(
+            GameEngine.isPawnMoveValid(pawn, diceValue),
+            equals(step + diceValue <= 56),
+            reason: 'Step $step with roll $diceValue',
+          );
+        }
+      }
+
+      final pawnOneStepFromFinish = const PawnModel(
+        id: 0,
+        color: LudoColor.blue,
+        stepCount: 55,
+      );
+      final player = PlayerModel(
+        id: 'blue',
+        name: 'Blue Player',
+        color: LudoColor.blue,
+        isBot: false,
+        pawns: [pawnOneStepFromFinish],
+      );
+
+      expect(GameEngine.getMovablePawns(player, 1), [pawnOneStepFromFinish]);
+      expect(GameEngine.getMovablePawns(player, 2), isEmpty);
+
+      final bot = PlayerModel(
+        id: 'blue_bot',
+        name: 'Blue Bot',
+        color: LudoColor.blue,
+        isBot: true,
+        pawns: [pawnOneStepFromFinish],
+      );
+      expect(
+        GameEngine.selectBestBotMove(
+          players: [bot],
+          botPlayer: bot,
+          movablePawns: [pawnOneStepFromFinish],
+          diceValue: 2,
+        ),
+        isNull,
+      );
     });
 
     test('Captures opponent pawn on non-safe tile', () {

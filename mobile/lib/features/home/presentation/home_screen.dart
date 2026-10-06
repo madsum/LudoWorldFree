@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/ads/ad_mob_consent_service.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
 import '../../auth/presentation/widgets/guest_setup_dialog.dart';
 import '../../game/presentation/controllers/game_controller.dart';
@@ -201,6 +202,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _showSettingsDialog(BuildContext context) {
+    final adsConsent = ref.read(adMobConsentServiceProvider);
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -226,6 +228,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            FutureBuilder<bool>(
+              future: adsConsent.isPrivacyOptionsRequired(),
+              builder: (context, snapshot) {
+                if (snapshot.data != true) return const SizedBox.shrink();
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.privacy_tip_outlined,
+                      color: AppColors.gold),
+                  title: Text(
+                    'Privacy choices',
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                  onTap: adsConsent.showPrivacyOptionsForm,
+                );
+              },
+            ),
             Text(
               '${AppConstants.appName} v${AppConstants.appVersion}',
               style: GoogleFonts.poppins(

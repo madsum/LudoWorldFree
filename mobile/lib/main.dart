@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/ads/ad_mob_consent_service.dart';
 import 'core/constants/app_constants.dart';
 import 'core/theme/app_theme.dart';
 import 'routes/app_router.dart';
@@ -39,6 +40,8 @@ class LudoWorldFreeApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Start the app-scoped SDK and consent flow before any screen can request ads.
+    ref.watch(adMobConsentServiceProvider);
     final router = ref.watch(appRouterProvider);
 
     return MaterialApp.router(

@@ -26,28 +26,28 @@ class BoardPosition {
     BoardPosition(0, 7), // Left Turn (51)
   ];
 
-  /// Home Stretches (51..56 step count)
+  /// Five colored home-stretch squares (51..55 step count).
   static List<BoardPosition> getHomeStretch(LudoColor color) {
     switch (color) {
       case LudoColor.red:
         return const [
           BoardPosition(1, 7), BoardPosition(2, 7), BoardPosition(3, 7),
-          BoardPosition(4, 7), BoardPosition(5, 7), BoardPosition(6, 7),
+          BoardPosition(4, 7), BoardPosition(5, 7),
         ];
       case LudoColor.green:
         return const [
           BoardPosition(7, 1), BoardPosition(7, 2), BoardPosition(7, 3),
-          BoardPosition(7, 4), BoardPosition(7, 5), BoardPosition(7, 6),
+          BoardPosition(7, 4), BoardPosition(7, 5),
         ];
       case LudoColor.yellow:
         return const [
           BoardPosition(13, 7), BoardPosition(12, 7), BoardPosition(11, 7),
-          BoardPosition(10, 7), BoardPosition(9, 7), BoardPosition(8, 7),
+          BoardPosition(10, 7), BoardPosition(9, 7),
         ];
       case LudoColor.blue:
         return const [
           BoardPosition(7, 13), BoardPosition(7, 12), BoardPosition(7, 11),
-          BoardPosition(7, 10), BoardPosition(7, 9), BoardPosition(7, 8),
+          BoardPosition(7, 10), BoardPosition(7, 9),
         ];
     }
   }
@@ -74,12 +74,14 @@ class BoardPosition {
       // Step 0 is the first playable tile after the colored start marker.
       final globalIdx = (color.actualEntryTrackIndex + step) % 52;
       return mainTrack[globalIdx];
-    } else if (step >= 51 && step <= 56) {
+    } else if (step >= 51 && step <= 55) {
       return getHomeStretch(color)[step - 51];
-    } else {
-      // Step 57: Finished in Home Center
+    } else if (step == 56) {
+      // Step 56: Finished in Home Center
       return const BoardPosition(7, 7);
     }
+
+    throw RangeError.range(step, -1, 56, 'step');
   }
 
   /// Calculates step-by-step path sequence of board positions from [fromStep] to [toStep]
@@ -96,11 +98,8 @@ class BoardPosition {
       path.add(getYardPositions(color)[pawnId]);
       path.add(getPositionForStep(color, pawnId, 0));
     } else if (toStep == -1) {
-      // Captured pawns walk backward along their route before returning to
-      // their yard.
-      for (int step = fromStep; step >= 0; step--) {
-        path.add(getPositionForStep(color, pawnId, step));
-      }
+      // Captured pawns return directly from the capture tile to their yard.
+      path.add(getPositionForStep(color, pawnId, fromStep));
       path.add(getYardPositions(color)[pawnId]);
     } else {
       // Moving step-by-step along main track & home stretch

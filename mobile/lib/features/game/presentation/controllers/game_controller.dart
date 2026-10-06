@@ -23,6 +23,11 @@ class GameNotifier extends StateNotifier<GameState> {
   Stopwatch? _turnStopwatch;
   Duration _turnTimeRemaining = turnDuration;
   String? _turnTimerPlayerId;
+  Timer? _pawnSelectionTimer;
+  Stopwatch? _pawnSelectionStopwatch;
+  Duration _pawnSelectionTimeRemaining = turnDuration;
+  String? _pawnSelectionTimerPlayerId;
+  int? _pawnSelectionOpportunityId;
   GameState? _sixSequenceSnapshot;
   int _matchEpoch = 0;
   bool _isTurnProcessing = false;
@@ -36,6 +41,7 @@ class GameNotifier extends StateNotifier<GameState> {
     _isDisposed = true;
     _botTimer?.cancel();
     _cancelTurnTimer();
+    _cancelPawnSelectionTimer();
     super.dispose();
   }
 
@@ -45,6 +51,7 @@ class GameNotifier extends StateNotifier<GameState> {
   }) {
     _botTimer?.cancel();
     _cancelTurnTimer();
+    _cancelPawnSelectionTimer();
     _matchEpoch++;
     _isTurnProcessing = false;
     _turnTimerPaused = false;
@@ -198,6 +205,8 @@ class GameNotifier extends StateNotifier<GameState> {
         turnPhase: GameTurnPhase.selectPawn,
         statusMessage:
             '${state.currentPlayer.name} rolled a $diceResult! Select a token.',
+        turnTimerPaused: false,
+        turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
       );
       _isTurnProcessing = false;
 
@@ -209,6 +218,8 @@ class GameNotifier extends StateNotifier<GameState> {
       } else if (movable.length == 1) {
         // No choice is needed when only one pawn can legally move.
         await movePawn(movable.single);
+      } else {
+        _schedulePawnSelectionTimeout();
       }
     }
   }
@@ -235,13 +246,13 @@ class GameNotifier extends StateNotifier<GameState> {
     final pawn = player.pawns.firstWhere(
       (candidate) => candidate.id == selectedPawn.id,
     );
+    if (!GameEngine.isPawnMoveValid(pawn, dice)) return;
     final isYardMove = pawn.isYard;
+
+    _cancelPawnSelectionTimer();
 
     final fromStep = pawn.stepCount;
     final newStepCount = isYardMove ? 0 : (fromStep + dice);
-    // Revalidate against the latest pawn position so stale movable-pawn data
-    // cannot let a pawn overshoot the exact finish step.
-    if (!isYardMove && newStepCount > 57) return;
 
     _isTurnProcessing = true;
     final matchEpoch = _matchEpoch;
@@ -278,8 +289,8 @@ class GameNotifier extends StateNotifier<GameState> {
       }
     }
 
-    // Check for Reaching Home Finish (step 57)
-    final reachedHome = newStepCount == 57;
+    // Check for reaching home after the five inner squares (step 56).
+    final reachedHome = newStepCount == 56;
     if (reachedHome) {
       earnedBonusRoll = true; // Achievement reward for completing a pawn.
     }
@@ -368,15 +379,10 @@ class GameNotifier extends StateNotifier<GameState> {
     // Keep the turn animating until both the selected pawn's move and any
     // captured pawn's return to its yard have completed.
     final moveAnimationSteps = moveEvent.stepsCount;
-    final captureAnimationSteps = capturedPawn == null
-        ? 0
-        : capturedPawn.stepCount + 1; // Back to step 0, then into the yard.
     final moveDurationMicroseconds = moveAnimationSteps * 130000;
-    final captureDurationMicroseconds = captureAnimationSteps * 130000 ~/ 3;
     const captureFlameDurationMicroseconds = 620000;
-    final captureReturnDurationMicroseconds = capturedPawn == null
-        ? 0
-        : captureFlameDurationMicroseconds + captureDurationMicroseconds;
+    final captureReturnDurationMicroseconds =
+        capturedPawn == null ? 0 : captureFlameDurationMicroseconds + 260000;
     final animDurationMicroseconds = math
             .max(moveDurationMicroseconds, captureReturnDurationMicroseconds)
             .toInt() +
@@ -446,6 +452,7 @@ class GameNotifier extends StateNotifier<GameState> {
   }
 
   void _beginRollOpportunity() {
+    _cancelPawnSelectionTimer();
     _cancelTurnTimer();
     _botTimer?.cancel();
     _isTurnProcessing = false;
@@ -545,6 +552,7 @@ class GameNotifier extends StateNotifier<GameState> {
 
   void _eliminatePlayer(List<PlayerModel> players, int eliminatedIndex) {
     _cancelTurnTimer();
+    _cancelPawnSelectionTimer();
     _botTimer?.cancel();
     _isTurnProcessing = true;
     final remainingIndices = <int>[
@@ -609,14 +617,112 @@ class GameNotifier extends StateNotifier<GameState> {
   }
 
   void _autoSelectAndMove(List<PawnModel> movable) {
-    if (movable.isEmpty || state.turnPhase != GameTurnPhase.selectPawn) return;
+    if (state.turnPhase != GameTurnPhase.selectPawn) return;
+    final legalPawns = movable
+        .where((pawn) => GameEngine.isPawnMoveValid(pawn, state.diceValue ?? 1))
+        .toList(growable: false);
     final selectedPawn = GameEngine.selectBestBotMove(
-      players: state.players,
-      botPlayer: state.currentPlayer,
-      movablePawns: movable,
-      diceValue: state.diceValue ?? 1,
+          players: state.players,
+          botPlayer: state.currentPlayer,
+          movablePawns: legalPawns,
+          diceValue: state.diceValue ?? 1,
+        ) ??
+        (legalPawns.isEmpty ? null : legalPawns.first);
+    if (selectedPawn != null) {
+      unawaited(movePawn(selectedPawn));
+    } else {
+      _continueAfterUnavailableMove();
+    }
+  }
+
+  void _continueAfterUnavailableMove() {
+    if (_isDisposed || state.turnPhase != GameTurnPhase.selectPawn) return;
+    if (state.diceValue == 6) {
+      state = state.copyWith(
+        turnPhase: GameTurnPhase.rollDice,
+        clearDiceValue: true,
+        movablePawns: const [],
+        consecutiveSixes: 0,
+        statusMessage: 'No valid move. Bonus roll!',
+      );
+      _beginRollOpportunity();
+    } else {
+      _nextTurn();
+    }
+  }
+
+  void _schedulePawnSelectionTimeout() {
+    _schedulePawnSelectionTimeoutWithRemaining(turnDuration);
+  }
+
+  void _schedulePawnSelectionTimeoutWithRemaining(Duration delay) {
+    _cancelPawnSelectionTimer();
+    if (_isDisposed ||
+        _isTurnProcessing ||
+        state.isGameOver ||
+        state.turnTimerPaused ||
+        state.turnPhase != GameTurnPhase.selectPawn ||
+        state.isCurrentPlayerBot ||
+        state.currentPlayer.isEliminated ||
+        state.movablePawns.length < 2) {
+      return;
+    }
+
+    final playerId = state.currentPlayer.id;
+    final opportunityId = state.rollOpportunityId;
+    _pawnSelectionTimerPlayerId = playerId;
+    _pawnSelectionOpportunityId = opportunityId;
+    _pawnSelectionTimeRemaining = delay;
+    _pawnSelectionStopwatch = Stopwatch()..start();
+    state = state.copyWith(
+      turnTimerRemainingMilliseconds: delay.inMilliseconds,
     );
-    if (selectedPawn != null) unawaited(movePawn(selectedPawn));
+    _pawnSelectionTimer = Timer(delay, () {
+      if (_isDisposed ||
+          _pawnSelectionTimerPlayerId != playerId ||
+          _pawnSelectionOpportunityId != opportunityId ||
+          state.currentPlayer.id != playerId ||
+          state.rollOpportunityId != opportunityId ||
+          state.turnPhase != GameTurnPhase.selectPawn ||
+          state.isGameOver ||
+          _turnTimerPaused ||
+          _isTurnProcessing) {
+        return;
+      }
+
+      _pawnSelectionTimer = null;
+      _pawnSelectionStopwatch = null;
+      _pawnSelectionTimeRemaining = Duration.zero;
+      final missedTurns = math.min(
+        maxMissedTurns,
+        state.currentPlayer.missedTurns + 1,
+      );
+      final players = state.players
+          .map((player) => player.id == playerId
+              ? player.copyWith(missedTurns: missedTurns)
+              : player)
+          .toList(growable: false);
+      state = state.copyWith(
+        players: players,
+        turnTimerRemainingMilliseconds: 0,
+        statusMessage: 'Time ran out! Moving a token automatically.',
+      );
+      final legalPawns = state.movablePawns
+          .where(
+              (pawn) => GameEngine.isPawnMoveValid(pawn, state.diceValue ?? 1))
+          .toList(growable: false);
+      _autoSelectAndMove(legalPawns);
+    });
+  }
+
+  void _cancelPawnSelectionTimer() {
+    _pawnSelectionTimer?.cancel();
+    _pawnSelectionTimer = null;
+    _pawnSelectionStopwatch?.stop();
+    _pawnSelectionStopwatch = null;
+    _pawnSelectionTimerPlayerId = null;
+    _pawnSelectionOpportunityId = null;
+    _pawnSelectionTimeRemaining = turnDuration;
   }
 
   void pauseTurnTimer({bool updateGameState = true}) {
@@ -630,12 +736,27 @@ class GameNotifier extends StateNotifier<GameState> {
       _turnStopwatch?.stop();
       _turnStopwatch = null;
     }
+    if (_pawnSelectionTimer != null) {
+      final elapsed = _pawnSelectionStopwatch?.elapsed ?? Duration.zero;
+      _pawnSelectionTimeRemaining -= elapsed;
+      if (_pawnSelectionTimeRemaining.isNegative) {
+        _pawnSelectionTimeRemaining = Duration.zero;
+      }
+      _pawnSelectionTimer?.cancel();
+      _pawnSelectionTimer = null;
+      _pawnSelectionStopwatch?.stop();
+      _pawnSelectionStopwatch = null;
+    }
     _botTimer?.cancel();
     _turnTimerPaused = true;
     if (!_isDisposed && updateGameState) {
       state = state.copyWith(
         turnTimerPaused: true,
-        turnTimerRemainingMilliseconds: _turnTimeRemaining.inMilliseconds,
+        turnTimerRemainingMilliseconds:
+            (state.turnPhase == GameTurnPhase.selectPawn
+                    ? _pawnSelectionTimeRemaining
+                    : _turnTimeRemaining)
+                .inMilliseconds,
       );
     }
   }
@@ -643,11 +764,20 @@ class GameNotifier extends StateNotifier<GameState> {
   void resumeTurnTimer() {
     if (!_turnTimerPaused || _isDisposed) return;
     _turnTimerPaused = false;
-    if (state.turnPhase != GameTurnPhase.rollDice || state.isGameOver) {
+    if (state.isGameOver) {
       state = state.copyWith(turnTimerPaused: false);
       return;
     }
     state = state.copyWith(turnTimerPaused: false);
+    if (state.turnPhase == GameTurnPhase.selectPawn) {
+      if (state.isCurrentPlayerBot) {
+        _scheduleBotMove();
+      } else if (state.movablePawns.length > 1) {
+        _schedulePawnSelectionTimeoutWithRemaining(_pawnSelectionTimeRemaining);
+      }
+      return;
+    }
+    if (state.turnPhase != GameTurnPhase.rollDice) return;
     if (state.isCurrentPlayerBot) {
       _checkBotTurn();
     } else {
@@ -686,24 +816,27 @@ class GameNotifier extends StateNotifier<GameState> {
 
   void _scheduleBotMove() {
     _botTimer?.cancel();
+    if (_isDisposed ||
+        _turnTimerPaused ||
+        state.isGameOver ||
+        !state.isCurrentPlayerBot ||
+        state.turnPhase != GameTurnPhase.selectPawn) {
+      return;
+    }
     final matchEpoch = _matchEpoch;
     final playerId = state.currentPlayer.id;
+    final opportunityId = state.rollOpportunityId;
     _botTimer = Timer(const Duration(milliseconds: 700), () {
       if (_isDisposed ||
           matchEpoch != _matchEpoch ||
           state.currentPlayer.id != playerId ||
+          state.rollOpportunityId != opportunityId ||
+          state.turnTimerPaused ||
           state.turnPhase != GameTurnPhase.selectPawn) {
         return;
       }
-      final bestMove = GameEngine.selectBestBotMove(
-        players: state.players,
-        botPlayer: state.currentPlayer,
-        movablePawns: state.movablePawns,
-        diceValue: state.diceValue ?? 1,
-      );
-      if (bestMove != null) {
-        movePawn(bestMove);
-      }
+      _botTimer = null;
+      _autoSelectAndMove(state.movablePawns);
     });
   }
 }

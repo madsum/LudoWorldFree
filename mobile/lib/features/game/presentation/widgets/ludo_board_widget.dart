@@ -113,7 +113,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     });
   }
 
-  /// Animates pawn square-by-square from [fromStep] to [toStep]
+  /// Animates a pawn from [fromStep] to [toStep].
   void _startPawnMovementAnimation({
     required String key,
     required LudoColor color,
@@ -134,12 +134,13 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     }
 
     final totalSteps = math.max(1, pathSequence.length - 1);
-    final durationMicroseconds =
-        toStep == -1 ? totalSteps * 130000 ~/ 3 : totalSteps * 130000;
+    final duration = toStep == -1
+        ? const Duration(milliseconds: 260)
+        : Duration(microseconds: totalSteps * 130000);
 
     final controller = AnimationController(
       vsync: this,
-      duration: Duration(microseconds: durationMicroseconds),
+      duration: duration,
     );
     _activeControllers[key] = controller;
     _animationPaths[key] = pathSequence;
@@ -351,7 +352,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
         if (finishCenter != null) {
           // Reserve a distinct spot for each finished pawn inside its own
           // colored triangle so all four remain visible.
-          pawnScale = 0.40;
+          pawnScale = 0.48;
         } else if (totalOnTile == 2) {
           pawnScale = 0.58;
           offsetX = (i == 0 ? -0.18 : 0.18) * tileSize;
@@ -370,6 +371,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
             ? finishCenter.dy * tileSize - tileSize * pawnScale / 2
             : (pos.y * tileSize) + (tileSize * (1.0 - pawnScale) / 2) + offsetY;
         final size = tileSize * pawnScale;
+        final pawnSize = finishCenter != null ? tileSize * 0.40 : size;
 
         widgets.add(
           Positioned(
@@ -379,12 +381,43 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
             width: size,
             height: size,
             child: RepaintBoundary(
-              child: _PawnTileWidget(
-                color: pawn.color,
-                isMovable: isMovable,
-                size: size,
-                onTap: isMovable ? () => widget.onPawnTap(pawn) : null,
-              ),
+              child: finishCenter != null
+                  ? Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Container(
+                          width: size,
+                          height: size,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0xFFFFF066),
+                              width: 2.5,
+                            ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x99FFF066),
+                                blurRadius: 7,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
+                        ),
+                        _PawnTileWidget(
+                          color: pawn.color,
+                          isMovable: isMovable,
+                          size: pawnSize,
+                          onTap:
+                              isMovable ? () => widget.onPawnTap(pawn) : null,
+                        ),
+                      ],
+                    )
+                  : _PawnTileWidget(
+                      color: pawn.color,
+                      isMovable: isMovable,
+                      size: pawnSize,
+                      onTap: isMovable ? () => widget.onPawnTap(pawn) : null,
+                    ),
             ),
           ),
         );

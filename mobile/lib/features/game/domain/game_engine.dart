@@ -22,24 +22,20 @@ class GameEngine {
     final movable = <PawnModel>[];
 
     for (final pawn in player.pawns) {
-      if (pawn.isFinished) continue;
-
-      if (pawn.isYard) {
-        // Must roll a 6 to leave Yard
-        if (diceValue == 6) {
-          movable.add(pawn);
-        }
-      } else {
-        // On board or in home stretch
-        final targetStep = pawn.stepCount + diceValue;
-        // Ludo requires an exact roll to reach the finish step.
-        if (targetStep >= 0 && targetStep <= 57) {
-          movable.add(pawn);
-        }
-      }
+      if (isPawnMoveValid(pawn, diceValue)) movable.add(pawn);
     }
 
     return movable;
+  }
+
+  /// Validates a move against the current pawn position and exact finish rule.
+  static bool isPawnMoveValid(PawnModel pawn, int diceValue) {
+    if (diceValue < 1 || diceValue > 6 || pawn.isFinished) return false;
+    if (pawn.isYard) return diceValue == 6;
+    if (pawn.stepCount < 0 || pawn.stepCount > 55) return false;
+
+    // Steps 51..55 are the five inner squares; step 56 is the finish.
+    return pawn.stepCount + diceValue <= 56;
   }
 
   /// Checks if landing on this tile results in capturing an opponent pawn
@@ -79,13 +75,16 @@ class GameEngine {
     required List<PawnModel> movablePawns,
     required int diceValue,
   }) {
-    if (movablePawns.isEmpty) return null;
-    if (movablePawns.length == 1) return movablePawns.first;
+    final legalPawns = movablePawns
+        .where((pawn) => isPawnMoveValid(pawn, diceValue))
+        .toList(growable: false);
+    if (legalPawns.isEmpty) return null;
+    if (legalPawns.length == 1) return legalPawns.first;
 
     PawnModel? bestPawn;
     int highestScore = -9999;
 
-    for (final pawn in movablePawns) {
+    for (final pawn in legalPawns) {
       int score = 0;
       final targetStep = pawn.isYard ? 0 : pawn.stepCount + diceValue;
 
@@ -98,13 +97,13 @@ class GameEngine {
       if (capturable != null) score += 1000;
 
       // 2. ENTER HOME FINISH (+800)
-      if (targetStep == 57) score += 800;
+      if (targetStep == 56) score += 800;
 
       // 3. RELEASE FROM YARD ON 6 (+500)
       if (pawn.isYard && diceValue == 6) score += 500;
 
       // 4. ENTER HOME STRETCH SAFETY (+300)
-      if (targetStep >= 51 && targetStep <= 56) score += 300;
+      if (targetStep >= 51 && targetStep <= 55) score += 300;
 
       // 5. LAND ON SAFE / STAR TILE (+200)
       if (targetStep <= 50) {
@@ -122,6 +121,6 @@ class GameEngine {
       }
     }
 
-    return bestPawn ?? movablePawns.first;
+    return bestPawn ?? legalPawns.first;
   }
 }

@@ -5,6 +5,9 @@
         android:label="Ludo World Free"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-6834272256608743~3639519145" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
