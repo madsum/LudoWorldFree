@@ -55,6 +55,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isCurrentTurn != widget.isCurrentTurn ||
         oldWidget.gameState.isGameOver != widget.gameState.isGameOver ||
+        oldWidget.gameState.turnPhase != widget.gameState.turnPhase ||
         oldWidget.player.id != widget.player.id ||
         oldWidget.player.isEliminated != widget.player.isEliminated) {
       _syncPulse();
@@ -79,7 +80,8 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
   void _syncPulse() {
     if (widget.isCurrentTurn &&
         !widget.player.isEliminated &&
-        !widget.gameState.isGameOver) {
+        !widget.gameState.isGameOver &&
+        widget.gameState.turnPhase == GameTurnPhase.rollDice) {
       _turnPulse.repeat(reverse: true);
     } else {
       _turnPulse.stop();
@@ -147,6 +149,16 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                     0.58,
                   )!
                 : widget.player.color.color;
+        final cardBorderColor = widget.isCurrentTurn
+            ? Color.lerp(
+                const Color(0xFF780078),
+                const Color(0xFFFF6BFF),
+                pulse,
+              )!
+            : profileAccent;
+        final avatarBorderColor = widget.isCurrentTurn
+            ? Colors.white.withValues(alpha: 0.38)
+            : profileAccent.withValues(alpha: 0.9);
         final timerVisible = _timerOpportunityActive;
         return Transform.scale(
           scale: widget.isCurrentTurn ? 1 + pulse * 0.012 : 1,
@@ -160,8 +172,8 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
               color: AppColors.bgNavy.withValues(alpha: 0.97),
               borderRadius: BorderRadius.circular(11),
               border: Border.all(
-                color: profileAccent,
-                width: widget.isCurrentTurn ? 2.5 : 1.5,
+                color: cardBorderColor,
+                width: widget.isCurrentTurn ? 2.5 + pulse * 1.2 : 1.5,
               ),
               boxShadow: [
                 BoxShadow(
@@ -179,7 +191,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
             ),
             child: widget.twoPlayerLayout
                 ? _buildTwoPlayerProfile(
-                    profileAccent: profileAccent,
+                    avatarBorderColor: avatarBorderColor,
                     timerVisible: timerVisible,
                   )
                 : Column(
@@ -250,8 +262,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                                       color: AppColors.bgCard,
                                       borderRadius: BorderRadius.circular(7),
                                       border: Border.all(
-                                        color: profileAccent.withValues(
-                                            alpha: 0.9),
+                                        color: avatarBorderColor,
                                         width: 1.5,
                                       ),
                                     ),
@@ -339,7 +350,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
   }
 
   Widget _buildTwoPlayerProfile({
-    required Color profileAccent,
+    required Color avatarBorderColor,
     required bool timerVisible,
   }) {
     return Column(
@@ -405,7 +416,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                   color: AppColors.bgCard,
                   borderRadius: BorderRadius.circular(7),
                   border: Border.all(
-                    color: profileAccent.withValues(alpha: 0.9),
+                    color: avatarBorderColor,
                     width: 1.5,
                   ),
                 ),
@@ -812,17 +823,33 @@ class _TurnTimerBorderPainter extends CustomPainter {
       const Color(0xFFE53935),
       warning,
     )!;
-    final rect = Rect.fromLTWH(1, 1, size.width - 2, size.height - 2);
+    const strokeWidth = 5.0;
+    final inset = strokeWidth / 2;
+    final rect = Rect.fromLTWH(
+      inset,
+      inset,
+      size.width - strokeWidth,
+      size.height - strokeWidth,
+    );
     final border = Path()
-      ..addRRect(RRect.fromRectAndRadius(rect, const Radius.circular(9)));
+      ..addRRect(RRect.fromRectAndRadius(rect, const Radius.circular(8)));
     final metric = border.computeMetrics().first;
     final visibleBorder = metric.extractPath(0, metric.length * remaining);
     canvas.drawPath(
       visibleBorder,
       Paint()
+        ..color = color.withValues(alpha: 0.48)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 8
+        ..strokeCap = StrokeCap.round
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
+    );
+    canvas.drawPath(
+      visibleBorder,
+      Paint()
         ..color = color
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.2
+        ..strokeWidth = strokeWidth
         ..strokeCap = StrokeCap.round,
     );
   }

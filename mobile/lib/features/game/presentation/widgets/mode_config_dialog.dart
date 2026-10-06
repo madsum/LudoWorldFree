@@ -70,7 +70,7 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
     if (widget.isVsComputer) {
       final userColor = _selectedColor;
 
-      final botNames = ['Smart Bot Alpha', 'Smart Bot Beta', 'Smart Bot Gamma'];
+      final botNames = ['Smart AI Alpha', 'Smart AI Beta', 'Smart AI Gamma'];
 
       if (_playerCount == 2) {
         players.add(PlayerModel.initial(

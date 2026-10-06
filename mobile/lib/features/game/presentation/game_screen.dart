@@ -121,12 +121,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                       ),
                     ),
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.refresh_rounded,
-                        color: AppColors.gold),
-                    onPressed: () =>
-                        gameNotifier.startNewGame(players: gameState.players),
-                  ),
                 ],
               ),
             ),
