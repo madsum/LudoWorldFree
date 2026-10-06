@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../domain/models/game_state.dart';
+import 'ludo_pawn_icon.dart';
 
 class VictoryDialog extends StatelessWidget {
   final GameState gameState;
@@ -30,7 +31,20 @@ class VictoryDialog extends StatelessWidget {
     );
     final humanWon = gameState.winnerIds.contains(humanPlayer.id);
     final rankedPlayers = gameState.players.toList()
-      ..sort((a, b) => a.rank.compareTo(b.rank));
+      ..sort((a, b) {
+        final aGroup = a.isEliminated ? 2 : (a.rank > 0 ? 0 : 1);
+        final bGroup = b.isEliminated ? 2 : (b.rank > 0 ? 0 : 1);
+        if (aGroup != bGroup) {
+          return aGroup.compareTo(bGroup);
+        }
+        if (aGroup == 2) {
+          final eliminationOrder =
+              b.eliminationOrder.compareTo(a.eliminationOrder);
+          if (eliminationOrder != 0) return eliminationOrder;
+        }
+        final rankOrder = a.rank.compareTo(b.rank);
+        return rankOrder != 0 ? rankOrder : a.name.compareTo(b.name);
+      });
 
     return Stack(
       fit: StackFit.expand,
@@ -126,7 +140,14 @@ class VictoryDialog extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                ...rankedPlayers.map((player) {
+                ...List.generate(rankedPlayers.length, (index) {
+                  final player = rankedPlayers[index];
+                  final placement = index + 1;
+                  final killCount = player.killCounts.values.fold<int>(
+                    0,
+                    (total, count) => total + count,
+                  );
+
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
@@ -134,11 +155,11 @@ class VictoryDialog extends StatelessWidget {
                         SizedBox(
                           width: 24,
                           child: Text(
-                            player.rank > 0 ? '#${player.rank}' : '—',
+                            '#$placement',
                             style: GoogleFonts.poppins(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
-                              color: player.rank == 1
+                              color: placement == 1
                                   ? AppColors.gold
                                   : Colors.white60,
                             ),
@@ -156,17 +177,37 @@ class VictoryDialog extends StatelessWidget {
                         Expanded(
                           child: Text(
                             player.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.poppins(
                               fontSize: 13,
                               color: Colors.white,
                             ),
                           ),
                         ),
-                        Text(
-                          '${player.finishedPawnsCount}/4 Home',
-                          style: GoogleFonts.poppins(
-                            fontSize: 11,
-                            color: Colors.white70,
+                        const SizedBox(width: 8),
+                        Semantics(
+                          label: '$killCount pawns captured',
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              LudoPawnIcon(color: player.color, size: 14),
+                              const SizedBox(width: 2),
+                              const Icon(
+                                Icons.close_rounded,
+                                color: Color(0xFFFF655F),
+                                size: 13,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                '$killCount',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],

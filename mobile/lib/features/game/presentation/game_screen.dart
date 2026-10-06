@@ -16,8 +16,40 @@ class GameScreen extends ConsumerStatefulWidget {
   ConsumerState<GameScreen> createState() => _GameScreenState();
 }
 
-class _GameScreenState extends ConsumerState<GameScreen> {
+class _GameScreenState extends ConsumerState<GameScreen>
+    with WidgetsBindingObserver {
   bool _completionDialogShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      ref.read(gameControllerProvider.notifier).resumeTurnTimer();
+    } else {
+      ref.read(gameControllerProvider.notifier).pauseTurnTimer();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
+    final gameNotifier = ref.read(gameControllerProvider.notifier);
+    if (lifecycleState == AppLifecycleState.resumed) {
+      gameNotifier.resumeTurnTimer();
+    } else {
+      gameNotifier.pauseTurnTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // Cancel the timer without emitting state from a Consumer that is unmounting.
+    ref
+        .read(gameControllerProvider.notifier)
+        .pauseTurnTimer(updateGameState: false);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,7 +58,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final botCount = gameState.players.where((player) => player.isBot).length;
     final isVsComputer =
         botCount == gameState.players.length - 1 && botCount > 0;
-    final isTwoPlayerVsComputer = isVsComputer && gameState.players.length == 2;
+    final isTwoPlayerMode = gameState.players.length == 2;
     final humanIndex = gameState.players.indexWhere((player) => !player.isBot);
     final humanColor =
         humanIndex < 0 ? null : gameState.players[humanIndex].color;
@@ -99,38 +131,30 @@ class _GameScreenState extends ConsumerState<GameScreen> {
               ),
             ),
 
-            // Top Player Info Cards Row
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  if (isTwoPlayerVsComputer)
-                    const SizedBox.shrink()
-                  else if (gameState.players.isNotEmpty)
-                    PlayerInfoCard(
-                      player: gameState.players[0],
-                      gameState: gameState,
-                      isCurrentTurn: gameState.currentTurnIndex == 0,
-                      onRoll: () => gameNotifier.rollDice(),
-                    ),
-                  if (isTwoPlayerVsComputer)
-                    PlayerInfoCard(
-                      player: gameState.players[1],
-                      gameState: gameState,
-                      isCurrentTurn: gameState.currentTurnIndex == 1,
-                      onRoll: () => gameNotifier.rollDice(),
-                    )
-                  else if (gameState.players.length > 1)
-                    PlayerInfoCard(
-                      player: gameState.players[1],
-                      gameState: gameState,
-                      isCurrentTurn: gameState.currentTurnIndex == 1,
-                      onRoll: () => gameNotifier.rollDice(),
-                    ),
-                ],
+            if (!isTwoPlayerMode)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    if (gameState.players.isNotEmpty)
+                      PlayerInfoCard(
+                        player: gameState.players[0],
+                        gameState: gameState,
+                        isCurrentTurn: gameState.currentTurnIndex == 0,
+                        onRoll: () => gameNotifier.rollDice(),
+                      ),
+                    if (gameState.players.length > 1)
+                      PlayerInfoCard(
+                        player: gameState.players[1],
+                        gameState: gameState,
+                        isCurrentTurn: gameState.currentTurnIndex == 1,
+                        onRoll: () => gameNotifier.rollDice(),
+                      ),
+                  ],
+                ),
               ),
-            ),
 
             // Main Interactive Ludo Board
             Expanded(
@@ -140,6 +164,7 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                   child: LudoBoardWidget(
                     gameState: gameState,
                     onPawnTap: (pawn) => gameNotifier.movePawn(pawn),
+                    orientationQuarterTurns: boardQuarterTurns,
                   ),
                 ),
               ),
@@ -148,34 +173,55 @@ class _GameScreenState extends ConsumerState<GameScreen> {
             // Bottom Player Info Cards Row
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  if (isTwoPlayerVsComputer)
-                    PlayerInfoCard(
-                      player: gameState.players[0],
-                      gameState: gameState,
-                      isCurrentTurn: gameState.currentTurnIndex == 0,
-                      onRoll: () => gameNotifier.rollDice(),
+              child: isTwoPlayerMode
+                  ? Row(
+                      children: [
+                        Expanded(
+                          child: PlayerInfoCard(
+                            player: gameState.players[0],
+                            gameState: gameState,
+                            isCurrentTurn: gameState.currentTurnIndex == 0,
+                            onRoll: () => gameNotifier.rollDice(),
+                            twoPlayerLayout: true,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 7),
+                          child: SharedDiceButton(
+                            gameState: gameState,
+                            onRoll: () => gameNotifier.rollDice(),
+                          ),
+                        ),
+                        Expanded(
+                          child: PlayerInfoCard(
+                            player: gameState.players[1],
+                            gameState: gameState,
+                            isCurrentTurn: gameState.currentTurnIndex == 1,
+                            onRoll: () => gameNotifier.rollDice(),
+                            twoPlayerLayout: true,
+                          ),
+                        ),
+                      ],
                     )
-                  else if (gameState.players.length > 3)
-                    PlayerInfoCard(
-                      player: gameState.players[3],
-                      gameState: gameState,
-                      isCurrentTurn: gameState.currentTurnIndex == 3,
-                      onRoll: () => gameNotifier.rollDice(),
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        if (gameState.players.length > 3)
+                          PlayerInfoCard(
+                            player: gameState.players[3],
+                            gameState: gameState,
+                            isCurrentTurn: gameState.currentTurnIndex == 3,
+                            onRoll: () => gameNotifier.rollDice(),
+                          ),
+                        if (gameState.players.length > 2)
+                          PlayerInfoCard(
+                            player: gameState.players[2],
+                            gameState: gameState,
+                            isCurrentTurn: gameState.currentTurnIndex == 2,
+                            onRoll: () => gameNotifier.rollDice(),
+                          ),
+                      ],
                     ),
-                  if (isTwoPlayerVsComputer)
-                    const SizedBox.shrink()
-                  else if (gameState.players.length > 2)
-                    PlayerInfoCard(
-                      player: gameState.players[2],
-                      gameState: gameState,
-                      isCurrentTurn: gameState.currentTurnIndex == 2,
-                      onRoll: () => gameNotifier.rollDice(),
-                    ),
-                ],
-              ),
             ),
 
             const SizedBox(height: 4),

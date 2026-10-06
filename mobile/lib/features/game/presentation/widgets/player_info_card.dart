@@ -7,6 +7,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../domain/models/game_state.dart';
 import '../../domain/models/ludo_color.dart';
 import '../../domain/models/player_model.dart';
+import '../controllers/game_controller.dart';
 import 'ludo_pawn_icon.dart';
 
 class PlayerInfoCard extends StatefulWidget {
@@ -14,6 +15,7 @@ class PlayerInfoCard extends StatefulWidget {
   final GameState gameState;
   final bool isCurrentTurn;
   final VoidCallback onRoll;
+  final bool twoPlayerLayout;
 
   const PlayerInfoCard({
     super.key,
@@ -21,6 +23,7 @@ class PlayerInfoCard extends StatefulWidget {
     required this.gameState,
     required this.isCurrentTurn,
     required this.onRoll,
+    this.twoPlayerLayout = false,
   });
 
   @override
@@ -28,29 +31,55 @@ class PlayerInfoCard extends StatefulWidget {
 }
 
 class _PlayerInfoCardState extends State<PlayerInfoCard>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _turnPulse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1000),
   );
+  late final AnimationController _turnCountdown = AnimationController(
+    vsync: this,
+    duration: GameNotifier.turnDuration,
+  );
+  late final Listenable _animations =
+      Listenable.merge([_turnPulse, _turnCountdown]);
 
   @override
   void initState() {
     super.initState();
     _syncPulse();
+    _syncCountdown(reset: true);
   }
 
   @override
   void didUpdateWidget(covariant PlayerInfoCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isCurrentTurn != widget.isCurrentTurn ||
-        oldWidget.gameState.isGameOver != widget.gameState.isGameOver) {
+        oldWidget.gameState.isGameOver != widget.gameState.isGameOver ||
+        oldWidget.player.id != widget.player.id ||
+        oldWidget.player.isEliminated != widget.player.isEliminated) {
       _syncPulse();
+    }
+
+    final opportunityChanged = oldWidget.gameState.rollOpportunityId !=
+        widget.gameState.rollOpportunityId;
+    final playerChanged = oldWidget.player.id != widget.player.id;
+    final phaseChanged =
+        oldWidget.gameState.turnPhase != widget.gameState.turnPhase;
+    final pauseChanged =
+        oldWidget.gameState.turnTimerPaused != widget.gameState.turnTimerPaused;
+    if (opportunityChanged || playerChanged) {
+      _syncCountdown(reset: true);
+    } else if (pauseChanged) {
+      _syncCountdown(reset: widget.gameState.turnTimerPaused);
+    } else if (phaseChanged) {
+      _syncCountdown();
     }
   }
 
   void _syncPulse() {
-    if (widget.isCurrentTurn && !widget.gameState.isGameOver) {
+    if (widget.isCurrentTurn &&
+        !widget.player.isEliminated &&
+        !widget.gameState.isGameOver) {
       _turnPulse.repeat(reverse: true);
     } else {
       _turnPulse.stop();
@@ -58,9 +87,38 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
     }
   }
 
+  bool get _timerOpportunityActive =>
+      widget.isCurrentTurn &&
+      !widget.player.isBot &&
+      !widget.player.isEliminated &&
+      widget.gameState.turnPhase == GameTurnPhase.rollDice &&
+      !widget.gameState.isGameOver;
+
+  void _syncCountdown({bool reset = false}) {
+    if (!_timerOpportunityActive) {
+      _turnCountdown.stop(canceled: false);
+      return;
+    }
+    if (widget.gameState.turnTimerPaused) {
+      _turnCountdown.stop(canceled: false);
+      return;
+    }
+    if (reset) {
+      final fullDuration = GameNotifier.turnDuration.inMilliseconds;
+      final remaining = widget.gameState.turnTimerRemainingMilliseconds;
+      _turnCountdown.value = (1 - remaining / fullDuration).clamp(0.0, 1.0);
+    }
+    if (reset || _turnCountdown.status == AnimationStatus.dismissed) {
+      _turnCountdown.forward();
+    } else if (!_turnCountdown.isAnimating) {
+      _turnCountdown.forward();
+    }
+  }
+
   @override
   void dispose() {
     _turnPulse.dispose();
+    _turnCountdown.dispose();
     super.dispose();
   }
 
@@ -69,24 +127,35 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
     final isRolling = widget.isCurrentTurn && widget.gameState.isDiceRolling;
     final canRoll = widget.isCurrentTurn &&
         !widget.player.isBot &&
+        !widget.player.isEliminated &&
         widget.gameState.turnPhase == GameTurnPhase.rollDice &&
         !widget.gameState.isGameOver;
-    final cardWidth =
-        math.min(184.0, (MediaQuery.sizeOf(context).width - 44) / 2);
+    final cardWidth = widget.twoPlayerLayout
+        ? double.infinity
+        : math.min(184.0, (MediaQuery.sizeOf(context).width - 44) / 2);
 
     return AnimatedBuilder(
-      animation: _turnPulse,
+      animation: _animations,
       builder: (context, _) {
         final pulse = _turnPulse.value;
         final profileAccent = widget.isCurrentTurn
-            ? const Color(0xFF27D17F)
-            : widget.player.color.color;
+            ? const Color(0xFFFF00FF)
+            : widget.player.isEliminated
+                ? Color.lerp(
+                    widget.player.color.color,
+                    const Color(0xFF10182B),
+                    0.58,
+                  )!
+                : widget.player.color.color;
+        final timerVisible = _timerOpportunityActive;
         return Transform.scale(
           scale: widget.isCurrentTurn ? 1 + pulse * 0.012 : 1,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 220),
             width: cardWidth,
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+            padding: widget.twoPlayerLayout
+                ? const EdgeInsets.symmetric(horizontal: 6, vertical: 7)
+                : const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
             decoration: BoxDecoration(
               color: AppColors.bgNavy.withValues(alpha: 0.97),
               borderRadius: BorderRadius.circular(11),
@@ -97,154 +166,293 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
               boxShadow: [
                 BoxShadow(
                   color: profileAccent.withValues(
-                    alpha: widget.isCurrentTurn ? 0.32 + pulse * 0.12 : 0.16,
+                    alpha: widget.isCurrentTurn
+                        ? 0.32 + pulse * 0.12
+                        : widget.player.isEliminated
+                            ? 0.07
+                            : 0.16,
                   ),
                   blurRadius: widget.isCurrentTurn ? 9 + pulse * 3 : 5,
                   spreadRadius: widget.isCurrentTurn ? 0.6 : 0,
                 ),
               ],
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Text(widget.player.countryFlag,
-                        style: const TextStyle(fontSize: 11)),
-                    const SizedBox(width: 2),
-                    Expanded(
-                      child: Text(
-                        widget.player.country,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.poppins(
-                          fontSize: 8,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    const Icon(Icons.diamond_rounded,
-                        color: AppColors.diamondBlue, size: 10),
-                    const SizedBox(width: 1),
-                    Text(
-                      _formatBalance(widget.player.diamonds),
-                      style: GoogleFonts.poppins(
-                        fontSize: 7,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.monetization_on_rounded,
-                        color: AppColors.coinGold, size: 11),
-                    const SizedBox(width: 1),
-                    Text(
-                      _formatBalance(widget.player.coins),
-                      maxLines: 1,
-                      style: GoogleFonts.poppins(
-                        fontSize: 7,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
+            child: widget.twoPlayerLayout
+                ? _buildTwoPlayerProfile(
+                    profileAccent: profileAccent,
+                    timerVisible: timerVisible,
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
                         children: [
-                          Container(
-                            width: 40,
-                            height: 35,
-                            decoration: BoxDecoration(
-                              color: AppColors.bgCard,
-                              borderRadius: BorderRadius.circular(7),
-                              border: Border.all(
-                                color: profileAccent.withValues(alpha: 0.9),
-                                width: 1.5,
+                          Text(widget.player.countryFlag,
+                              style: const TextStyle(fontSize: 11)),
+                          const SizedBox(width: 2),
+                          Expanded(
+                            child: Text(
+                              widget.player.country,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.poppins(
+                                fontSize: 8,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
                               ),
                             ),
-                            clipBehavior: Clip.antiAlias,
-                            child: _buildAvatar(),
+                          ),
+                          const Icon(Icons.diamond_rounded,
+                              color: AppColors.diamondBlue, size: 10),
+                          const SizedBox(width: 1),
+                          Text(
+                            _formatBalance(widget.player.diamonds),
+                            style: GoogleFonts.poppins(
+                              fontSize: 7,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.monetization_on_rounded,
+                              color: AppColors.coinGold, size: 11),
+                          const SizedBox(width: 1),
+                          Text(
+                            _formatBalance(widget.player.coins),
+                            maxLines: 1,
+                            style: GoogleFonts.poppins(
+                              fontSize: 7,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(width: 3),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: List.generate(
-                        5,
-                        (_) => Container(
-                          width: 6,
-                          height: 6,
-                          margin: const EdgeInsets.symmetric(vertical: 0.7),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF20C866),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFF9BFFC2),
-                              width: 0.7,
+                      const SizedBox(height: 2),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CustomPaint(
+                                  foregroundPainter: timerVisible
+                                      ? _TurnTimerBorderPainter(
+                                          1 - _turnCountdown.value,
+                                        )
+                                      : null,
+                                  child: Container(
+                                    width: 40,
+                                    height: 35,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.bgCard,
+                                      borderRadius: BorderRadius.circular(7),
+                                      border: Border.all(
+                                        color: profileAccent.withValues(
+                                            alpha: 0.9),
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: _buildAvatar(),
+                                  ),
+                                ),
+                              ],
                             ),
-                            boxShadow: const [
-                              BoxShadow(
-                                  color: Color(0x8020C866), blurRadius: 3),
+                          ),
+                          const SizedBox(width: 3),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: List.generate(
+                              GameNotifier.maxMissedTurns,
+                              (index) => Container(
+                                width: 6,
+                                height: 6,
+                                margin:
+                                    const EdgeInsets.symmetric(vertical: 0.7),
+                                decoration: BoxDecoration(
+                                  color: index < widget.player.missedTurns
+                                      ? const Color(0xFFE53935)
+                                      : const Color(0xFF20C866),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: const Color(0xFF9BFFC2),
+                                    width: 0.7,
+                                  ),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                        color: Color(0x8020C866),
+                                        blurRadius: 3),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _PlayerDie(
+                                value: widget.gameState
+                                    .playerDiceValues[widget.player.id],
+                                isRolling: isRolling,
+                                isActive: widget.isCurrentTurn &&
+                                    widget.gameState.turnPhase ==
+                                        GameTurnPhase.rollDice &&
+                                    !widget.gameState.isGameOver,
+                                canRoll: canRoll,
+                                color: widget.player.color.color,
+                                onTap: widget.onRoll,
+                              ),
                             ],
                           ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 3),
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _PlayerDie(
-                          value: widget
-                              .gameState.playerDiceValues[widget.player.id],
-                          isRolling: isRolling,
-                          isActive: widget.isCurrentTurn &&
-                              widget.gameState.turnPhase ==
-                                  GameTurnPhase.rollDice &&
-                              !widget.gameState.isGameOver,
-                          canRoll: canRoll,
-                          color: widget.player.color.color,
-                          onTap: widget.onRoll,
-                        ),
-                      ],
-                    ),
-                    if (_opponentColors.isNotEmpty) ...[
-                      const SizedBox(width: 4),
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (var index = 0;
-                              index < _opponentColors.length;
-                              index++) ...[
-                            if (index > 0) const SizedBox(height: 1),
-                            _OpponentKillStat(
-                              color: _opponentColors[index],
-                              count: widget.player
-                                      .killCounts[_opponentColors[index]] ??
-                                  0,
+                          if (_opponentColors.isNotEmpty) ...[
+                            const SizedBox(width: 4),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                for (var index = 0;
+                                    index < _opponentColors.length;
+                                    index++) ...[
+                                  if (index > 0) const SizedBox(height: 1),
+                                  _OpponentKillStat(
+                                    color: _opponentColors[index],
+                                    count: widget.player.killCounts[
+                                            _opponentColors[index]] ??
+                                        0,
+                                  ),
+                                ],
+                              ],
                             ),
                           ],
                         ],
                       ),
                     ],
-                  ],
-                ),
-              ],
-            ),
+                  ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildTwoPlayerProfile({
+    required Color profileAccent,
+    required bool timerVisible,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Text(widget.player.countryFlag,
+                style: const TextStyle(fontSize: 11)),
+            const SizedBox(width: 2),
+            Expanded(
+              child: Text(
+                widget.player.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 8,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const Icon(Icons.diamond_rounded,
+                color: AppColors.diamondBlue, size: 10),
+            const SizedBox(width: 1),
+            Text(
+              _formatBalance(widget.player.diamonds),
+              maxLines: 1,
+              style: GoogleFonts.poppins(
+                fontSize: 7,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.monetization_on_rounded,
+                color: AppColors.coinGold, size: 11),
+            const SizedBox(width: 1),
+            Text(
+              _formatBalance(widget.player.coins),
+              maxLines: 1,
+              style: GoogleFonts.poppins(
+                fontSize: 7,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            CustomPaint(
+              foregroundPainter: timerVisible
+                  ? _TurnTimerBorderPainter(1 - _turnCountdown.value)
+                  : null,
+              child: Container(
+                width: 40,
+                height: 35,
+                decoration: BoxDecoration(
+                  color: AppColors.bgCard,
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(
+                    color: profileAccent.withValues(alpha: 0.9),
+                    width: 1.5,
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _buildAvatar(),
+              ),
+            ),
+            const SizedBox(width: 3),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(
+                GameNotifier.maxMissedTurns,
+                (index) => Container(
+                  width: 6,
+                  height: 6,
+                  margin: const EdgeInsets.symmetric(vertical: 0.7),
+                  decoration: BoxDecoration(
+                    color: index < widget.player.missedTurns
+                        ? const Color(0xFFE53935)
+                        : const Color(0xFF20C866),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFF9BFFC2),
+                      width: 0.7,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x8020C866), blurRadius: 3),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (_opponentColors.isNotEmpty) ...[
+              const SizedBox(width: 4),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _OpponentKillStat(
+                    color: _opponentColors.first,
+                    count: widget.player.killCounts[_opponentColors.first] ?? 0,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
     );
   }
 
@@ -297,6 +505,38 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
       .toList(growable: false);
 }
 
+class SharedDiceButton extends StatelessWidget {
+  final GameState gameState;
+  final VoidCallback onRoll;
+
+  const SharedDiceButton({
+    super.key,
+    required this.gameState,
+    required this.onRoll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final canRoll = !gameState.isCurrentPlayerBot &&
+        !gameState.currentPlayer.isEliminated &&
+        gameState.turnPhase == GameTurnPhase.rollDice &&
+        !gameState.isGameOver;
+    final isActive = gameState.turnPhase == GameTurnPhase.rollDice &&
+        !gameState.currentPlayer.isEliminated &&
+        !gameState.isGameOver;
+
+    return _PlayerDie(
+      value: gameState.diceValue,
+      isRolling: gameState.isDiceRolling,
+      isActive: isActive,
+      canRoll: canRoll,
+      color: gameState.currentPlayer.color.color,
+      size: 56,
+      onTap: onRoll,
+    );
+  }
+}
+
 class _OpponentKillStat extends StatelessWidget {
   final LudoColor color;
   final int count;
@@ -341,6 +581,7 @@ class _PlayerDie extends StatefulWidget {
   final bool isActive;
   final bool canRoll;
   final Color color;
+  final double size;
   final VoidCallback onTap;
 
   const _PlayerDie({
@@ -349,6 +590,7 @@ class _PlayerDie extends StatefulWidget {
     required this.isActive,
     required this.canRoll,
     required this.color,
+    this.size = 34,
     required this.onTap,
   });
 
@@ -422,8 +664,9 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
               ? (_rollController.value * 6).floor().clamp(0, 5).toInt() + 1
               : widget.value;
           final rollPhase = _rollController.value;
-          final hopHeight =
-              widget.isRolling ? math.sin(rollPhase * math.pi) * 18 : 0.0;
+          final hopHeight = widget.isRolling
+              ? math.sin(rollPhase * math.pi) * widget.size * 0.32
+              : 0.0;
           final rotationX = widget.isRolling
               ? rollPhase * math.pi * 4 +
                   math.sin(rollPhase * math.pi * 4) * 0.22
@@ -452,9 +695,9 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
                     (widget.canRoll ? 1 + flashPhase * 0.07 : 1),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  width: 34,
-                  height: 34,
-                  padding: const EdgeInsets.all(4),
+                  width: widget.size,
+                  height: widget.size,
+                  padding: EdgeInsets.all(widget.size * 0.12),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       begin: Alignment.topLeft,
@@ -467,7 +710,7 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
                       ],
                       stops: [0, 0.32, 0.76, 1],
                     ),
-                    borderRadius: BorderRadius.circular(9),
+                    borderRadius: BorderRadius.circular(widget.size * 0.26),
                     border: Border.all(
                       color: widget.isActive || widget.isRolling
                           ? Color.lerp(
@@ -516,10 +759,10 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
                   child: Stack(
                     children: [
                       Positioned(
-                        left: 3,
-                        top: 2,
-                        width: 21,
-                        height: 8,
+                        left: widget.size * 0.09,
+                        top: widget.size * 0.06,
+                        width: widget.size * 0.62,
+                        height: widget.size * 0.24,
                         child: IgnorePointer(
                           child: DecoratedBox(
                             decoration: BoxDecoration(
@@ -539,8 +782,8 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
                       Center(
                         child: value == null
                             ? Icon(Icons.casino_rounded,
-                                color: widget.color, size: 24)
-                            : _DicePips(value: value),
+                                color: widget.color, size: widget.size * 0.70)
+                            : _DicePips(value: value, size: widget.size),
                       ),
                     ],
                   ),
@@ -554,10 +797,46 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
   }
 }
 
+class _TurnTimerBorderPainter extends CustomPainter {
+  final double progress;
+
+  const _TurnTimerBorderPainter(this.progress);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress <= 0) return;
+    final remaining = progress.clamp(0.0, 1.0);
+    final warning = ((0.5 - remaining) / 0.5).clamp(0.0, 1.0);
+    final color = Color.lerp(
+      const Color(0xFF20C866),
+      const Color(0xFFE53935),
+      warning,
+    )!;
+    final rect = Rect.fromLTWH(1, 1, size.width - 2, size.height - 2);
+    final border = Path()
+      ..addRRect(RRect.fromRectAndRadius(rect, const Radius.circular(9)));
+    final metric = border.computeMetrics().first;
+    final visibleBorder = metric.extractPath(0, metric.length * remaining);
+    canvas.drawPath(
+      visibleBorder,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.2
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _TurnTimerBorderPainter oldDelegate) =>
+      oldDelegate.progress != progress;
+}
+
 class _DicePips extends StatelessWidget {
   final int value;
+  final double size;
 
-  const _DicePips({required this.value});
+  const _DicePips({required this.value, required this.size});
 
   static const _pipPositions = <Alignment>[
     Alignment(-0.72, -0.72),
@@ -586,8 +865,8 @@ class _DicePips extends StatelessWidget {
           Align(
             alignment: _pipPositions[index],
             child: Container(
-              width: 5.5,
-              height: 5.5,
+              width: size * 0.16,
+              height: size * 0.16,
               decoration: BoxDecoration(
                 gradient: const RadialGradient(
                   center: Alignment(-0.42, -0.5),

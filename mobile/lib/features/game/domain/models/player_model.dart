@@ -14,6 +14,9 @@ class PlayerModel {
   final List<PawnModel> pawns;
   final int rank; // 0: Not finished, 1: 1st Place, 2: 2nd, 3: 3rd, 4: 4th
   final Map<LudoColor, int> killCounts;
+  final int missedTurns;
+  final bool isEliminated;
+  final int eliminationOrder;
 
   const PlayerModel({
     required this.id,
@@ -28,11 +31,13 @@ class PlayerModel {
     required this.pawns,
     this.rank = 0,
     this.killCounts = const {},
+    this.missedTurns = 0,
+    this.isEliminated = false,
+    this.eliminationOrder = 0,
   });
 
   bool get isWinner => rank > 0;
   bool get hasAllPawnsHome => pawns.every((p) => p.isFinished);
-  int get finishedPawnsCount => pawns.where((p) => p.isFinished).length;
 
   factory PlayerModel.initial({
     required String id,
@@ -75,6 +80,9 @@ class PlayerModel {
     List<PawnModel>? pawns,
     int? rank,
     Map<LudoColor, int>? killCounts,
+    int? missedTurns,
+    bool? isEliminated,
+    int? eliminationOrder,
   }) {
     return PlayerModel(
       id: id,
@@ -89,6 +97,9 @@ class PlayerModel {
       pawns: pawns ?? this.pawns,
       rank: rank ?? this.rank,
       killCounts: killCounts ?? this.killCounts,
+      missedTurns: missedTurns ?? this.missedTurns,
+      isEliminated: isEliminated ?? this.isEliminated,
+      eliminationOrder: eliminationOrder ?? this.eliminationOrder,
     );
   }
 }

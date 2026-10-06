@@ -48,6 +48,9 @@ class GameState {
   final bool isGameOver;
   final List<String> winnerIds;
   final String statusMessage;
+  final int rollOpportunityId;
+  final bool turnTimerPaused;
+  final int turnTimerRemainingMilliseconds;
 
   const GameState({
     required this.players,
@@ -63,6 +66,9 @@ class GameState {
     this.isGameOver = false,
     this.winnerIds = const [],
     this.statusMessage = 'Roll the dice to start!',
+    this.rollOpportunityId = 0,
+    this.turnTimerPaused = false,
+    this.turnTimerRemainingMilliseconds = 5000,
   });
 
   PlayerModel get currentPlayer => players[currentTurnIndex];
@@ -83,6 +89,9 @@ class GameState {
     bool? isGameOver,
     List<String>? winnerIds,
     String? statusMessage,
+    int? rollOpportunityId,
+    bool? turnTimerPaused,
+    int? turnTimerRemainingMilliseconds,
   }) {
     return GameState(
       players: players ?? this.players,
@@ -98,6 +107,10 @@ class GameState {
       isGameOver: isGameOver ?? this.isGameOver,
       winnerIds: winnerIds ?? this.winnerIds,
       statusMessage: statusMessage ?? this.statusMessage,
+      rollOpportunityId: rollOpportunityId ?? this.rollOpportunityId,
+      turnTimerPaused: turnTimerPaused ?? this.turnTimerPaused,
+      turnTimerRemainingMilliseconds:
+          turnTimerRemainingMilliseconds ?? this.turnTimerRemainingMilliseconds,
     );
   }
 }

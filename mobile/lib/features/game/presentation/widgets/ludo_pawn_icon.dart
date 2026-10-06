@@ -38,22 +38,33 @@ class GlossyPawnPainter extends CustomPainter {
     final unit = math.min(size.width, size.height);
     final cx = size.width / 2;
 
+    // A clear upright figure: shoulders, arms, a straight torso, and two legs.
     final body = Path()
-      ..moveTo(cx - unit * 0.12, unit * 0.37)
-      ..cubicTo(cx - unit * 0.11, unit * 0.48, cx - unit * 0.27, unit * 0.53,
-          cx - unit * 0.35, unit * 0.68)
-      ..cubicTo(cx - unit * 0.44, unit * 0.83, cx - unit * 0.41, unit * 0.94,
-          cx - unit * 0.29, unit * 0.97)
-      ..cubicTo(cx - unit * 0.16, unit * 1.01, cx + unit * 0.16, unit * 1.01,
-          cx + unit * 0.29, unit * 0.97)
-      ..cubicTo(cx + unit * 0.41, unit * 0.94, cx + unit * 0.44, unit * 0.83,
-          cx + unit * 0.35, unit * 0.68)
-      ..cubicTo(cx + unit * 0.27, unit * 0.53, cx + unit * 0.11, unit * 0.48,
-          cx + unit * 0.12, unit * 0.37)
+      ..moveTo(cx - unit * 0.08, unit * 0.34)
+      ..lineTo(cx + unit * 0.08, unit * 0.34)
+      ..lineTo(cx + unit * 0.12, unit * 0.37)
+      ..cubicTo(cx + unit * 0.22, unit * 0.39, cx + unit * 0.25, unit * 0.48,
+          cx + unit * 0.28, unit * 0.59)
+      ..lineTo(cx + unit * 0.22, unit * 0.63)
+      ..lineTo(cx + unit * 0.15, unit * 0.49)
+      ..lineTo(cx + unit * 0.14, unit * 0.70)
+      ..lineTo(cx + unit * 0.11, unit * 0.75)
+      ..lineTo(cx + unit * 0.12, unit * 0.95)
+      ..lineTo(cx + unit * 0.02, unit * 0.95)
+      ..lineTo(cx, unit * 0.77)
+      ..lineTo(cx - unit * 0.02, unit * 0.77)
+      ..lineTo(cx - unit * 0.04, unit * 0.95)
+      ..lineTo(cx - unit * 0.14, unit * 0.95)
+      ..lineTo(cx - unit * 0.13, unit * 0.70)
+      ..lineTo(cx - unit * 0.14, unit * 0.49)
+      ..lineTo(cx - unit * 0.22, unit * 0.63)
+      ..lineTo(cx - unit * 0.28, unit * 0.59)
+      ..cubicTo(cx - unit * 0.25, unit * 0.48, cx - unit * 0.22, unit * 0.39,
+          cx - unit * 0.12, unit * 0.37)
       ..close();
 
-    final headCenter = Offset(cx, unit * 0.245);
-    final headRadius = unit * 0.225;
+    final headCenter = Offset(cx, unit * 0.205);
+    final headRadius = unit * 0.16;
     final silhouette = Path()
       ..addPath(body, Offset.zero)
       ..addOval(Rect.fromCircle(center: headCenter, radius: headRadius));

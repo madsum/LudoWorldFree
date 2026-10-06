@@ -13,11 +13,13 @@ import 'ludo_pawn_icon.dart';
 class LudoBoardWidget extends StatefulWidget {
   final GameState gameState;
   final ValueChanged<PawnModel> onPawnTap;
+  final int orientationQuarterTurns;
 
   const LudoBoardWidget({
     super.key,
     required this.gameState,
     required this.onPawnTap,
+    this.orientationQuarterTurns = 0,
   });
 
   @override
@@ -215,6 +217,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                                 widget.gameState.lastCaptureEvent!,
                               ),
                             ),
+                          ..._buildEliminatedPlayerSigns(tileSize),
                           ..._buildPlayerNamePlates(tileSize),
                         ],
                       );
@@ -237,6 +240,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     final Map<String, List<Map<String, dynamic>>> staticTileOccupants = {};
 
     for (final player in widget.gameState.players) {
+      if (player.isEliminated) continue;
       for (final pawn in player.pawns) {
         final key = '${pawn.color.name}_${pawn.id}';
         final animationController = _activeControllers[key];
@@ -402,34 +406,124 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     return Offset(wedgeCenter.dx + xOffset, wedgeCenter.dy + yOffset);
   }
 
-  List<Widget> _buildPlayerNamePlates(double tileSize) {
-    return widget.gameState.players.map((player) {
-      final isTop =
-          player.color == LudoColor.red || player.color == LudoColor.green;
-      final isLeft =
-          player.color == LudoColor.red || player.color == LudoColor.blue;
-      final left = isLeft ? tileSize * 0.55 : tileSize * 9.5;
-      final top = isTop ? tileSize * 0.12 : tileSize * 14.08;
+  List<Widget> _buildEliminatedPlayerSigns(double tileSize) {
+    return widget.gameState.players
+        .where((player) => player.isEliminated)
+        .map((player) {
+      final topLeft = switch (player.color) {
+        LudoColor.red => const Offset(1, 1),
+        LudoColor.green => const Offset(10, 1),
+        LudoColor.yellow => const Offset(10, 10),
+        LudoColor.blue => const Offset(1, 10),
+      };
+      final size = tileSize * 4;
 
       return Positioned(
-        key: ValueKey('name_plate_${player.color.name}'),
-        left: left,
-        top: top,
-        width: tileSize * 5,
-        height: tileSize * 0.78,
+        key: ValueKey('eliminated_sign_${player.id}'),
+        left: topLeft.dx * tileSize,
+        top: topLeft.dy * tileSize,
+        width: size,
+        height: size,
         child: IgnorePointer(
-          child: RepaintBoundary(
-            child: _PlayerNamePlate(
-              name: player.name,
-              color: player.color,
-              rank: player.rank,
-              isActive: widget.gameState.currentPlayer.id == player.id &&
-                  !widget.gameState.isGameOver,
+          child: Semantics(
+            label: '${player.name} left the game',
+            child: RotatedBox(
+              quarterTurns: (4 - widget.orientationQuarterTurns % 4) % 4,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Positioned.fill(
+                    child: Image.asset(
+                      'assets/images/exit_sign.png',
+                      fit: BoxFit.fill,
+                      excludeFromSemantics: true,
+                    ),
+                  ),
+                  Positioned(
+                    top: tileSize * 0.1,
+                    child: Text(
+                      '${player.eliminationOrder}',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: tileSize * 0.58,
+                        fontWeight: FontWeight.w800,
+                        height: 1,
+                        shadows: [
+                          Shadow(
+                            color:
+                                const Color(0xFF075B34).withValues(alpha: 0.9),
+                            blurRadius: tileSize * 0.1,
+                            offset: Offset(0, tileSize * 0.025),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       );
     }).toList();
+  }
+
+  List<Widget> _buildPlayerNamePlates(double tileSize) {
+    final quarterTurns = widget.orientationQuarterTurns % 4;
+    final nameWidth = tileSize * 5;
+    final nameHeight = tileSize * 0.78;
+
+    return widget.gameState.players.map((player) {
+      final homeCenter = switch (player.color) {
+        LudoColor.red => const Offset(3, 3),
+        LudoColor.green => const Offset(12, 3),
+        LudoColor.yellow => const Offset(12, 12),
+        LudoColor.blue => const Offset(3, 12),
+      };
+      final screenHomeCenter = _rotateBoardPoint(homeCenter, quarterTurns);
+      final screenNameCenter = Offset(
+        screenHomeCenter.dx < 7.5 ? 3.05 : 12,
+        screenHomeCenter.dy < 7.5 ? 0.51 : 14.47,
+      );
+      final localNameCenter =
+          _rotateBoardPoint(screenNameCenter, (4 - quarterTurns) % 4);
+      final swapsDimensions = quarterTurns.isOdd;
+      final localWidth = swapsDimensions ? nameHeight : nameWidth;
+      final localHeight = swapsDimensions ? nameWidth : nameHeight;
+
+      return Positioned(
+        key: ValueKey('name_plate_${player.color.name}'),
+        left: (localNameCenter.dx * tileSize) - localWidth / 2,
+        top: (localNameCenter.dy * tileSize) - localHeight / 2,
+        width: localWidth,
+        height: localHeight,
+        child: IgnorePointer(
+          child: RepaintBoundary(
+            child: RotatedBox(
+              quarterTurns: (4 - quarterTurns) % 4,
+              child: _PlayerNamePlate(
+                name: player.name,
+                color: player.color,
+                rank: player.rank,
+                isActive: widget.gameState.currentPlayer.id == player.id &&
+                    !widget.gameState.isGameOver,
+              ),
+            ),
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  Offset _rotateBoardPoint(Offset point, int quarterTurns) {
+    const boardExtent = 15.0;
+    return switch (quarterTurns % 4) {
+      0 => point,
+      1 => Offset(boardExtent - point.dy, point.dx),
+      2 => Offset(boardExtent - point.dx, boardExtent - point.dy),
+      _ => Offset(point.dy, boardExtent - point.dx),
+    };
   }
 }
 
