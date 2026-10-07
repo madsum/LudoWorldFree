@@ -32,6 +32,8 @@ class VictoryDialog extends StatelessWidget {
       orElse: () => gameState.players.first,
     );
     final humanWon = winner.id == humanPlayer.id;
+    final panelHeight =
+        math.min(MediaQuery.sizeOf(context).height * 0.52, 640.0).toDouble();
     final rankedPlayers = gameState.players.toList()
       ..sort((a, b) {
         final aGroup = a.isEliminated ? 2 : (a.rank > 0 ? 0 : 1);
@@ -52,35 +54,25 @@ class VictoryDialog extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           const IgnorePointer(child: _GoldenGlitter()),
-          Positioned.fill(
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 8,
             child: SafeArea(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final panelHeight = math
-                      .min(
-                        constraints.maxHeight * 0.52,
-                        640.0,
-                      )
-                      .toDouble();
-                  return Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 520),
-                        child: SizedBox(
-                          width: double.infinity,
-                          height: panelHeight,
-                          child: _buildResultsPanel(
-                            winner: winner,
-                            humanWon: humanWon,
-                            rankedPlayers: rankedPlayers,
-                          ),
-                        ),
-                      ),
+              top: false,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: panelHeight,
+                    child: _buildResultsPanel(
+                      winner: winner,
+                      humanWon: humanWon,
+                      rankedPlayers: rankedPlayers,
                     ),
-                  );
-                },
+                  ),
+                ),
               ),
             ),
           ),

@@ -616,8 +616,7 @@ class GameNotifier extends StateNotifier<GameState> {
     _beginRollOpportunity();
   }
 
-  /// Records a two-player match exit as a forfeit so the opponent receives
-  /// the normal match result and victory dialog.
+  /// Ends a two-player match immediately when its human player forfeits.
   bool forfeitHumanPlayer() {
     if (_isDisposed || state.isGameOver || state.players.length != 2) {
       return false;
@@ -633,19 +632,35 @@ class GameNotifier extends StateNotifier<GameState> {
     final forfeitingIndex =
         humanIndices.length == 1 ? humanIndices.single : state.currentTurnIndex;
     final forfeitingPlayer = state.players[forfeitingIndex];
-    if (forfeitingPlayer.isEliminated || forfeitingPlayer.hasAllPawnsHome) {
-      return false;
-    }
-
-    final eliminationOrder =
-        state.players.where((player) => player.isEliminated).length + 1;
     final updatedPlayers = [...state.players];
     updatedPlayers[forfeitingIndex] = forfeitingPlayer.copyWith(
       isEliminated: true,
-      eliminationOrder: eliminationOrder,
+      eliminationOrder:
+          state.players.where((player) => player.isEliminated).length + 1,
     );
-    _eliminatePlayer(updatedPlayers, forfeitingIndex);
-    return state.isGameOver;
+    final winnerIndex = 1 - forfeitingIndex;
+    final winner = updatedPlayers[winnerIndex];
+    final winnerIds = List<String>.from(state.winnerIds);
+    if (!winnerIds.contains(winner.id)) winnerIds.add(winner.id);
+    updatedPlayers[winnerIndex] = winner.copyWith(rank: winnerIds.length);
+
+    _cancelTurnTimer();
+    _cancelPawnSelectionTimer();
+    _botTimer?.cancel();
+    _isTurnProcessing = false;
+    state = state.copyWith(
+      players: updatedPlayers,
+      currentTurnIndex: winnerIndex,
+      winnerIds: winnerIds,
+      isGameOver: true,
+      turnPhase: GameTurnPhase.turnEnded,
+      movablePawns: const [],
+      isDiceRolling: false,
+      turnTimerPaused: false,
+      turnTimerRemainingMilliseconds: 0,
+      statusMessage: '${winner.name} wins by forfeit!',
+    );
+    return true;
   }
 
   void _autoSelectAndMove(List<PawnModel> movable) {

@@ -24,7 +24,6 @@ class GameScreen extends ConsumerStatefulWidget {
 
 class _GameScreenState extends ConsumerState<GameScreen>
     with WidgetsBindingObserver {
-  bool _completionDialogShown = false;
   bool _showTimeoutNotice = false;
   Timer? _timeoutNoticeTimer;
 
@@ -32,6 +31,23 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    ref.listenManual<GameState>(
+      gameControllerProvider,
+      (previous, next) {
+        if (previous != null) {
+          final previousMissedTurns = {
+            for (final player in previous.players)
+              player.id: player.missedTurns,
+          };
+          final hasMissedRoll = next.players.any(
+            (player) =>
+                player.missedTurns > (previousMissedTurns[player.id] ?? 0),
+          );
+          if (hasMissedRoll) _showTimeoutNoticeOverlay();
+        }
+      },
+      fireImmediately: true,
+    );
     if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
       ref.read(gameControllerProvider.notifier).resumeTurnTimer();
     } else {
@@ -63,16 +79,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
   @override
   Widget build(BuildContext context) {
     final gameState = ref.watch(gameControllerProvider);
-    ref.listen(gameControllerProvider, (previous, next) {
-      if (previous == null) return;
-      final previousMissedTurns = {
-        for (final player in previous.players) player.id: player.missedTurns,
-      };
-      final hasMissedRoll = next.players.any(
-        (player) => player.missedTurns > (previousMissedTurns[player.id] ?? 0),
-      );
-      if (hasMissedRoll) _showTimeoutNoticeOverlay();
-    });
     final gameNotifier = ref.read(gameControllerProvider.notifier);
     final botCount = gameState.players.where((player) => player.isBot).length;
     final isVsComputer =
@@ -86,30 +92,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
         humanIndex < 0 ? null : gameState.players[humanIndex].color;
     final boardQuarterTurns =
         isVsComputer && humanColor != null ? (3 - humanColor.index) % 4 : 0;
-
-    // Automatically trigger victory popup when match finishes
-    if (gameState.isGameOver && !_completionDialogShown) {
-      _completionDialogShown = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => VictoryDialog(
-            gameState: gameState,
-            onPlayAgain: () {
-              _completionDialogShown = false;
-              Navigator.of(context).pop();
-              gameNotifier.startNewGame(players: gameState.players);
-            },
-            onExitToLobby: () {
-              Navigator.of(context).pop();
-              context.go('/home');
-            },
-          ),
-        );
-      });
-    }
 
     return Scaffold(
       backgroundColor: AppColors.bgDark,
@@ -355,6 +337,24 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 ),
               ),
             ),
+            if (gameState.isGameOver)
+              Positioned.fill(
+                child: Stack(
+                  children: [
+                    const ModalBarrier(
+                      dismissible: false,
+                      color: Color(0x99000000),
+                    ),
+                    VictoryDialog(
+                      gameState: gameState,
+                      onPlayAgain: () => gameNotifier.startNewGame(
+                        players: gameState.players,
+                      ),
+                      onExitToLobby: () => context.go('/home'),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
@@ -418,9 +418,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
             onPressed: () {
-              final matchCompleted = ref
-                  .read(gameControllerProvider.notifier)
-                  .forfeitHumanPlayer();
+              final gameNotifier = ref.read(gameControllerProvider.notifier);
+              final matchCompleted = gameNotifier.forfeitHumanPlayer();
               Navigator.of(context).pop();
               if (!matchCompleted) context.go('/home');
             },
