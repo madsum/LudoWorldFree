@@ -123,6 +123,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     consentService: ref.read(adMobConsentServiceProvider),
                   ),
 
+                if (!isTwoPlayerMode && !gameState.isGameOver)
+                  _buildBackButtonRow(context),
+
                 if (!isTwoPlayerMode)
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -152,19 +155,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                   ),
 
-                if (!gameState.isGameOver)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
-                    child: SizedBox(
-                      height: 32,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: _CompactBackButton(
-                          onPressed: () => _confirmExitDialog(context),
-                        ),
-                      ),
-                    ),
-                  ),
+                if (isTwoPlayerMode && !gameState.isGameOver)
+                  _buildBackButtonRow(context),
 
                 // Main Interactive Ludo Board
                 Expanded(
@@ -378,6 +370,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
       setState(() => _showTimeoutNotice = false);
     });
   }
+
+  Widget _buildBackButtonRow(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
+        child: SizedBox(
+          height: 32,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _CompactBackButton(
+              onPressed: () => _confirmExitDialog(context),
+            ),
+          ),
+        ),
+      );
 
   void _confirmExitDialog(BuildContext context) {
     final recordsForfeit = ref.read(gameControllerProvider).players.length == 2;
