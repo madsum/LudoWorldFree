@@ -77,17 +77,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final isVsComputer =
         botCount == gameState.players.length - 1 && botCount > 0;
     final isTwoPlayerMode = gameState.players.length == 2;
-    final isHumanRollWindow =
-        !gameState.isGameOver &&
+    final isHumanRollWindow = !gameState.isGameOver &&
         !gameState.isCurrentPlayerBot &&
         gameState.turnPhase == GameTurnPhase.rollDice;
     final humanIndex = gameState.players.indexWhere((player) => !player.isBot);
-    final humanColor = humanIndex < 0
-        ? null
-        : gameState.players[humanIndex].color;
-    final boardQuarterTurns = isVsComputer && humanColor != null
-        ? (3 - humanColor.index) % 4
-        : 0;
+    final humanColor =
+        humanIndex < 0 ? null : gameState.players[humanIndex].color;
+    final boardQuarterTurns =
+        isVsComputer && humanColor != null ? (3 - humanColor.index) % 4 : 0;
 
     // Automatically trigger victory popup when match finishes
     if (gameState.isGameOver && !_completionDialogShown) {
@@ -120,45 +117,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
           children: [
             Column(
               children: [
-                BannerAdWidget(
-                  consentService: ref.read(adMobConsentServiceProvider),
-                ),
-                // Top Match Header
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
+                if (!gameState.isGameOver)
+                  BannerAdWidget(
+                    consentService: ref.read(adMobConsentServiceProvider),
                   ),
-                  decoration: const BoxDecoration(
-                    color: AppColors.bgNavy,
-                    border: Border(
-                      bottom: BorderSide(color: AppColors.gold, width: 1.5),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(
-                          Icons.arrow_back_rounded,
-                          color: Colors.white,
-                        ),
-                        onPressed: () => _confirmExitDialog(context),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'LUDO MATCH',
-                          style: GoogleFonts.cinzel(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.gold,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
 
                 if (!isTwoPlayerMode)
                   Padding(
@@ -175,6 +137,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                             gameState: gameState,
                             isCurrentTurn: gameState.currentTurnIndex == 0,
                             onRoll: () => gameNotifier.rollDice(),
+                            compact: true,
                           ),
                         if (gameState.players.length > 1)
                           PlayerInfoCard(
@@ -182,6 +145,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                             gameState: gameState,
                             isCurrentTurn: gameState.currentTurnIndex == 1,
                             onRoll: () => gameNotifier.rollDice(),
+                            compact: true,
                           ),
                       ],
                     ),
@@ -189,15 +153,28 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
                 // Main Interactive Ludo Board
                 Expanded(
-                  child: Center(
-                    child: RotatedBox(
-                      quarterTurns: boardQuarterTurns,
-                      child: LudoBoardWidget(
-                        gameState: gameState,
-                        onPawnTap: (pawn) => gameNotifier.movePawn(pawn),
-                        orientationQuarterTurns: boardQuarterTurns,
+                  child: Stack(
+                    children: [
+                      Center(
+                        child: RotatedBox(
+                          quarterTurns: boardQuarterTurns,
+                          child: LudoBoardWidget(
+                            gameState: gameState,
+                            onPawnTap: (pawn) => gameNotifier.movePawn(pawn),
+                            orientationQuarterTurns: boardQuarterTurns,
+                            compactFrame: !isTwoPlayerMode,
+                          ),
+                        ),
                       ),
-                    ),
+                      if (!gameState.isGameOver)
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: _CompactBackButton(
+                            onPressed: () => _confirmExitDialog(context),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
 
@@ -217,8 +194,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 isCurrentTurn: gameState.currentTurnIndex == 0,
                                 onRoll: () => gameNotifier.rollDice(),
                                 twoPlayerLayout: true,
-                                showRollArrow:
-                                    isHumanRollWindow &&
+                                showRollArrow: isHumanRollWindow &&
                                     gameState.currentTurnIndex == 0,
                                 rollArrowPointsLeft: true,
                               ),
@@ -239,8 +215,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 isCurrentTurn: gameState.currentTurnIndex == 1,
                                 onRoll: () => gameNotifier.rollDice(),
                                 twoPlayerLayout: true,
-                                showRollArrow:
-                                    isHumanRollWindow &&
+                                showRollArrow: isHumanRollWindow &&
                                     gameState.currentTurnIndex == 1,
                               ),
                             ),
@@ -255,8 +230,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 gameState: gameState,
                                 isCurrentTurn: gameState.currentTurnIndex == 3,
                                 onRoll: () => gameNotifier.rollDice(),
-                                showRollArrow:
-                                    isHumanRollWindow &&
+                                compact: true,
+                                showRollArrow: isHumanRollWindow &&
                                     gameState.currentTurnIndex == 3,
                                 rollArrowPointsLeft: true,
                               ),
@@ -266,8 +241,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 gameState: gameState,
                                 isCurrentTurn: gameState.currentTurnIndex == 2,
                                 onRoll: () => gameNotifier.rollDice(),
-                                showRollArrow:
-                                    isHumanRollWindow &&
+                                compact: true,
+                                showRollArrow: isHumanRollWindow &&
                                     gameState.currentTurnIndex == 2,
                               ),
                           ],
@@ -277,6 +252,39 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 const SizedBox(height: 4),
               ],
             ),
+            if (gameState.isGameOver)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: ColoredBox(
+                    color: AppColors.bgDark,
+                    child: Column(
+                      children: [
+                        BannerAdWidget(
+                          consentService: ref.read(adMobConsentServiceProvider),
+                        ),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.topCenter,
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: RotatedBox(
+                                quarterTurns: boardQuarterTurns,
+                                child: LudoBoardWidget(
+                                  gameState: gameState,
+                                  onPawnTap: (pawn) =>
+                                      gameNotifier.movePawn(pawn),
+                                  orientationQuarterTurns: boardQuarterTurns,
+                                  compactFrame: !isTwoPlayerMode,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             Positioned.fill(
               child: IgnorePointer(
                 child: AnimatedOpacity(
@@ -376,6 +384,41 @@ class _GameScreenState extends ConsumerState<GameScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CompactBackButton extends StatelessWidget {
+  const _CompactBackButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Leave match',
+      child: Material(
+        color: AppColors.bgNavy.withValues(alpha: 0.92),
+        elevation: 4,
+        shape: const CircleBorder(
+          side: BorderSide(color: AppColors.gold, width: 1),
+        ),
+        child: SizedBox(
+          width: 36,
+          height: 36,
+          child: IconButton(
+            onPressed: onPressed,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            splashRadius: 18,
+            icon: const Icon(
+              Icons.arrow_back_rounded,
+              color: Colors.white,
+              size: 19,
+            ),
+          ),
+        ),
       ),
     );
   }

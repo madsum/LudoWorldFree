@@ -14,12 +14,14 @@ class LudoBoardWidget extends StatefulWidget {
   final GameState gameState;
   final ValueChanged<PawnModel> onPawnTap;
   final int orientationQuarterTurns;
+  final bool compactFrame;
 
   const LudoBoardWidget({
     super.key,
     required this.gameState,
     required this.onPawnTap,
     this.orientationQuarterTurns = 0,
+    this.compactFrame = false,
   });
 
   @override
@@ -167,9 +169,9 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     return AspectRatio(
       aspectRatio: 1.0,
       child: Container(
-        margin: const EdgeInsets.all(6),
+        margin: EdgeInsets.all(widget.compactFrame ? 2 : 6),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(widget.compactFrame ? 16 : 20),
           gradient: const LinearGradient(
             colors: [Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFB76E00)],
             begin: Alignment.topLeft,
@@ -189,9 +191,9 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
           ],
         ),
         child: Padding(
-          padding: const EdgeInsets.all(6.0),
+          padding: EdgeInsets.all(widget.compactFrame ? 2 : 6),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(widget.compactFrame ? 12 : 15),
             child: Stack(
               children: [
                 Positioned.fill(

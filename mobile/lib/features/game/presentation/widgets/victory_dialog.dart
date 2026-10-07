@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../../core/constants/app_assets.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../domain/models/game_state.dart';
 import '../../domain/models/player_model.dart';
@@ -56,7 +57,7 @@ class VictoryDialog extends StatelessWidget {
               builder: (context, constraints) {
                 final panelHeight = math
                     .min(
-                      constraints.maxHeight * 0.74,
+                      constraints.maxHeight * 0.44,
                       640.0,
                     )
                     .toDouble();
@@ -106,15 +107,32 @@ class VictoryDialog extends StatelessWidget {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
         child: Column(
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.stars_rounded,
-                    color: AppColors.gold, size: 28),
-                const SizedBox(width: 7),
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.gold, width: 1.5),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x88F4C542), blurRadius: 8),
+                    ],
+                  ),
+                  child: ClipOval(
+                    child: Image.asset(
+                      AppAssets.logoJpeg,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Icon(Icons.casino, color: AppColors.gold),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
                 Flexible(
                   child: Text(
                     'LUDO WORLD FREE',
@@ -122,29 +140,29 @@ class VictoryDialog extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.cinzel(
                       color: AppColors.gold,
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.w900,
-                      letterSpacing: 1.2,
+                      letterSpacing: 0.7,
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 1),
             Text(
               'Best emerging game on Google Play',
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
                 color: Colors.white,
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
                 shadows: const [Shadow(color: Colors.black, blurRadius: 4)],
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 10),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 gradient: const LinearGradient(
@@ -157,14 +175,14 @@ class VictoryDialog extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: GoogleFonts.cinzel(
                   color: AppColors.gold,
-                  fontSize: 21,
+                  fontSize: 17,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 1.3,
                   shadows: const [Shadow(color: Colors.black, blurRadius: 5)],
                 ),
               ),
             ),
-            const SizedBox(height: 7),
+            const SizedBox(height: 4),
             Row(
               children: [
                 const Icon(Icons.emoji_events, color: AppColors.gold, size: 23),
@@ -176,7 +194,7 @@ class VictoryDialog extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.poppins(
                       color: Colors.white,
-                      fontSize: 16,
+                      fontSize: 14,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -185,13 +203,13 @@ class VictoryDialog extends StatelessWidget {
                   humanWon ? 'Winner' : '1st place',
                   style: GoogleFonts.poppins(
                     color: AppColors.gold,
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Row(
               children: [
                 Expanded(
@@ -212,18 +230,9 @@ class VictoryDialog extends StatelessWidget {
                     child: Divider(color: Colors.white.withValues(alpha: 0.3))),
               ],
             ),
-            const SizedBox(height: 4),
-            Expanded(
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    for (var index = 0; index < rankedPlayers.length; index++)
-                      _rankingRow(rankedPlayers[index], index + 1),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 2),
+            _rankingRows(rankedPlayers),
+            const SizedBox(height: 5),
             Row(
               children: [
                 Expanded(
@@ -235,7 +244,7 @@ class VictoryDialog extends StatelessWidget {
                       foregroundColor: Colors.white,
                       side: BorderSide(
                           color: Colors.white.withValues(alpha: 0.6)),
-                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
                       textStyle: GoogleFonts.poppins(
                         fontWeight: FontWeight.w800,
                         fontSize: 12,
@@ -252,7 +261,7 @@ class VictoryDialog extends StatelessWidget {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF48D12D),
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                         side: const BorderSide(
@@ -273,36 +282,66 @@ class VictoryDialog extends StatelessWidget {
     );
   }
 
-  Widget _rankingRow(PlayerModel player, int placement) {
-    final capturedPawns = player.killCounts.entries
-        .where((entry) => entry.value > 0)
-        .toList(growable: false);
-    final capturedLabel = capturedPawns.isEmpty
-        ? 'No pawns captured'
-        : capturedPawns
-            .map((entry) =>
-                '${entry.value} ${entry.key.displayName.toLowerCase()} pawns captured')
-            .join(', ');
-    final isWinner = placement == 1;
+  Widget _rankingRows(List<PlayerModel> players) {
+    if (players.isEmpty) return const SizedBox.shrink();
+
+    final remainingPlayers = players.skip(1).toList(growable: false);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _rankingRow(players.first),
+        if (remainingPlayers.isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var index = 0; index < remainingPlayers.length; index++) ...[
+                if (index > 0) const SizedBox(width: 4),
+                Expanded(
+                  child: _compactRankingCell(
+                    remainingPlayers[index],
+                    index + 2,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _rankingRow(PlayerModel player) {
+    final capturedCount = _capturedPawnCount(player);
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 3),
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
-        color: isWinner ? const Color(0xFFFFC928) : const Color(0xCC061A3A),
+        color: const Color(0xFFFFC928),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isWinner ? const Color(0xFFFFE98A) : Colors.white12,
-        ),
+        border: Border.all(color: const Color(0xFFFFE98A)),
       ),
       child: Row(
         children: [
           SizedBox(
-            width: 28,
-            child: Icon(
-              isWinner ? Icons.workspace_premium_rounded : Icons.military_tech,
-              color: isWinner ? const Color(0xFF7B4800) : Colors.white70,
-              size: 22,
+            width: 32,
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.workspace_premium_rounded,
+                  color: Color(0xFF7B4800),
+                  size: 18,
+                ),
+                const SizedBox(width: 1),
+                Text(
+                  '#1',
+                  style: GoogleFonts.poppins(
+                    color: const Color(0xFF7B4800),
+                    fontSize: 8,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
             ),
           ),
           Container(
@@ -321,52 +360,112 @@ class VictoryDialog extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: GoogleFonts.poppins(
-                color: isWinner ? const Color(0xFF402700) : Colors.white,
-                fontSize: 13,
+                color: const Color(0xFF402700),
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
           const SizedBox(width: 6),
-          Semantics(
-            label: capturedLabel,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: capturedPawns.isEmpty
-                  ? [
-                      Text(
-                        '0 captures',
-                        style: TextStyle(
-                          color: isWinner ? Colors.black54 : Colors.white70,
-                          fontSize: 10,
-                        ),
-                      ),
-                    ]
-                  : [
-                      for (final entry in capturedPawns) ...[
-                        LudoPawnIcon(color: entry.key, size: 14),
-                        const SizedBox(width: 2),
-                        const Icon(Icons.close_rounded,
-                            color: Color(0xFFFF655F), size: 12),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${entry.value}',
-                          style: TextStyle(
-                            color: isWinner ? Colors.black87 : Colors.white70,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        if (entry != capturedPawns.last)
-                          const SizedBox(width: 5),
-                      ],
-                    ],
+          _captureCountBadge(
+            player,
+            capturedCount,
+            foregroundColor: const Color(0xFF402700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _compactRankingCell(PlayerModel player, int placement) {
+    final capturedCount = _capturedPawnCount(player);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(5, 5, 4, 5),
+      decoration: BoxDecoration(
+        color: const Color(0xCC061A3A),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Text(
+                '#$placement',
+                style: GoogleFonts.poppins(
+                  color: AppColors.gold,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 3),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: player.color.color,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white70, width: 0.6),
+                ),
+              ),
+              const SizedBox(width: 3),
+              Expanded(
+                child: Text(
+                  player.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          _captureCountBadge(
+            player,
+            capturedCount,
+            foregroundColor: Colors.white,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _captureCountBadge(
+    PlayerModel player,
+    int count, {
+    required Color foregroundColor,
+  }) {
+    return Semantics(
+      label: '$count pawns captured by ${player.name}',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          LudoPawnIcon(color: player.color, size: 13),
+          const SizedBox(width: 2),
+          const Icon(Icons.close_rounded, color: Color(0xFFFF655F), size: 11),
+          const SizedBox(width: 2),
+          Text(
+            '$count captured',
+            style: TextStyle(
+              color: foregroundColor,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
       ),
     );
   }
+
+  int _capturedPawnCount(PlayerModel player) => player.killCounts.values.fold(
+        0,
+        (total, count) => total + count,
+      );
 }
 
 class _GoldenGlitter extends StatefulWidget {

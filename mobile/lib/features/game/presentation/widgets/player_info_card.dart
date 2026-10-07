@@ -16,6 +16,7 @@ class PlayerInfoCard extends StatefulWidget {
   final bool isCurrentTurn;
   final VoidCallback onRoll;
   final bool twoPlayerLayout;
+  final bool compact;
   final bool showRollArrow;
   final bool rollArrowPointsLeft;
 
@@ -26,6 +27,7 @@ class PlayerInfoCard extends StatefulWidget {
     required this.isCurrentTurn,
     required this.onRoll,
     this.twoPlayerLayout = false,
+    this.compact = false,
     this.showRollArrow = false,
     this.rollArrowPointsLeft = false,
   });
@@ -176,7 +178,15 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                 width: cardWidth,
                 padding: widget.twoPlayerLayout
                     ? const EdgeInsets.symmetric(horizontal: 6, vertical: 7)
-                    : const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+                    : widget.compact
+                        ? const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 2,
+                          )
+                        : const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 4,
+                          ),
                 decoration: BoxDecoration(
                   color: AppColors.bgNavy.withValues(alpha: 0.97),
                   borderRadius: BorderRadius.circular(11),
@@ -209,8 +219,12 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                         children: [
                           Row(
                             children: [
-                              Text(widget.player.countryFlag,
-                                  style: const TextStyle(fontSize: 11)),
+                              Text(
+                                widget.player.countryFlag,
+                                style: TextStyle(
+                                  fontSize: widget.compact ? 9 : 11,
+                                ),
+                              ),
                               const SizedBox(width: 2),
                               Expanded(
                                 child: Text(
@@ -218,39 +232,45 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.poppins(
-                                    fontSize: 8,
+                                    fontSize: widget.compact ? 7 : 8,
                                     fontWeight: FontWeight.w700,
                                     color: Colors.white,
                                   ),
                                 ),
                               ),
-                              const Icon(Icons.diamond_rounded,
-                                  color: AppColors.diamondBlue, size: 10),
+                              Icon(
+                                Icons.diamond_rounded,
+                                color: AppColors.diamondBlue,
+                                size: widget.compact ? 9 : 10,
+                              ),
                               const SizedBox(width: 1),
                               Text(
                                 _formatBalance(widget.player.diamonds),
                                 style: GoogleFonts.poppins(
-                                  fontSize: 7,
+                                  fontSize: widget.compact ? 6 : 7,
                                   fontWeight: FontWeight.w700,
                                   color: Colors.white,
                                 ),
                               ),
                               const SizedBox(width: 4),
-                              const Icon(Icons.monetization_on_rounded,
-                                  color: AppColors.coinGold, size: 11),
+                              Icon(
+                                Icons.monetization_on_rounded,
+                                color: AppColors.coinGold,
+                                size: widget.compact ? 9 : 11,
+                              ),
                               const SizedBox(width: 1),
                               Text(
                                 _formatBalance(widget.player.coins),
                                 maxLines: 1,
                                 style: GoogleFonts.poppins(
-                                  fontSize: 7,
+                                  fontSize: widget.compact ? 6 : 7,
                                   fontWeight: FontWeight.w700,
                                   color: Colors.white,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 2),
+                          SizedBox(height: widget.compact ? 1 : 2),
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
@@ -265,8 +285,8 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                                             )
                                           : null,
                                       child: Container(
-                                        width: 40,
-                                        height: 35,
+                                        width: widget.compact ? 32 : 40,
+                                        height: widget.compact ? 28 : 35,
                                         decoration: BoxDecoration(
                                           color: AppColors.bgCard,
                                           borderRadius:
@@ -289,10 +309,11 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                                 children: List.generate(
                                   GameNotifier.maxMissedTurns,
                                   (index) => Container(
-                                    width: 6,
-                                    height: 6,
-                                    margin: const EdgeInsets.symmetric(
-                                        vertical: 0.7),
+                                    width: widget.compact ? 5 : 6,
+                                    height: widget.compact ? 5 : 6,
+                                    margin: EdgeInsets.symmetric(
+                                      vertical: widget.compact ? 0.4 : 0.7,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: index < widget.player.missedTurns
                                           ? const Color(0xFFE53935)
@@ -326,6 +347,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                                         !widget.gameState.isGameOver,
                                     canRoll: canRoll,
                                     color: widget.player.color.color,
+                                    size: widget.compact ? 28 : 34,
                                     onTap: widget.onRoll,
                                   ),
                                 ],
