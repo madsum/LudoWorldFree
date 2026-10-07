@@ -46,7 +46,21 @@ enum LudoColor {
     }
   }
 
-  /// Global main-track index of this color's start star and pawn entry (step 0).
+  /// Global main-track index of the colored Visual Start Indicator Marker
+  int get visualStartMarkerIndex {
+    switch (this) {
+      case LudoColor.red:
+        return 0; // BoardPosition(0, 6)
+      case LudoColor.green:
+        return 13; // BoardPosition(8, 0)
+      case LudoColor.yellow:
+        return 26; // BoardPosition(14, 8)
+      case LudoColor.blue:
+        return 39; // BoardPosition(6, 14)
+    }
+  }
+
+  /// Global main-track index of the Actual Pawn Entry Track Tile (step 0)
   int get actualEntryTrackIndex {
     switch (this) {
       case LudoColor.red:

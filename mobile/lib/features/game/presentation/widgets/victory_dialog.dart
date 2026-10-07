@@ -7,6 +7,7 @@ import '../../../../core/constants/app_assets.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../domain/models/game_state.dart';
 import '../../domain/models/player_model.dart';
+import 'ludo_pawn_icon.dart';
 
 class VictoryDialog extends StatelessWidget {
   final GameState gameState;
@@ -26,11 +27,6 @@ class VictoryDialog extends StatelessWidget {
       (player) => gameState.winnerIds.contains(player.id),
       orElse: () => gameState.players.first,
     );
-    final humanPlayer = gameState.players.firstWhere(
-      (player) => !player.isBot,
-      orElse: () => gameState.players.first,
-    );
-    final humanWon = winner.id == humanPlayer.id;
 
     final rankedPlayers = gameState.players.toList()
       ..sort((a, b) {
@@ -53,14 +49,13 @@ class VictoryDialog extends StatelessWidget {
           const IgnorePointer(child: _GoldenGlitter()),
           Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               physics: const BouncingScrollPhysics(),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 480),
+                constraints: const BoxConstraints(maxWidth: 440),
                 child: _buildResultsScrollPanel(
                   context,
                   winner: winner,
-                  humanWon: humanWon,
                   rankedPlayers: rankedPlayers,
                 ),
               ),
@@ -74,7 +69,6 @@ class VictoryDialog extends StatelessWidget {
   Widget _buildResultsScrollPanel(
     BuildContext context, {
     required PlayerModel winner,
-    required bool humanWon,
     required List<PlayerModel> rankedPlayers,
   }) {
     return Column(
@@ -85,13 +79,13 @@ class VictoryDialog extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(color: AppColors.gold, width: 2),
                 boxShadow: const [
-                  BoxShadow(color: Color(0x88F4C542), blurRadius: 10),
+                  BoxShadow(color: Color(0x88F4C542), blurRadius: 8),
                 ],
               ),
               child: ClipOval(
@@ -108,76 +102,78 @@ class VictoryDialog extends StatelessWidget {
               'LUDO WORLD FREE',
               style: GoogleFonts.cinzel(
                 color: AppColors.gold,
-                fontSize: 22,
+                fontSize: 20,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 1,
-                shadows: const [Shadow(color: Colors.black, blurRadius: 8, offset: Offset(0, 3))],
+                shadows: const [Shadow(color: Colors.black, blurRadius: 6, offset: Offset(0, 2))],
               ),
             ),
           ],
         ),
         const SizedBox(height: 2),
         Text(
-          'Best Game on Google Play',
+          'Best emerging game on Google Play',
           textAlign: TextAlign.center,
           style: GoogleFonts.poppins(
             color: Colors.white70,
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
             shadows: const [Shadow(color: Colors.black, blurRadius: 4)],
           ),
         ),
 
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
 
         // Golden 3D Scroll Banner
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFFFEA00)],
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
             ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white, width: 2.5),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white, width: 2),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFFFD700).withValues(alpha: 0.6),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
+                color: const Color(0xFFFFD700).withValues(alpha: 0.5),
+                blurRadius: 12,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
           child: Text(
-            humanWon ? 'CONGRATULATIONS!' : 'MATCH COMPLETE',
+            'Congratulations! ${winner.name}',
             textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.poppins(
               color: Colors.black87,
-              fontSize: 20,
+              fontSize: 16,
               fontWeight: FontWeight.w900,
-              letterSpacing: 1.5,
-              shadows: const [Shadow(color: Colors.white, blurRadius: 4)],
+              letterSpacing: 0.8,
+              shadows: const [Shadow(color: Colors.white, blurRadius: 3)],
             ),
           ),
         ),
 
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
 
-        // Main Results Box
+        // Main Compact Results Box
         Container(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [Color(0xFF0F3A8C), Color(0xFF0A2254), Color(0xFF05112B)],
             ),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(color: AppColors.gold, width: 2),
             boxShadow: const [
-              BoxShadow(color: Colors.black87, blurRadius: 18, offset: Offset(0, 8)),
+              BoxShadow(color: Colors.black87, blurRadius: 14, offset: Offset(0, 6)),
             ],
           ),
           child: Column(
@@ -190,145 +186,162 @@ class VictoryDialog extends StatelessWidget {
                 final isWinner = index == 0;
 
                 return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: isWinner ? const Color(0xFFFFC107) : const Color(0xFF132B5C),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(
                       color: isWinner ? const Color(0xFFFFF176) : Colors.white24,
                       width: isWinner ? 2 : 1,
                     ),
                   ),
-                  child: Row(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Rank Crown / Badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: isWinner ? const Color(0xFF8D5300) : Colors.black38,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              isWinner ? Icons.workspace_premium_rounded : Icons.star_rounded,
-                              color: isWinner ? AppColors.gold : Colors.white70,
-                              size: 16,
+                      Row(
+                        children: [
+                          // Rank Badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isWinner ? const Color(0xFF8D5300) : Colors.black38,
+                              borderRadius: BorderRadius.circular(6),
                             ),
-                            const SizedBox(width: 2),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isWinner ? Icons.workspace_premium_rounded : Icons.star_rounded,
+                                  color: isWinner ? AppColors.gold : Colors.white70,
+                                  size: 14,
+                                ),
+                                const SizedBox(width: 2),
+                                Text(
+                                  isWinner ? '#1' : '#${index + 1}',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: isWinner ? AppColors.gold : Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Player Avatar
+                          Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              color: player.color.color,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 1.2),
+                            ),
+                            child: Center(
+                              child: Text(
+                                player.countryFlag,
+                                style: const TextStyle(fontSize: 10),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Player Name
+                          Expanded(
+                            child: Text(
+                              player.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: isWinner ? Colors.black87 : Colors.white,
+                              ),
+                            ),
+                          ),
+
+                          // Reward / Status Tag
+                          if (isWinner)
+                            Row(
+                              children: [
+                                const Icon(Icons.monetization_on_rounded, color: Color(0xFF5D4037), size: 14),
+                                const SizedBox(width: 2),
+                                Text(
+                                  '+1,900',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w900,
+                                    color: const Color(0xFF5D4037),
+                                  ),
+                                ),
+                              ],
+                            )
+                          else
                             Text(
-                              isWinner ? '#1' : '#${index + 1}',
+                              player.isEliminated ? 'Forfeit' : 'Lost',
                               style: GoogleFonts.poppins(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: isWinner ? AppColors.gold : Colors.white,
+                                color: Colors.white54,
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-
-                      // Player Avatar
-                      Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: player.color.color,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1.5),
-                        ),
-                        child: Center(
-                          child: Text(
-                            player.countryFlag,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-
-                      // Player Name
-                      Expanded(
-                        child: Text(
-                          player.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: isWinner ? Colors.black87 : Colors.white,
-                          ),
-                        ),
+                        ],
                       ),
 
-                      // Reward / Result Tag
-                      if (isWinner)
-                        Row(
-                          children: [
-                            const Icon(Icons.monetization_on_rounded, color: Color(0xFF5D4037), size: 16),
-                            const SizedBox(width: 2),
-                            Text(
-                              '+1,900',
-                              style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w900,
-                                color: const Color(0xFF5D4037),
-                              ),
+                      // Pawn Kills Line: Opponent Killed Pawns by Color Symbol & Number
+                      const SizedBox(height: 3),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Kills: ',
+                            style: GoogleFonts.poppins(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w600,
+                              color: isWinner ? const Color(0xFF5D4037) : Colors.white70,
                             ),
-                          ],
-                        )
-                      else
-                        Text(
-                          player.isEliminated ? 'Forfeit' : 'Lost',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white54,
                           ),
-                        ),
+                          _buildPawnKillsRow(player, isWinner: isWinner),
+                        ],
+                      ),
                     ],
                   ),
                 );
               }),
 
-              const SizedBox(height: 10),
-              const Divider(color: Colors.white24),
+              const SizedBox(height: 6),
+              const Divider(color: Colors.white24, height: 1),
               const SizedBox(height: 6),
 
-              // Match Stats Row
+              // Match Stats Badges Row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _StatBadge(icon: Icons.emoji_events_rounded, iconColor: AppColors.gold, label: '+10'),
                   _StatBadge(icon: Icons.star_rounded, iconColor: Colors.amberAccent, label: '+60 XP'),
-                  _StatBadge(icon: Icons.gavel_rounded, iconColor: Colors.redAccent, label: '+${_totalKills(winner)}'),
+                  _StatBadge(icon: Icons.gavel_rounded, iconColor: Colors.redAccent, label: '+${_totalKills(winner)} Kills'),
                   _StatBadge(icon: Icons.thumb_up_rounded, iconColor: Colors.lightBlueAccent, label: '9'),
                   _StatBadge(icon: Icons.thumb_down_rounded, iconColor: Colors.orangeAccent, label: '0'),
                 ],
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
 
               // Action Buttons Row (Back, Home, Share, Play Again)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // Back Button
                   _CircleActionButton(
                     icon: Icons.arrow_back_rounded,
                     color: const Color(0xFF1E3A8A),
                     onTap: onExitToLobby,
                   ),
-
-                  // Home Button
                   _CircleActionButton(
                     icon: Icons.home_rounded,
                     color: const Color(0xFF0288D1),
                     onTap: onExitToLobby,
                   ),
-
-                  // Share Button
                   _CircleActionButton(
                     icon: Icons.share_rounded,
                     color: const Color(0xFFD97706),
@@ -339,29 +352,29 @@ class VictoryDialog extends StatelessWidget {
                     },
                   ),
 
-                  // Play Again Button
+                  // Replay / Play Again Button
                   GestureDetector(
                     onTap: onPlayAgain,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
                           colors: [Color(0xFF00E676), Color(0xFF2E7D32)],
                         ),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.white, width: 2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white, width: 1.8),
                         boxShadow: const [
-                          BoxShadow(color: Color(0xFF00E676), blurRadius: 10, offset: Offset(0, 3)),
+                          BoxShadow(color: Color(0xFF00E676), blurRadius: 8, offset: Offset(0, 2)),
                         ],
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.refresh_rounded, color: Colors.white, size: 22),
-                          const SizedBox(width: 6),
+                          const Icon(Icons.refresh_rounded, color: Colors.white, size: 20),
+                          const SizedBox(width: 4),
                           Text(
                             'REPLAY',
                             style: GoogleFonts.poppins(
-                              fontSize: 14,
+                              fontSize: 13,
                               fontWeight: FontWeight.w900,
                               color: Colors.white,
                             ),
@@ -375,6 +388,38 @@ class VictoryDialog extends StatelessWidget {
             ],
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildPawnKillsRow(PlayerModel player, {required bool isWinner}) {
+    final opponentColors = gameState.players
+        .map((p) => p.color)
+        .where((color) => color != player.color)
+        .toSet()
+        .toList(growable: false);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var index = 0; index < opponentColors.length; index++) ...[
+          if (index > 0) const SizedBox(width: 8),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LudoPawnIcon(color: opponentColors[index], size: 11),
+              const SizedBox(width: 2),
+              Text(
+                '×${player.killCounts[opponentColors[index]] ?? 0}',
+                style: GoogleFonts.poppins(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: isWinner ? const Color(0xFF402700) : Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -400,12 +445,12 @@ class _StatBadge extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: iconColor, size: 20),
-        const SizedBox(height: 2),
+        Icon(icon, color: iconColor, size: 18),
+        const SizedBox(height: 1),
         Text(
           label,
           style: GoogleFonts.poppins(
-            fontSize: 10,
+            fontSize: 9.5,
             fontWeight: FontWeight.bold,
             color: Colors.white,
           ),
@@ -431,17 +476,17 @@ class _CircleActionButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 42,
-        height: 42,
+        width: 38,
+        height: 38,
         decoration: BoxDecoration(
           color: color,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 2),
+          border: Border.all(color: Colors.white, width: 1.8),
           boxShadow: const [
-            BoxShadow(color: Colors.black45, blurRadius: 6, offset: Offset(0, 3)),
+            BoxShadow(color: Colors.black45, blurRadius: 5, offset: Offset(0, 2)),
           ],
         ),
-        child: Icon(icon, color: Colors.white, size: 20),
+        child: Icon(icon, color: Colors.white, size: 18),
       ),
     );
   }

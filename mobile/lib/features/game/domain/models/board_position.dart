@@ -110,4 +110,23 @@ class BoardPosition {
 
     return path;
   }
+
+  /// Calculates backward step-by-step return sequence when a pawn is captured (from current tile back to Yard seat)
+  static List<BoardPosition> calculateReturnPathSequence({
+    required LudoColor color,
+    required int pawnId,
+    required int fromStep,
+  }) {
+    final path = <BoardPosition>[];
+
+    if (fromStep >= 0) {
+      for (int step = fromStep; step >= 0; step--) {
+        path.add(getPositionForStep(color, pawnId, step));
+      }
+    }
+    // Return to original Yard Seat (-1)
+    path.add(getYardPositions(color)[pawnId]);
+
+    return path;
+  }
 }
