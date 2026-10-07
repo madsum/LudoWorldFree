@@ -52,34 +52,36 @@ class VictoryDialog extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           const IgnorePointer(child: _GoldenGlitter()),
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final panelHeight = math
-                    .min(
-                      constraints.maxHeight * 0.44,
-                      640.0,
-                    )
-                    .toDouble();
-                return Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 520),
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: panelHeight,
-                        child: _buildResultsPanel(
-                          winner: winner,
-                          humanWon: humanWon,
-                          rankedPlayers: rankedPlayers,
+          Positioned.fill(
+            child: SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final panelHeight = math
+                      .min(
+                        constraints.maxHeight * 0.52,
+                        640.0,
+                      )
+                      .toDouble();
+                  return Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 520),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: panelHeight,
+                          child: _buildResultsPanel(
+                            winner: winner,
+                            humanWon: humanWon,
+                            rankedPlayers: rankedPlayers,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
         ],

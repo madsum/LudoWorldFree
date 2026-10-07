@@ -537,13 +537,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
           child: RepaintBoundary(
             child: RotatedBox(
               quarterTurns: (4 - quarterTurns) % 4,
-              child: _PlayerNamePlate(
-                name: player.name,
-                color: player.color,
-                rank: player.rank,
-                isActive: widget.gameState.currentPlayer.id == player.id &&
-                    !widget.gameState.isGameOver,
-              ),
+              child: _PlayerNamePlate(name: player.name),
             ),
           ),
         ),
@@ -562,164 +556,30 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
   }
 }
 
-class _PlayerNamePlate extends StatefulWidget {
+class _PlayerNamePlate extends StatelessWidget {
   final String name;
-  final LudoColor color;
-  final int rank;
-  final bool isActive;
 
-  const _PlayerNamePlate({
-    required this.name,
-    required this.color,
-    required this.rank,
-    required this.isActive,
-  });
-
-  @override
-  State<_PlayerNamePlate> createState() => _PlayerNamePlateState();
-}
-
-class _PlayerNamePlateState extends State<_PlayerNamePlate>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 680),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    _syncPulse();
-  }
-
-  @override
-  void didUpdateWidget(covariant _PlayerNamePlate oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.isActive != widget.isActive) _syncPulse();
-  }
-
-  void _syncPulse() {
-    if (widget.isActive) {
-      _pulse.repeat(reverse: true);
-    } else {
-      _pulse.stop();
-      _pulse.value = 0;
-    }
-  }
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
+  const _PlayerNamePlate({required this.name});
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _pulse,
-      builder: (context, _) {
-        final amount = _pulse.value;
-        return Opacity(
-          opacity: widget.isActive ? 0.82 + amount * 0.18 : 1,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: const Color(0xFF10182F).withValues(
-                alpha: widget.isActive ? 0.82 : 0.92,
-              ),
-              border: Border.all(
-                color: widget.color.color.withValues(
-                  alpha: widget.isActive ? 0.55 + amount * 0.45 : 0.8,
-                ),
-                width: widget.isActive ? 1.2 : 0.8,
-              ),
-              borderRadius: BorderRadius.circular(3),
-              boxShadow: [
-                if (widget.isActive)
-                  BoxShadow(
-                    color: widget.color.color
-                        .withValues(alpha: 0.24 + amount * 0.2),
-                    blurRadius: 6 + amount * 3,
-                  ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          widget.name,
-                          maxLines: 1,
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (widget.rank > 0) ...[
-                    const SizedBox(width: 4),
-                    TweenAnimationBuilder<double>(
-                      key: ValueKey('rank_${widget.rank}'),
-                      tween: Tween(begin: 0, end: 1),
-                      duration: const Duration(milliseconds: 620),
-                      curve: Curves.easeOutBack,
-                      builder: (context, progress, child) => Transform.scale(
-                        scale: progress,
-                        child: child,
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 1),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [
-                              Color(0xFFFFF1A8),
-                              Color(0xFFFFC928),
-                              Color(0xFFD98B00),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(6),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.gold.withValues(alpha: 0.7),
-                              blurRadius: 7,
-                              spreadRadius: 0.5,
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.emoji_events_rounded,
-                                size: 10, color: Color(0xFF593500)),
-                            const SizedBox(width: 2),
-                            Text(
-                              '${widget.rank}',
-                              style: GoogleFonts.poppins(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                                color: const Color(0xFF593500),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          name,
+          maxLines: 1,
+          textAlign: TextAlign.center,
+          style: GoogleFonts.poppins(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+            shadows: const [
+              Shadow(color: Color(0xCC000000), blurRadius: 3),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

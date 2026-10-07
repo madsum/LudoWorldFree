@@ -228,7 +228,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                               const SizedBox(width: 2),
                               Expanded(
                                 child: Text(
-                                  widget.player.country,
+                                  widget.player.name,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.poppins(
@@ -304,35 +304,6 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                                 ),
                               ),
                               const SizedBox(width: 3),
-                              Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: List.generate(
-                                  GameNotifier.maxMissedTurns,
-                                  (index) => Container(
-                                    width: widget.compact ? 5 : 6,
-                                    height: widget.compact ? 5 : 6,
-                                    margin: EdgeInsets.symmetric(
-                                      vertical: widget.compact ? 0.4 : 0.7,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: index < widget.player.missedTurns
-                                          ? const Color(0xFFE53935)
-                                          : const Color(0xFF20C866),
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: const Color(0xFF9BFFC2),
-                                        width: 0.7,
-                                      ),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: Color(0x8020C866),
-                                          blurRadius: 3,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
                               const SizedBox(width: 3),
                               Column(
                                 mainAxisSize: MainAxisSize.min,
@@ -354,19 +325,19 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                               ),
                               if (_opponentColors.isNotEmpty) ...[
                                 const SizedBox(width: 4),
-                                Column(
+                                Row(
                                   mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     for (var index = 0;
                                         index < _opponentColors.length;
                                         index++) ...[
-                                      if (index > 0) const SizedBox(height: 1),
+                                      if (index > 0) const SizedBox(width: 2),
                                       _OpponentKillStat(
                                         color: _opponentColors[index],
                                         count: widget.player.killCounts[
                                                 _opponentColors[index]] ??
                                             0,
+                                        compact: widget.compact,
                                       ),
                                     ],
                                   ],
@@ -492,41 +463,16 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
               ),
             ),
             const SizedBox(width: 3),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(
-                GameNotifier.maxMissedTurns,
-                (index) => Container(
-                  width: 6,
-                  height: 6,
-                  margin: const EdgeInsets.symmetric(vertical: 0.7),
-                  decoration: BoxDecoration(
-                    color: index < widget.player.missedTurns
-                        ? const Color(0xFFE53935)
-                        : const Color(0xFF20C866),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFF9BFFC2),
-                      width: 0.7,
-                    ),
-                    boxShadow: const [
-                      BoxShadow(color: Color(0x8020C866), blurRadius: 3),
-                    ],
-                  ),
-                ),
-              ),
-            ),
             if (_opponentColors.isNotEmpty) ...[
               const SizedBox(width: 4),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: _OpponentKillStat(
-                    color: _opponentColors.first,
-                    count: widget.player.killCounts[_opponentColors.first] ?? 0,
-                  ),
+              for (var index = 0; index < _opponentColors.length; index++) ...[
+                if (index > 0) const SizedBox(width: 3),
+                _OpponentKillStat(
+                  color: _opponentColors[index],
+                  count: widget.player.killCounts[_opponentColors[index]] ?? 0,
+                  compact: widget.compact,
                 ),
-              ),
+              ],
             ],
           ],
         ),
@@ -618,8 +564,13 @@ class SharedDiceButton extends StatelessWidget {
 class _OpponentKillStat extends StatelessWidget {
   final LudoColor color;
   final int count;
+  final bool compact;
 
-  const _OpponentKillStat({required this.color, required this.count});
+  const _OpponentKillStat({
+    required this.color,
+    required this.count,
+    this.compact = false,
+  });
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -627,10 +578,14 @@ class _OpponentKillStat extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            LudoPawnIcon(color: color, size: 12),
-            const SizedBox(width: 1),
-            const Icon(Icons.close_rounded, color: Color(0xFFFF655F), size: 9),
-            const SizedBox(width: 1),
+            LudoPawnIcon(color: color, size: compact ? 9 : 12),
+            SizedBox(width: compact ? 0.5 : 1),
+            Icon(
+              Icons.close_rounded,
+              color: const Color(0xFFFF655F),
+              size: compact ? 7 : 9,
+            ),
+            SizedBox(width: compact ? 0.5 : 1),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 160),
               transitionBuilder: (child, animation) => FadeTransition(
@@ -641,7 +596,7 @@ class _OpponentKillStat extends StatelessWidget {
                 '$count',
                 key: ValueKey(count),
                 style: GoogleFonts.poppins(
-                  fontSize: 8,
+                  fontSize: compact ? 6 : 8,
                   height: 1.1,
                   color: Colors.white,
                   fontWeight: FontWeight.w600,

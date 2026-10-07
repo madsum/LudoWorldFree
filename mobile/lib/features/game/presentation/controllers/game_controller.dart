@@ -616,6 +616,38 @@ class GameNotifier extends StateNotifier<GameState> {
     _beginRollOpportunity();
   }
 
+  /// Records a two-player match exit as a forfeit so the opponent receives
+  /// the normal match result and victory dialog.
+  bool forfeitHumanPlayer() {
+    if (_isDisposed || state.isGameOver || state.players.length != 2) {
+      return false;
+    }
+
+    final humanIndices = <int>[
+      for (var i = 0; i < state.players.length; i++)
+        if (!state.players[i].isBot &&
+            !state.players[i].isEliminated &&
+            !state.players[i].hasAllPawnsHome)
+          i,
+    ];
+    final forfeitingIndex =
+        humanIndices.length == 1 ? humanIndices.single : state.currentTurnIndex;
+    final forfeitingPlayer = state.players[forfeitingIndex];
+    if (forfeitingPlayer.isEliminated || forfeitingPlayer.hasAllPawnsHome) {
+      return false;
+    }
+
+    final eliminationOrder =
+        state.players.where((player) => player.isEliminated).length + 1;
+    final updatedPlayers = [...state.players];
+    updatedPlayers[forfeitingIndex] = forfeitingPlayer.copyWith(
+      isEliminated: true,
+      eliminationOrder: eliminationOrder,
+    );
+    _eliminatePlayer(updatedPlayers, forfeitingIndex);
+    return state.isGameOver;
+  }
+
   void _autoSelectAndMove(List<PawnModel> movable) {
     if (state.turnPhase != GameTurnPhase.selectPawn) return;
     final legalPawns = movable

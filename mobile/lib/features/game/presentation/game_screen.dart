@@ -9,6 +9,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
 import '../../../shared/widgets/banner_ad_widget.dart';
 import '../domain/models/game_state.dart';
+import '../domain/models/player_model.dart';
 import 'controllers/game_controller.dart';
 import 'widgets/ludo_board_widget.dart';
 import 'widgets/player_info_card.dart';
@@ -153,28 +154,56 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
                 // Main Interactive Ludo Board
                 Expanded(
-                  child: Stack(
-                    children: [
-                      Center(
-                        child: RotatedBox(
-                          quarterTurns: boardQuarterTurns,
-                          child: LudoBoardWidget(
-                            gameState: gameState,
-                            onPawnTap: (pawn) => gameNotifier.movePawn(pawn),
-                            orientationQuarterTurns: boardQuarterTurns,
-                            compactFrame: !isTwoPlayerMode,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final missedTurnIndicators = <Widget>[];
+                      for (final player in gameState.players) {
+                        final boardCorner =
+                            (player.color.index + boardQuarterTurns) % 4;
+                        final isLeftSide = boardCorner == 0 || boardCorner == 3;
+                        final isTopSide = boardCorner == 0 || boardCorner == 1;
+                        final indicatorTop =
+                            (constraints.maxHeight * (isTopSide ? 0.25 : 0.75) -
+                                    25)
+                                .clamp(0.0, constraints.maxHeight - 50)
+                                .toDouble();
+
+                        missedTurnIndicators.add(
+                          Positioned(
+                            left: isLeftSide ? 7 : null,
+                            right: isLeftSide ? null : 7,
+                            top: indicatorTop,
+                            child: _BoardMissedTurnIndicator(player: player),
                           ),
-                        ),
-                      ),
-                      if (!gameState.isGameOver)
-                        Positioned(
-                          top: 8,
-                          left: 8,
-                          child: _CompactBackButton(
-                            onPressed: () => _confirmExitDialog(context),
+                        );
+                      }
+
+                      return Stack(
+                        children: [
+                          Center(
+                            child: RotatedBox(
+                              quarterTurns: boardQuarterTurns,
+                              child: LudoBoardWidget(
+                                gameState: gameState,
+                                onPawnTap: (pawn) =>
+                                    gameNotifier.movePawn(pawn),
+                                orientationQuarterTurns: boardQuarterTurns,
+                                compactFrame: !isTwoPlayerMode,
+                              ),
+                            ),
                           ),
-                        ),
-                    ],
+                          ...missedTurnIndicators,
+                          if (!gameState.isGameOver)
+                            Positioned(
+                              top: 8,
+                              left: 8,
+                              child: _CompactBackButton(
+                                onPressed: () => _confirmExitDialog(context),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ),
 
@@ -345,6 +374,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   void _confirmExitDialog(BuildContext context) {
+    final recordsForfeit = ref.read(gameControllerProvider).players.length == 2;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -361,7 +391,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ),
         ),
         content: Text(
-          'Are you sure you want to exit to the Lobby?',
+          recordsForfeit
+              ? 'Leaving forfeits this match. The result will appear before you return to the Lobby.'
+              : 'Are you sure you want to exit to the Lobby?',
           style: GoogleFonts.poppins(color: Colors.white70),
         ),
         actions: [
@@ -375,11 +407,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
             onPressed: () {
+              final matchCompleted = ref
+                  .read(gameControllerProvider.notifier)
+                  .forfeitHumanPlayer();
               Navigator.of(context).pop();
-              context.go('/home');
+              if (!matchCompleted) context.go('/home');
             },
             child: Text(
-              'Exit',
+              recordsForfeit ? 'Forfeit' : 'Exit',
               style: GoogleFonts.poppins(color: Colors.white),
             ),
           ),
@@ -417,6 +452,65 @@ class _CompactBackButton extends StatelessWidget {
               color: Colors.white,
               size: 19,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BoardMissedTurnIndicator extends StatelessWidget {
+  const _BoardMissedTurnIndicator({required this.player});
+
+  final PlayerModel player;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: '${player.name}: ${player.missedTurns} missed turns',
+      child: Semantics(
+        label: '${player.name}, ${player.missedTurns} missed turns',
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0xEE05070C),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(
+              color: player.color.color.withValues(alpha: 0.85),
+              width: 1,
+            ),
+            boxShadow: const [
+              BoxShadow(color: Color(0x77000000), blurRadius: 5),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var index = 0;
+                  index < GameNotifier.maxMissedTurns;
+                  index++) ...[
+                if (index > 0) const SizedBox(height: 2),
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: index < player.missedTurns
+                        ? const Color(0xFFFF3B30)
+                        : const Color(0xFF20E878),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: index < player.missedTurns
+                          ? const Color(0xFFFFB3AE)
+                          : const Color(0xFFB9FFD3),
+                      width: 0.7,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x8820E878), blurRadius: 3),
+                    ],
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),
