@@ -16,8 +16,8 @@ class BannerAdWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) return const SizedBox.shrink();
     final adUnitId = AdConfig.bannerAdUnitId;
-    if (adUnitId == null || kIsWeb) return const SizedBox.shrink();
 
     return LayoutBuilder(
       builder: (context, constraints) {

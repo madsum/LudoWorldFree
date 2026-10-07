@@ -1,20 +1,45 @@
 import 'package:flutter/foundation.dart';
 
-/// Simple switch between Google test ads and the production banner unit.
+/// Configuration for Google Mobile Ads / AdMob Banner and Rewarded Ads.
 abstract final class AdConfig {
   static const bool useTestAds = true;
+
+  // Banner Ad Units
   static const String testAndroidBannerAdUnitId =
-      'ca-app-pub-3940256099942544/9214589741';
+      'ca-app-pub-3940256099942544/6300978111';
   static const String productionAndroidBannerAdUnitId =
       'ca-app-pub-6834272256608743/4433726063';
 
-  static const String androidBannerAdUnitId =
-      useTestAds ? testAndroidBannerAdUnitId : productionAndroidBannerAdUnitId;
+  // Rewarded Ad Units (Official Google AdMob Test Rewarded Ad Unit IDs)
+  static const String testAndroidRewardedAdUnitId =
+      'ca-app-pub-3940256099942544/5224354917';
+  static const String testIOSRewardedAdUnitId =
+      'ca-app-pub-3940256099942544/1712485313';
+  static const String productionAndroidRewardedAdUnitId =
+      'ca-app-pub-6834272256608743/5224354917';
 
-  static String? get bannerAdUnitId {
+  // Reward Configs
+  static const int adRewardGoldAmount = 500;
+
+  static String get bannerAdUnitId {
     if (defaultTargetPlatform == TargetPlatform.android) {
-      return androidBannerAdUnitId;
+      return useTestAds
+          ? testAndroidBannerAdUnitId
+          : productionAndroidBannerAdUnitId;
     }
-    return null;
+    return useTestAds
+        ? testAndroidBannerAdUnitId
+        : productionAndroidBannerAdUnitId;
+  }
+
+  static String get rewardedAdUnitId {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return useTestAds
+          ? testAndroidRewardedAdUnitId
+          : productionAndroidRewardedAdUnitId;
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return useTestAds ? testIOSRewardedAdUnitId : testAndroidRewardedAdUnitId;
+    }
+    return testAndroidRewardedAdUnitId;
   }
 }

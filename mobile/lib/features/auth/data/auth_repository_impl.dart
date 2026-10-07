@@ -28,25 +28,78 @@ class AuthRepositoryImpl implements AuthRepository {
     if (userData['userId'] == null) return null;
 
     final isGuest = userData['isGuest'] == 'true';
+    final coins = int.tryParse(userData['coins'] ?? '') ?? (isGuest ? 2350 : 5000);
+    final diamonds = int.tryParse(userData['diamonds'] ?? '') ?? (isGuest ? 50 : 100);
+
     if (isGuest) {
-      return UserModel.guest(
-        id: userData['userId'],
+      return UserModel(
+        id: userData['userId']!,
         name: userData['userName'] ?? 'Guest Player',
         avatarUrl: userData['avatarUrl'] ?? 'assets/images/black-mask.webp',
         country: userData['country'] ?? 'Netherlands',
         countryFlag: userData['countryFlag'] ?? '🇳🇱',
+        isGuest: true,
+        authProvider: AuthProvider.guest,
+        coins: coins,
+        diamonds: diamonds,
       );
     }
 
-    return UserModel.fromOAuth(
+    return UserModel(
       id: userData['userId']!,
       name: userData['userName'] ?? 'Player',
       email: userData['userEmail'] ?? 'player@ludoworldfree.com',
       avatarUrl: userData['avatarUrl'],
       country: userData['country'] ?? 'Netherlands',
       countryFlag: userData['countryFlag'] ?? '🇳🇱',
-      provider: AuthProvider.google,
+      isGuest: false,
+      authProvider: AuthProvider.google,
+      coins: coins,
+      diamonds: diamonds,
     );
+  }
+
+  @override
+  Future<UserModel> addGoldReward({
+    required int amount,
+    required String providerRewardId,
+  }) async {
+    final current = await getCurrentUser() ?? UserModel.guest();
+    int newCoins = current.coins + amount;
+
+    try {
+      final response = await _dio.post(
+        '/api/v1/rewards/ad-reward',
+        data: {
+          'providerRewardId': providerRewardId,
+          'amount': amount,
+        },
+        options: Options(
+          headers: {'X-Player-ID': current.id},
+        ),
+      );
+
+      if (response.data != null && response.data['balance'] != null) {
+        newCoins = (response.data['balance'] as num).toInt();
+      }
+    } catch (_) {}
+
+    final updated = current.copyWith(coins: newCoins);
+
+    await _saveAuthSession(
+      token: await _storageService.getAccessToken() ?? 'user_token',
+      userId: updated.id,
+      userName: updated.name,
+      userEmail: updated.email ?? '',
+      avatarUrl: updated.avatarUrl,
+      country: updated.country,
+      countryFlag: updated.countryFlag,
+      coins: updated.coins,
+      diamonds: updated.diamonds,
+      isGuest: updated.isGuest,
+    );
+
+    return updated;
   }
 
   @override
@@ -86,6 +139,8 @@ class AuthRepositoryImpl implements AuthRepository {
         avatarUrl: user.avatarUrl,
         country: user.country,
         countryFlag: user.countryFlag,
+        coins: user.coins,
+        diamonds: user.diamonds,
         isGuest: false,
       );
 
@@ -257,6 +312,8 @@ class AuthRepositoryImpl implements AuthRepository {
         avatarUrl: user.avatarUrl,
         country: user.country,
         countryFlag: user.countryFlag,
+        coins: user.coins,
+        diamonds: user.diamonds,
         isGuest: false,
       );
 
@@ -382,6 +439,8 @@ class AuthRepositoryImpl implements AuthRepository {
         avatarUrl: user.avatarUrl,
         country: user.country,
         countryFlag: user.countryFlag,
+        coins: user.coins,
+        diamonds: user.diamonds,
         isGuest: false,
       );
 
@@ -418,6 +477,8 @@ class AuthRepositoryImpl implements AuthRepository {
       avatarUrl: user.avatarUrl,
       country: user.country,
       countryFlag: user.countryFlag,
+      coins: user.coins,
+      diamonds: user.diamonds,
       isGuest: false,
     );
 
@@ -446,6 +507,8 @@ class AuthRepositoryImpl implements AuthRepository {
       avatarUrl: user.avatarUrl,
       country: user.country,
       countryFlag: user.countryFlag,
+      coins: user.coins,
+      diamonds: user.diamonds,
       isGuest: true,
     );
 
@@ -475,6 +538,8 @@ class AuthRepositoryImpl implements AuthRepository {
       avatarUrl: updated.avatarUrl,
       country: updated.country,
       countryFlag: updated.countryFlag,
+      coins: updated.coins,
+      diamonds: updated.diamonds,
       isGuest: updated.isGuest,
     );
 
@@ -489,6 +554,8 @@ class AuthRepositoryImpl implements AuthRepository {
     String? avatarUrl,
     String? country,
     String? countryFlag,
+    int? coins,
+    int? diamonds,
     required bool isGuest,
   }) async {
     await _storageService.saveAccessToken(token);
@@ -500,6 +567,8 @@ class AuthRepositoryImpl implements AuthRepository {
       avatarUrl: avatarUrl,
       country: country,
       countryFlag: countryFlag,
+      coins: coins,
+      diamonds: diamonds,
     );
   }
 

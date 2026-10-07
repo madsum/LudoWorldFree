@@ -136,6 +136,23 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
+  /// Claims ad reward and updates persistent player wallet balance
+  Future<bool> addGoldReward({
+    required int amount,
+    required String providerRewardId,
+  }) async {
+    try {
+      final updated = await _repository.addGoldReward(
+        amount: amount,
+        providerRewardId: providerRewardId,
+      );
+      state = AuthState(user: updated, isLoading: false);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> signOut() async {
     state = state.copyWith(isLoading: true);
     await _repository.signOut();

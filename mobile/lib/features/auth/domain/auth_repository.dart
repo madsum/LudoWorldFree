@@ -24,5 +24,10 @@ abstract class AuthRepository {
     required String countryFlag,
   });
 
+  Future<UserModel> addGoldReward({
+    required int amount,
+    required String providerRewardId,
+  });
+
   Future<void> signOut();
 }

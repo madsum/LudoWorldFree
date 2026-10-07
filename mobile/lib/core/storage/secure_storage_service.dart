@@ -25,6 +25,8 @@ class SecureStorageService {
     String? avatarUrl,
     String? country,
     String? countryFlag,
+    int? coins,
+    int? diamonds,
   }) async {
     await _storage.write(key: AppConstants.keyUserId, value: userId);
     await _storage.write(key: AppConstants.keyUserName, value: userName);
@@ -41,6 +43,12 @@ class SecureStorageService {
     if (countryFlag != null) {
       await _storage.write(key: 'user_country_flag', value: countryFlag);
     }
+    if (coins != null) {
+      await _storage.write(key: 'user_coins', value: coins.toString());
+    }
+    if (diamonds != null) {
+      await _storage.write(key: 'user_diamonds', value: diamonds.toString());
+    }
   }
 
   Future<Map<String, String?>> getUserData() async {
@@ -51,6 +59,8 @@ class SecureStorageService {
     final avatarUrl = await _storage.read(key: 'user_avatar');
     final country = await _storage.read(key: 'user_country');
     final countryFlag = await _storage.read(key: 'user_country_flag');
+    final coins = await _storage.read(key: 'user_coins');
+    final diamonds = await _storage.read(key: 'user_diamonds');
 
     return {
       'userId': userId,
@@ -60,6 +70,8 @@ class SecureStorageService {
       'avatarUrl': avatarUrl,
       'country': country,
       'countryFlag': countryFlag,
+      'coins': coins,
+      'diamonds': diamonds,
     };
   }
 

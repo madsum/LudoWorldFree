@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../config/ad_config.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
+import '../../../core/ads/rewarded_ad_service.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
 import '../../auth/presentation/widgets/guest_setup_dialog.dart';
 import '../../game/presentation/controllers/game_controller.dart';
@@ -24,6 +26,15 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _currentNavIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Preload Rewarded Ad on lobby load
+    Future.microtask(() {
+      ref.read(rewardedAdServiceProvider).preloadAd();
+    });
+  }
 
   void _showComingSoonSnackBar(BuildContext context, String modeName) {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -75,6 +86,69 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             .read(gameControllerProvider.notifier)
             .startNewGame(players: players);
         context.push('/game');
+      },
+    );
+  }
+
+  void _watchAdAndEarnGold(BuildContext context) async {
+    final rewardedAdService = ref.read(rewardedAdServiceProvider);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.bgNavy,
+        content: Text(
+          'Loading Rewarded Video Ad...',
+          style: GoogleFonts.poppins(color: Colors.white),
+        ),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+
+    await rewardedAdService.showRewardedAd(
+      onRewardEarned: (amount, providerRewardId) async {
+        await ref.read(authControllerProvider.notifier).addGoldReward(
+              amount: amount,
+              providerRewardId: providerRewardId,
+            );
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF2E7D32),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Color(0xFFB8FF65), width: 1.5),
+              ),
+              content: Row(
+                children: [
+                  const Icon(Icons.monetization_on_rounded, color: AppColors.coinGold, size: 24),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '🎉 Rewarded! You earned +$amount Gold Coins!',
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      },
+      onAdClosed: () {},
+      onError: (error) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppColors.bgNavy,
+              content: Text(error, style: GoogleFonts.poppins(color: AppColors.gold)),
+            ),
+          );
+        }
       },
     );
   }
@@ -406,6 +480,103 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ),
                           ),
                         ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Row 3: Prominent "Watch Ad & Earn Gold" 3D Card
+                      GestureDetector(
+                        onTap: () => _watchAdAndEarnGold(context),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [
+                                Color(0xFFFFEA00),
+                                Color(0xFFFF8F00),
+                                Color(0xFFB76E00)
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0xFFFF8F00),
+                                blurRadius: 10,
+                                offset: Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: const BoxDecoration(
+                                  color: Colors.black38,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.ondemand_video_rounded,
+                                  color: Colors.white,
+                                  size: 26,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'WATCH AD & EARN GOLD',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.black87,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Watch a short video to claim free gold!',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black87,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                      color: AppColors.gold, width: 1.2),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.monetization_on_rounded,
+                                        color: AppColors.coinGold, size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '+${AdConfig.adRewardGoldAmount}',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w900,
+                                        color: AppColors.gold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
 
                       const SizedBox(height: 10),
