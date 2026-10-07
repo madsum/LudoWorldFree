@@ -152,6 +152,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                   ),
 
+                if (!gameState.isGameOver)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 2),
+                    child: SizedBox(
+                      height: 32,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _CompactBackButton(
+                          onPressed: () => _confirmExitDialog(context),
+                        ),
+                      ),
+                    ),
+                  ),
+
                 // Main Interactive Ludo Board
                 Expanded(
                   child: LayoutBuilder(
@@ -193,14 +207,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                             ),
                           ),
                           ...missedTurnIndicators,
-                          if (!gameState.isGameOver)
-                            Positioned(
-                              top: 8,
-                              left: 8,
-                              child: _CompactBackButton(
-                                onPressed: () => _confirmExitDialog(context),
-                              ),
-                            ),
                         ],
                       );
                     },
@@ -440,13 +446,13 @@ class _CompactBackButton extends StatelessWidget {
           side: BorderSide(color: AppColors.gold, width: 1),
         ),
         child: SizedBox(
-          width: 36,
-          height: 36,
+          width: 32,
+          height: 32,
           child: IconButton(
             onPressed: onPressed,
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-            splashRadius: 18,
+            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            splashRadius: 16,
             icon: const Icon(
               Icons.arrow_back_rounded,
               color: Colors.white,
