@@ -69,7 +69,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _timeoutNoticeTimer?.cancel();
-    // Cancel the timer without emitting state from a Consumer that is unmounting.
     ref
         .read(gameControllerProvider.notifier)
         .pauseTurnTimer(updateGameState: false);
@@ -261,39 +260,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 const SizedBox(height: 4),
               ],
             ),
-            if (gameState.isGameOver)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: ColoredBox(
-                    color: AppColors.bgDark,
-                    child: Column(
-                      children: [
-                        BannerAdWidget(
-                          consentService: ref.read(adMobConsentServiceProvider),
-                        ),
-                        Expanded(
-                          child: Align(
-                            alignment: Alignment.topCenter,
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: RotatedBox(
-                                quarterTurns: boardQuarterTurns,
-                                child: LudoBoardWidget(
-                                  gameState: gameState,
-                                  onPawnTap: (pawn) =>
-                                      gameNotifier.movePawn(pawn),
-                                  orientationQuarterTurns: boardQuarterTurns,
-                                  compactFrame: !isTwoPlayerMode,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+
             Positioned.fill(
               child: IgnorePointer(
                 child: AnimatedOpacity(
@@ -337,6 +304,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 ),
               ),
             ),
+
             if (gameState.isGameOver)
               Positioned.fill(
                 child: Stack(
