@@ -48,3 +48,5 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 backend/target/
+mobile/android/build/
+ludo_keystore.jks
