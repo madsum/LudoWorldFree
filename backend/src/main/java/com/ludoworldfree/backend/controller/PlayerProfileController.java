@@ -4,9 +4,13 @@ import com.ludoworldfree.backend.model.PlayerProfile;
 import com.ludoworldfree.backend.model.PlayerWallet;
 import com.ludoworldfree.backend.repository.PlayerProfileRepository;
 import com.ludoworldfree.backend.repository.PlayerWalletRepository;
+import com.ludoworldfree.backend.util.PlayerIdResolver;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -25,30 +29,78 @@ public class PlayerProfileController {
     }
 
     @GetMapping("/profile")
-    public ResponseEntity<?> getPlayerProfile(@RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId) {
-        UUID playerId;
-        try {
-            playerId = (headerPlayerId != null && !headerPlayerId.isBlank())
-                    ? UUID.fromString(headerPlayerId)
-                    : UUID.randomUUID();
-        } catch (Exception e) {
-            playerId = UUID.randomUUID();
+    public ResponseEntity<?> getPlayerProfile(
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId) {
+        UUID userId = PlayerIdResolver.resolve(headerPlayerId);
+        PlayerProfile profile = profileRepository.findByUserId(userId)
+                .orElseGet(() -> profileRepository.save(new PlayerProfile(
+                        userId, "Guest Player", "avatar_crown", "World", "🌐")));
+        PlayerWallet wallet = walletRepository.findByPlayerId(userId)
+                .orElseGet(() -> walletRepository.save(new PlayerWallet(userId, 2000L)));
+
+        return ResponseEntity.ok(profileResponse(userId, profile, wallet));
+    }
+
+    @GetMapping("/username")
+    public ResponseEntity<?> getPlayerByUsername(
+            @RequestParam String username) {
+
+        PlayerProfile profile = profileRepository.findByDisplayName(username)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Player not found"));
+
+        PlayerWallet wallet = walletRepository.findByPlayerId(profile.getUserId())
+                .orElseThrow();
+
+        return ResponseEntity.ok(profileResponse(
+                profile.getUserId(), profile, wallet));
+    }
+
+    @PutMapping("/profile")
+    public ResponseEntity<?> savePlayerProfile(
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
+            @RequestBody Map<String, Object> payload) {
+        UUID userId = PlayerIdResolver.resolve(headerPlayerId);
+        PlayerProfile profile = profileRepository.findByUserId(userId)
+                .orElseGet(() -> new PlayerProfile(userId, "Guest Player", "avatar_crown", "World", "🌐"));
+
+        setString(payload, "displayName", profile::setDisplayName);
+        setString(payload, "avatarUrl", profile::setAvatarUrl);
+        setString(payload, "country", profile::setCountry);
+        setString(payload, "countryFlag", profile::setCountryFlag);
+        profile = profileRepository.save(profile);
+
+        PlayerWallet wallet = walletRepository.findByPlayerId(userId).orElse(null);
+        if (wallet == null) {
+            wallet = new PlayerWallet(userId, longValue(payload.get("goldCoins"), 2000L));
+        } else if (payload.containsKey("goldCoins")) {
+            wallet.setBalance(Math.max(0, longValue(payload.get("goldCoins"), wallet.getBalance())));
         }
+        wallet = walletRepository.save(wallet);
 
-        final UUID id = playerId;
-        PlayerProfile profile = profileRepository.findById(id)
-                .orElseGet(() -> profileRepository.save(new PlayerProfile(id, "Guest Player", "avatar_crown", "Netherlands", "🇳🇱")));
+        return ResponseEntity.ok(profileResponse(userId, profile, wallet));
+    }
 
-        PlayerWallet wallet = walletRepository.findByPlayerId(id)
-                .orElseGet(() -> walletRepository.save(new PlayerWallet(id, 2350)));
+    private static void setString(Map<String, Object> payload, String key,
+                                  java.util.function.Consumer<String> setter) {
+        Object value = payload.get(key);
+        if (value instanceof String string && !string.isBlank()) {
+            setter.accept(string);
+        }
+    }
 
-        return ResponseEntity.ok(Map.of(
-                "playerId", profile.getId(),
-                "displayName", profile.getDisplayName(),
-                "avatarUrl", profile.getAvatarUrl(),
-                "country", profile.getCountry(),
-                "countryFlag", profile.getCountryFlag(),
-                "goldCoins", wallet.getBalance()
-        ));
+    private static long longValue(Object value, long fallback) {
+        return value instanceof Number number ? number.longValue() : fallback;
+    }
+
+    private static Map<String, Object> profileResponse(UUID userId, PlayerProfile profile, PlayerWallet wallet) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("playerId", userId.toString());
+        response.put("displayName", profile.getDisplayName());
+        response.put("avatarUrl", profile.getAvatarUrl());
+        response.put("country", profile.getCountry());
+        response.put("countryFlag", profile.getCountryFlag());
+        response.put("goldCoins", wallet.getBalance());
+        return response;
     }
 }

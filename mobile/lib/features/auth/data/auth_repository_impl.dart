@@ -28,16 +28,18 @@ class AuthRepositoryImpl implements AuthRepository {
     if (userData['userId'] == null) return null;
 
     final isGuest = userData['isGuest'] == 'true';
-    final coins = int.tryParse(userData['coins'] ?? '') ?? (isGuest ? 2350 : 5000);
-    final diamonds = int.tryParse(userData['diamonds'] ?? '') ?? (isGuest ? 50 : 100);
+    final coins =
+        int.tryParse(userData['coins'] ?? '') ?? (isGuest ? 2000 : 5000);
+    final diamonds =
+        int.tryParse(userData['diamonds'] ?? '') ?? 100;
 
     if (isGuest) {
       return UserModel(
         id: userData['userId']!,
         name: userData['userName'] ?? 'Guest Player',
         avatarUrl: userData['avatarUrl'] ?? 'assets/images/black-mask.webp',
-        country: userData['country'] ?? 'Netherlands',
-        countryFlag: userData['countryFlag'] ?? '🇳🇱',
+        country: userData['country'] ?? 'World',
+        countryFlag: userData['countryFlag'] ?? '🌐',
         isGuest: true,
         authProvider: AuthProvider.guest,
         coins: coins,
@@ -50,8 +52,8 @@ class AuthRepositoryImpl implements AuthRepository {
       name: userData['userName'] ?? 'Player',
       email: userData['userEmail'] ?? 'player@ludoworldfree.com',
       avatarUrl: userData['avatarUrl'],
-      country: userData['country'] ?? 'Netherlands',
-      countryFlag: userData['countryFlag'] ?? '🇳🇱',
+      country: userData['country'] ?? 'World',
+      countryFlag: userData['countryFlag'] ?? '🌐',
       isGuest: false,
       authProvider: AuthProvider.google,
       coins: coins,
@@ -97,6 +99,7 @@ class AuthRepositoryImpl implements AuthRepository {
       coins: updated.coins,
       diamonds: updated.diamonds,
       isGuest: updated.isGuest,
+      syncBackendProfile: false,
     );
 
     return updated;
@@ -119,15 +122,16 @@ class AuthRepositoryImpl implements AuthRepository {
       }
 
       final GoogleSignInAuthentication auth = await account.authentication;
-      final String token = auth.idToken ?? auth.accessToken ?? 'google_access_token';
+      final String token =
+          auth.idToken ?? auth.accessToken ?? 'google_access_token';
 
       final user = UserModel.fromOAuth(
         id: account.id,
         name: account.displayName ?? 'Google Player',
         email: account.email,
         avatarUrl: account.photoUrl ?? 'assets/images/blue-mask.webp',
-        country: 'Netherlands',
-        countryFlag: '🇳🇱',
+        country: 'World',
+        countryFlag: '🌐',
         provider: AuthProvider.google,
       );
 
@@ -165,7 +169,8 @@ class AuthRepositoryImpl implements AuthRepository {
         try {
           String accessToken = codeOrToken;
 
-          if (!codeOrToken.startsWith('gho_') && OAuthConfig.githubClientId.isNotEmpty) {
+          if (!codeOrToken.startsWith('gho_') &&
+              OAuthConfig.githubClientId.isNotEmpty) {
             try {
               final tokenResponse = await _dio.post(
                 'https://github.com/login/oauth/access_token',
@@ -183,7 +188,8 @@ class AuthRepositoryImpl implements AuthRepository {
                   contentType: Headers.jsonContentType,
                 ),
               );
-              if (tokenResponse.data != null && tokenResponse.data['access_token'] != null) {
+              if (tokenResponse.data != null &&
+                  tokenResponse.data['access_token'] != null) {
                 accessToken = tokenResponse.data['access_token'];
               }
             } catch (_) {}
@@ -202,7 +208,8 @@ class AuthRepositoryImpl implements AuthRepository {
           final profileData = profileResponse.data;
 
           String id = profileData['id']?.toString() ?? 'github_user';
-          String name = profileData['name'] ?? profileData['login'] ?? 'GitHub Player';
+          String name =
+              profileData['name'] ?? profileData['login'] ?? 'GitHub Player';
           String? email = profileData['email'];
           String? avatar = profileData['avatar_url'];
 
@@ -235,7 +242,9 @@ class AuthRepositoryImpl implements AuthRepository {
             'id': id,
             'name': name,
             'email': email ?? 'github.user@example.com',
-            'avatar': (avatar != null && avatar.isNotEmpty) ? avatar : 'assets/images/black-mask.webp',
+            'avatar': (avatar != null && avatar.isNotEmpty)
+                ? avatar
+                : 'assets/images/black-mask.webp',
           };
         } catch (_) {
           return null;
@@ -299,8 +308,8 @@ class AuthRepositoryImpl implements AuthRepository {
         name: name,
         email: credential.email ?? 'apple.user@example.com',
         avatarUrl: 'assets/images/black-mask2.webp',
-        country: 'Netherlands',
-        countryFlag: '🇳🇱',
+        country: 'World',
+        countryFlag: '🌐',
         provider: AuthProvider.apple,
       );
 
@@ -377,7 +386,8 @@ class AuthRepositoryImpl implements AuthRepository {
             'id': data['id']?.toString() ?? 'twitter_user',
             'name': data['name'] ?? data['username'] ?? 'X Player',
             'email': 'twitter.user@example.com',
-            'avatar': data['profile_image_url'] ?? 'assets/images/black-mask4.webp',
+            'avatar':
+                data['profile_image_url'] ?? 'assets/images/black-mask4.webp',
           };
         } catch (_) {
           return null;
@@ -406,7 +416,8 @@ class AuthRepositoryImpl implements AuthRepository {
           uri.queryParameters['id_token'] ??
           'oauth_token_${provider.name}';
 
-      String userId = '${provider.name}_${DateTime.now().millisecondsSinceEpoch}';
+      String userId =
+          '${provider.name}_${DateTime.now().millisecondsSinceEpoch}';
       String userName = defaultName;
       String userEmail = '${provider.name}.user@example.com';
       String? avatarUrl = defaultAvatar;
@@ -426,8 +437,8 @@ class AuthRepositoryImpl implements AuthRepository {
         name: userName,
         email: userEmail,
         avatarUrl: avatarUrl,
-        country: 'Netherlands',
-        countryFlag: '🇳🇱',
+        country: 'World',
+        countryFlag: '🌐',
         provider: provider,
       );
 
@@ -464,8 +475,8 @@ class AuthRepositoryImpl implements AuthRepository {
       name: defaultName,
       email: '${provider.name}.player@ludoworldfree.com',
       avatarUrl: defaultAvatar,
-      country: 'Netherlands',
-      countryFlag: '🇳🇱',
+      country: 'World',
+      countryFlag: '🌐',
       provider: provider,
     );
 
@@ -495,8 +506,8 @@ class AuthRepositoryImpl implements AuthRepository {
     final user = UserModel.guest(
       name: name ?? 'Guest Player',
       avatarUrl: avatarUrl ?? 'assets/images/black-mask.webp',
-      country: country ?? 'Netherlands',
-      countryFlag: countryFlag ?? '🇳🇱',
+      country: country ?? 'World',
+      countryFlag: countryFlag ?? '🌐',
     );
 
     await _saveAuthSession(
@@ -557,6 +568,7 @@ class AuthRepositoryImpl implements AuthRepository {
     int? coins,
     int? diamonds,
     required bool isGuest,
+    bool syncBackendProfile = true,
   }) async {
     await _storageService.saveAccessToken(token);
     await _storageService.saveUserData(
@@ -570,6 +582,42 @@ class AuthRepositoryImpl implements AuthRepository {
       coins: coins,
       diamonds: diamonds,
     );
+
+    if (syncBackendProfile) {
+      await _syncBackendProfile(
+        id: userId,
+        name: userName,
+        avatarUrl: avatarUrl,
+        country: country,
+        countryFlag: countryFlag,
+        coins: coins,
+      );
+    }
+  }
+
+  Future<void> _syncBackendProfile({
+    required String id,
+    required String name,
+    required String? avatarUrl,
+    required String? country,
+    required String? countryFlag,
+    required int? coins,
+  }) async {
+    try {
+      await _dio.put(
+        '/api/v1/player/profile',
+        data: {
+          'displayName': name,
+          if (avatarUrl != null) 'avatarUrl': avatarUrl,
+          if (country != null) 'country': country,
+          if (countryFlag != null) 'countryFlag': countryFlag,
+          if (coins != null) 'goldCoins': coins,
+        },
+        options: Options(headers: {'X-Player-ID': id}),
+      );
+    } catch (_) {
+      // Keep local sign-in and profile editing available while offline.
+    }
   }
 
   @override

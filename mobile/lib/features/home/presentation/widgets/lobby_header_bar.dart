@@ -8,6 +8,7 @@ class LobbyHeaderBar extends StatelessWidget {
   final String countryFlag;
   final int diamonds;
   final int coins;
+  final Key? coinWalletKey;
   final int level;
   final VoidCallback onProfilePressed;
   final VoidCallback onSettingsPressed;
@@ -21,6 +22,7 @@ class LobbyHeaderBar extends StatelessWidget {
     required this.countryFlag,
     required this.diamonds,
     required this.coins,
+    this.coinWalletKey,
     this.level = 3,
     required this.onProfilePressed,
     required this.onSettingsPressed,
@@ -30,7 +32,8 @@ class LobbyHeaderBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isAssetAvatar = avatarUrl != null && (avatarUrl!.startsWith('assets/') || avatarUrl!.endsWith('.webp'));
+    final isAssetAvatar = avatarUrl != null &&
+        (avatarUrl!.startsWith('assets/') || avatarUrl!.endsWith('.webp'));
     final isNetworkAvatar = avatarUrl != null && avatarUrl!.startsWith('http');
 
     Widget avatarImage;
@@ -39,7 +42,8 @@ class LobbyHeaderBar extends StatelessWidget {
     } else if (isNetworkAvatar) {
       avatarImage = Image.network(avatarUrl!, fit: BoxFit.cover);
     } else {
-      avatarImage = const Icon(Icons.person_rounded, color: Colors.white, size: 22);
+      avatarImage =
+          const Icon(Icons.person_rounded, color: Colors.white, size: 22);
     }
 
     return Container(
@@ -99,7 +103,8 @@ class LobbyHeaderBar extends StatelessWidget {
                         left: -4,
                         bottom: -4,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
                               colors: [Color(0xFFFFD700), Color(0xFFFF8F00)],
@@ -113,7 +118,8 @@ class LobbyHeaderBar extends StatelessWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.star_rounded, color: Colors.white, size: 10),
+                              const Icon(Icons.star_rounded,
+                                  color: Colors.white, size: 10),
                               Text(
                                 '$level',
                                 style: GoogleFonts.poppins(
@@ -136,7 +142,8 @@ class LobbyHeaderBar extends StatelessWidget {
                 IconButton(
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
-                  icon: const Icon(Icons.settings_rounded, color: Colors.white, size: 22),
+                  icon: const Icon(Icons.settings_rounded,
+                      color: Colors.white, size: 22),
                   onPressed: onSettingsPressed,
                 ),
 
@@ -148,7 +155,8 @@ class LobbyHeaderBar extends StatelessWidget {
                     IconButton(
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
-                      icon: const Icon(Icons.mark_as_unread_rounded, color: Color(0xFFFFD700), size: 22),
+                      icon: const Icon(Icons.mark_as_unread_rounded,
+                          color: Color(0xFFFFD700), size: 22),
                       onPressed: onInboxPressed,
                     ),
                     Positioned(
@@ -162,7 +170,10 @@ class LobbyHeaderBar extends StatelessWidget {
                         ),
                         child: const Text(
                           '1',
-                          style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Colors.white),
+                          style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white),
                         ),
                       ),
                     ),
@@ -192,6 +203,7 @@ class LobbyHeaderBar extends StatelessWidget {
                   // Coin Counter Pill
                   Flexible(
                     child: _LobbyCurrencyPill(
+                      key: coinWalletKey,
                       icon: Icons.monetization_on_rounded,
                       iconColor: const Color(0xFFFFD700),
                       value: '$coins',
@@ -218,7 +230,8 @@ class LobbyHeaderBar extends StatelessWidget {
                           BoxShadow(color: Colors.black45, blurRadius: 4),
                         ],
                       ),
-                      child: const Icon(Icons.shopping_cart_rounded, color: Colors.black87, size: 17),
+                      child: const Icon(Icons.shopping_cart_rounded,
+                          color: Colors.black87, size: 17),
                     ),
                   ),
                 ],
@@ -238,6 +251,7 @@ class _LobbyCurrencyPill extends StatelessWidget {
   final VoidCallback onAdd;
 
   const _LobbyCurrencyPill({
+    super.key,
     required this.icon,
     required this.iconColor,
     required this.value,

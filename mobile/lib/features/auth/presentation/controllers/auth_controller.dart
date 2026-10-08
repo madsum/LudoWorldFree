@@ -95,7 +95,8 @@ class AuthController extends StateNotifier<AuthState> {
     String? country,
     String? countryFlag,
   }) async {
-    state = state.copyWith(isLoading: true, loadingProvider: AuthProvider.guest);
+    state =
+        state.copyWith(isLoading: true, loadingProvider: AuthProvider.guest);
     try {
       final user = await _repository.signInAsGuest(
         name: name,
@@ -131,26 +132,42 @@ class AuthController extends StateNotifier<AuthState> {
       state = AuthState(user: updated, isLoading: false);
       return true;
     } catch (e) {
-      state = state.copyWith(isLoading: false, errorMessage: 'Failed to update profile.');
+      state = state.copyWith(
+          isLoading: false, errorMessage: 'Failed to update profile.');
       return false;
     }
   }
 
   /// Claims ad reward and updates persistent player wallet balance
-  Future<bool> addGoldReward({
+  Future<UserModel?> claimGoldReward({
     required int amount,
     required String providerRewardId,
   }) async {
     try {
-      final updated = await _repository.addGoldReward(
+      return await _repository.addGoldReward(
         amount: amount,
         providerRewardId: providerRewardId,
       );
-      state = AuthState(user: updated, isLoading: false);
-      return true;
     } catch (_) {
-      return false;
+      return null;
     }
+  }
+
+  void applyUserUpdate(UserModel user) {
+    state = AuthState(user: user, isLoading: false);
+  }
+
+  Future<bool> addGoldReward({
+    required int amount,
+    required String providerRewardId,
+  }) async {
+    final updated = await claimGoldReward(
+      amount: amount,
+      providerRewardId: providerRewardId,
+    );
+    if (updated == null) return false;
+    applyUserUpdate(updated);
+    return true;
   }
 
   Future<void> signOut() async {

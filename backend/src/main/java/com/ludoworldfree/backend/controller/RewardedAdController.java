@@ -1,11 +1,11 @@
 package com.ludoworldfree.backend.controller;
 
 import com.ludoworldfree.backend.service.RewardService;
+import com.ludoworldfree.backend.util.PlayerIdResolver;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/rewards")
@@ -27,14 +27,7 @@ public class RewardedAdController {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid or missing providerRewardId"));
         }
 
-        UUID playerId;
-        try {
-            playerId = (headerPlayerId != null && !headerPlayerId.isBlank())
-                    ? UUID.fromString(headerPlayerId)
-                    : UUID.nameUUIDFromBytes(providerRewardId.getBytes());
-        } catch (Exception e) {
-            playerId = UUID.randomUUID();
-        }
+        var playerId = PlayerIdResolver.resolve(headerPlayerId);
 
         // Fixed server-side reward amount (never trust client-supplied gold amount)
         long serverRewardAmount = 500L;

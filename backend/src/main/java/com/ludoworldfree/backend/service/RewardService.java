@@ -30,7 +30,7 @@ public class RewardService {
         Optional<RewardEvent> existingEvent = rewardEventRepository.findByProviderAndProviderRewardId("ADMOB", providerRewardId);
         
         PlayerWallet wallet = walletRepository.findByPlayerId(playerId)
-                .orElseGet(() -> walletRepository.save(new PlayerWallet(playerId, 2350)));
+                .orElseGet(() -> walletRepository.save(new PlayerWallet(playerId, 2000L)));
 
         if (existingEvent.isPresent()) {
             return new RewardResult(true, wallet.getBalance(), "Reward already processed.", true);

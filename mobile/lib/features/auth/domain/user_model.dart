@@ -25,20 +25,20 @@ class UserModel {
     required this.name,
     this.email,
     this.avatarUrl,
-    this.country = 'Netherlands',
-    this.countryFlag = '🇳🇱',
+    this.country = 'World',
+    this.countryFlag = '🌐',
     required this.isGuest,
     required this.authProvider,
-    this.diamonds = 50,
-    this.coins = 2350,
+    this.diamonds = 100,
+    this.coins = 2000,
   });
 
   factory UserModel.guest({
     String? id,
     String name = 'Guest Player',
-    String avatarUrl = 'avatar_crown',
-    String country = 'Netherlands',
-    String countryFlag = '🇳🇱',
+    String avatarUrl = 'assets/images/black-mask.webp',
+    String country = 'World',
+    String countryFlag = '🌐',
   }) {
     return UserModel(
       id: id ?? 'guest_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
@@ -48,8 +48,8 @@ class UserModel {
       countryFlag: countryFlag,
       isGuest: true,
       authProvider: AuthProvider.guest,
-      diamonds: 50,
-      coins: 2350,
+      diamonds: 100,
+      coins: 2000,
     );
   }
 
@@ -58,8 +58,8 @@ class UserModel {
     required String name,
     required String email,
     String? avatarUrl,
-    String country = 'Netherlands',
-    String countryFlag = '🇳🇱',
+    String country = 'World',
+    String countryFlag = '🌐',
     required AuthProvider provider,
   }) {
     return UserModel(
@@ -71,7 +71,7 @@ class UserModel {
       countryFlag: countryFlag,
       isGuest: false,
       authProvider: provider,
-      diamonds: 100, // Welcome bonus for social login
+      diamonds: 100,
       coins: 5000,
     );
   }

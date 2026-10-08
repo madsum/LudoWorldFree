@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
+import '../../../core/ads/interstitial_ad_service.dart';
 import '../../../shared/widgets/banner_ad_widget.dart';
 import '../domain/models/game_state.dart';
 import '../domain/models/player_model.dart';
@@ -26,11 +27,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
     with WidgetsBindingObserver {
   bool _showTimeoutNotice = false;
   Timer? _timeoutNoticeTimer;
+  bool _hasTriggeredGameOverAd = false;
+  bool _readyToShowVictoryDialog = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // Preload Fullscreen Interstitial Ad
+    Future.microtask(() {
+      ref.read(interstitialAdServiceProvider).preloadAd();
+    });
+
     ref.listenManual<GameState>(
       gameControllerProvider,
       (previous, next) {
@@ -45,9 +54,28 @@ class _GameScreenState extends ConsumerState<GameScreen>
           );
           if (hasMissedRoll) _showTimeoutNoticeOverlay();
         }
+
+        // Immediately trigger Fullscreen Ad upon Game Over before Victory Dialog
+        if (next.isGameOver && !_hasTriggeredGameOverAd) {
+          _hasTriggeredGameOverAd = true;
+          Future.microtask(() async {
+            final interstitialAdService =
+                ref.read(interstitialAdServiceProvider);
+            await interstitialAdService.showInterstitialAd(
+              onAdClosed: () {
+                if (mounted) {
+                  setState(() {
+                    _readyToShowVictoryDialog = true;
+                  });
+                }
+              },
+            );
+          });
+        }
       },
       fireImmediately: true,
     );
+
     if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
       ref.read(gameControllerProvider.notifier).resumeTurnTimer();
     } else {
@@ -305,7 +333,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
             ),
 
-            if (gameState.isGameOver)
+            // Victory Dialog (Shows ONLY after the Fullscreen Interstitial Ad completes and is dismissed)
+            if (gameState.isGameOver && _readyToShowVictoryDialog)
               Positioned.fill(
                 child: Stack(
                   children: [
@@ -315,9 +344,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                     VictoryDialog(
                       gameState: gameState,
-                      onPlayAgain: () => gameNotifier.startNewGame(
-                        players: gameState.players,
-                      ),
+                      onPlayAgain: () {
+                        setState(() {
+                          _hasTriggeredGameOverAd = false;
+                          _readyToShowVictoryDialog = false;
+                        });
+                        gameNotifier.startNewGame(
+                          players: gameState.players,
+                        );
+                      },
                       onExitToLobby: () => context.go('/home'),
                     ),
                   ],

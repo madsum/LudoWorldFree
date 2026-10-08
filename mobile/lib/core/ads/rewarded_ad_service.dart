@@ -40,7 +40,7 @@ class RewardedAdService {
     );
   }
 
-  /// Displays the preloaded Rewarded Ad and executes reward callback
+  /// Displays the preloaded Rewarded Ad and executes instant reward callback
   Future<bool> showRewardedAd({
     required Function(int amount, String providerRewardId) onRewardEarned,
     required VoidCallback onAdClosed,
@@ -56,35 +56,37 @@ class RewardedAdService {
       return false;
     }
 
-    bool earnedReward = false;
-    final String rewardEventId = 'ad_reward_${DateTime.now().millisecondsSinceEpoch}';
+    final ad = _rewardedAd!;
+    final rewardEventId = 'ad_reward_${DateTime.now().microsecondsSinceEpoch}';
+    bool earned = false;
 
-    _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+    ad.fullScreenContentCallback = FullScreenContentCallback(
       onAdDismissedFullScreenContent: (RewardedAd ad) {
         ad.dispose();
-        _rewardedAd = null;
-        preloadAd(); // Preload next ad
+        if (identical(_rewardedAd, ad)) _rewardedAd = null;
+        unawaited(preloadAd()); // Preload next ad
         onAdClosed();
       },
       onAdFailedToShowFullScreenContent: (RewardedAd ad, AdError error) {
         ad.dispose();
-        _rewardedAd = null;
-        preloadAd();
+        if (identical(_rewardedAd, ad)) _rewardedAd = null;
+        unawaited(preloadAd());
         onError('Ad display failed: ${error.message}');
       },
     );
 
-    await _rewardedAd!.show(
-      onUserEarnedReward: (AdWithoutView ad, RewardItem rewardItem) {
-        earnedReward = true;
-        final int amount = rewardItem.amount.toInt() > 0
-            ? rewardItem.amount.toInt()
-            : AdConfig.adRewardGoldAmount;
+    try {
+      await ad.show(
+        onUserEarnedReward: (AdWithoutView ad, RewardItem rewardItem) {
+          earned = true;
+          // Trigger instant callback with full configured gold reward amount (500 coins)
+          onRewardEarned(AdConfig.adRewardGoldAmount, rewardEventId);
+        },
+      );
+    } catch (error) {
+      onError('Ad display failed: $error');
+    }
 
-        onRewardEarned(amount, rewardEventId);
-      },
-    );
-
-    return earnedReward;
+    return earned;
   }
 }

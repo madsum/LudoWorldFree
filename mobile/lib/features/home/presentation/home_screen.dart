@@ -27,7 +27,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _currentNavIndex = 0;
-  bool _showFlyingCoins = false;
+  bool _isClaimingReward = false;
+  final GlobalKey _rewardCardKey = GlobalKey();
+  final GlobalKey _walletKey = GlobalKey();
 
   @override
   void initState() {
@@ -93,6 +95,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _watchAdAndEarnGold(BuildContext context) async {
+    if (_isClaimingReward) return;
     final rewardedAdService = ref.read(rewardedAdServiceProvider);
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -107,52 +110,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
 
     await rewardedAdService.showRewardedAd(
-      onRewardEarned: (amount, providerRewardId) async {
-        // Trigger 3D Flying Coin Animation from ad card position up to header bar wallet
-        setState(() {
-          _showFlyingCoins = true;
-        });
+      onRewardEarned: (amount, providerRewardId) {
+        _isClaimingReward = true;
+        final screenSize = MediaQuery.sizeOf(context);
 
-        await ref.read(authControllerProvider.notifier).addGoldReward(
+        final startOffset = _getWidgetCenter(
+          _rewardCardKey,
+          fallback: Offset(screenSize.width / 2, screenSize.height * 0.75),
+        );
+        final endOffset = _getWidgetCenter(
+          _walletKey,
+          fallback: Offset(screenSize.width - 60, 32),
+        );
+
+        // 1. RIGHT AFTER THE AD CLOSES: Trigger 3D Flying Coins Animation INSTANTLY
+        FlyingCoinOverlay.show(
+          context,
+          startOffset: startOffset,
+          endOffset: endOffset,
+          onComplete: () {
+            _isClaimingReward = false;
+            // 2. When coins land in wallet, update wallet state & show Middle-Screen Gold Reward Dialog
+            if (context.mounted) {
+              _showMiddleRewardDialog(context, amount);
+            }
+          },
+        );
+
+        // 3. Asynchronously persist reward on backend & secure storage in parallel
+        ref.read(authControllerProvider.notifier).addGoldReward(
               amount: amount,
               providerRewardId: providerRewardId,
             );
-
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: const Color(0xFF2E7D32),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: const BorderSide(color: Color(0xFFB8FF65), width: 1.5),
-              ),
-              content: Row(
-                children: [
-                  const Icon(Icons.monetization_on_rounded, color: AppColors.coinGold, size: 24),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      '🎉 Rewarded! You earned +$amount Gold Coins!',
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
       },
       onAdClosed: () {},
       onError: (error) {
+        _isClaimingReward = false;
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               backgroundColor: AppColors.bgNavy,
-              content: Text(error, style: GoogleFonts.poppins(color: AppColors.gold)),
+              content: Text(error,
+                  style: GoogleFonts.poppins(color: AppColors.gold)),
             ),
           );
         }
@@ -160,9 +159,130 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Offset _getWidgetCenter(GlobalKey key, {required Offset fallback}) {
+    final renderBox = key.currentContext?.findRenderObject();
+    if (renderBox is RenderBox && renderBox.hasSize) {
+      return renderBox.localToGlobal(renderBox.size.center(Offset.zero));
+    }
+    return fallback;
+  }
+
+  /// Middle-Screen 3D Gold Reward Dialog
+  void _showMiddleRewardDialog(BuildContext context, int amount) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1B3E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: AppColors.gold, width: 2.5),
+        ),
+        contentPadding: const EdgeInsets.all(20),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 3D Coin & Crown Icon
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFB76E00)],
+                ),
+                boxShadow: [
+                  BoxShadow(color: Color(0xFFFF8F00), blurRadius: 12),
+                ],
+              ),
+              child: const Icon(
+                Icons.monetization_on_rounded,
+                color: Colors.white,
+                size: 48,
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            Text(
+              'REWARD EARNED!',
+              style: GoogleFonts.cinzel(
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+                color: AppColors.gold,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            Text(
+              '🎉 You earned +$amount Gold Coins!',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 4),
+
+            Text(
+              '500 Gold Coins have been added to your wallet balance!',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                fontSize: 11.5,
+                color: Colors.white70,
+              ),
+            ),
+
+            const SizedBox(height: 18),
+
+            // AWESOME / CLAIM Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00E676),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: const BorderSide(color: Color(0xFFB8FF65), width: 1.5),
+                  ),
+                ),
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(
+                  'AWESOME!',
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFlagWidget(String flag, {double size = 22}) {
+    if (flag == '🌐' || flag == 'assets/images/world.png' || flag.contains('world')) {
+      return Image.asset(
+        'assets/images/world.png',
+        width: size * 1.2,
+        height: size * 1.0,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => Text('🌐', style: TextStyle(fontSize: size)),
+      );
+    }
+    return Text(flag, style: TextStyle(fontSize: size));
+  }
+
   void _showProfileInfoDialog(BuildContext context) {
     final user = ref.read(authControllerProvider).user;
     if (user == null) return;
+
+    final displayCountry = (user.country.contains('assets/images') || user.country.isEmpty)
+        ? 'World'
+        : user.country;
 
     showDialog(
       context: context,
@@ -192,7 +312,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           children: [
             Row(
               children: [
-                Text(user.countryFlag, style: const TextStyle(fontSize: 22)),
+                _buildFlagWidget(user.countryFlag, size: 22),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -208,7 +328,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Country: ${user.country}',
+              'Country: $displayCountry',
               style: GoogleFonts.poppins(fontSize: 13, color: Colors.white70),
             ),
             if (user.email != null && user.email!.isNotEmpty) ...[
@@ -384,249 +504,234 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final user = authState.user;
     final playerName = user?.name ?? 'Guest Player';
     final avatarUrl = user?.avatarUrl;
-    final countryFlag = user?.countryFlag ?? '🇳🇱';
-    final diamonds = user?.diamonds ?? 150;
-    final coins = user?.coins ?? 50;
+    final countryFlag = user?.countryFlag ?? '🌐';
+    final diamonds = user?.diamonds ?? 100;
+    final coins = user?.coins ?? 2000;
 
     final mediaQuery = MediaQuery.sizeOf(context);
     final isTablet = mediaQuery.width >= 650;
 
     return Scaffold(
       backgroundColor: const Color(0xFF07122E),
-      body: Stack(
+      body: Column(
         children: [
-          Column(
-            children: [
-              // Top Header Bar
-              LobbyHeaderBar(
-                playerName: playerName,
-                avatarUrl: avatarUrl,
-                countryFlag: countryFlag,
-                diamonds: diamonds,
-                coins: coins,
-                level: 3,
-                onProfilePressed: () => _showProfileInfoDialog(context),
-                onSettingsPressed: () => _showSettingsDialog(context),
-                onInboxPressed: () =>
-                    _showComingSoonSnackBar(context, 'Mailbox Inbox'),
-                onShopPressed: () =>
-                    _showComingSoonSnackBar(context, 'Coin & Diamond Store'),
-              ),
+          // Top Header Bar
+          LobbyHeaderBar(
+            playerName: playerName,
+            avatarUrl: avatarUrl,
+            countryFlag: countryFlag,
+            diamonds: diamonds,
+            coins: coins,
+            coinWalletKey: _walletKey,
+            level: 3,
+            onProfilePressed: () => _showProfileInfoDialog(context),
+            onSettingsPressed: () => _showSettingsDialog(context),
+            onInboxPressed: () =>
+                _showComingSoonSnackBar(context, 'Mailbox Inbox'),
+            onShopPressed: () =>
+                _showComingSoonSnackBar(context, 'Coin & Diamond Store'),
+          ),
 
-              // Main Lobby Content Area
-              Expanded(
-                child: SingleChildScrollView(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
-                  physics: const BouncingScrollPhysics(),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: isTablet ? 600 : double.infinity,
-                      ),
-                      child: Column(
+          // Main Lobby Content Area
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12.0, vertical: 6.0),
+              physics: const BouncingScrollPhysics(),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: isTablet ? 600 : double.infinity,
+                  ),
+                  child: Column(
+                    children: [
+                      // Top Logo & Centerpiece Graphic
+                      const LobbyCenterGraphic(),
+
+                      const SizedBox(height: 12),
+
+                      // Row 1: 3 Vibrant Gold Game Cards (ONLINE, TEAM UP, FRIENDS)
+                      Row(
                         children: [
-                          // Top Logo & Centerpiece Graphic
-                          const LobbyCenterGraphic(),
-
-                          const SizedBox(height: 12),
-
-                          // Row 1: 3 Vibrant Gold Game Cards (ONLINE, TEAM UP, FRIENDS)
-                          Row(
-                            children: [
-                              Expanded(
-                                child: LobbyGameCard(
-                                  title: 'ONLINE',
-                                  playerCount: '218,675',
-                                  cardType: LobbyCardType.online,
-                                  onTap: () => _showComingSoonSnackBar(
-                                      context, 'Online Multiplayer'),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: LobbyGameCard(
-                                  title: 'TEAM UP',
-                                  playerCount: '4,144',
-                                  cardType: LobbyCardType.teamUp,
-                                  onTap: () => _showComingSoonSnackBar(
-                                      context, 'Team Up 2v2'),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: LobbyGameCard(
-                                  title: 'FRIENDS',
-                                  playerCount: '16,393',
-                                  cardType: LobbyCardType.friends,
-                                  onTap: () => _showComingSoonSnackBar(
-                                      context, 'Play with Friends'),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          // Row 2: 2 Vibrant Gold Game Cards (COMPUTER & PASS N PLAY)
-                          Row(
-                            children: [
-                              Expanded(
-                                child: LobbyGameCard(
-                                  title: 'COMPUTER',
-                                  cardType: LobbyCardType.computer,
-                                  onTap: () => _launchGameMode(context,
-                                      isVsComputer: true, title: 'Vs Computer'),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: LobbyGameCard(
-                                  title: 'PASS N PLAY',
-                                  cardType: LobbyCardType.passNPlay,
-                                  onTap: () => _launchGameMode(context,
-                                      isVsComputer: false, title: 'Pass & Play'),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 12),
-
-                          // Row 3: Prominent "Watch Ad & Earn Gold" 3D Card
-                          GestureDetector(
-                            onTap: () => _watchAdAndEarnGold(context),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 12),
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFFFFEA00),
-                                    Color(0xFFFF8F00),
-                                    Color(0xFFB76E00)
-                                  ],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.white, width: 2),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0xFFFF8F00),
-                                    blurRadius: 10,
-                                    offset: Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: const BoxDecoration(
-                                      color: Colors.black38,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.ondemand_video_rounded,
-                                      color: Colors.white,
-                                      size: 26,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'WATCH AD & EARN GOLD',
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w900,
-                                            color: Colors.black87,
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                        Text(
-                                          'Watch a short video to claim free gold!',
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.black87,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black87,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                          color: AppColors.gold, width: 1.2),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.monetization_on_rounded,
-                                            color: AppColors.coinGold, size: 16),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          '+${AdConfig.adRewardGoldAmount}',
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w900,
-                                            color: AppColors.gold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
+                          Expanded(
+                            child: LobbyGameCard(
+                              title: 'ONLINE',
+                              playerCount: '218,675',
+                              cardType: LobbyCardType.online,
+                              onTap: () => _showComingSoonSnackBar(
+                                  context, 'Online Multiplayer'),
                             ),
                           ),
-
-                          const SizedBox(height: 10),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: LobbyGameCard(
+                              title: 'TEAM UP',
+                              playerCount: '4,144',
+                              cardType: LobbyCardType.teamUp,
+                              onTap: () => _showComingSoonSnackBar(
+                                  context, 'Team Up 2v2'),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: LobbyGameCard(
+                              title: 'FRIENDS',
+                              playerCount: '16,393',
+                              cardType: LobbyCardType.friends,
+                              onTap: () => _showComingSoonSnackBar(
+                                  context, 'Play with Friends'),
+                            ),
+                          ),
                         ],
                       ),
-                    ),
+
+                      const SizedBox(height: 10),
+
+                      // Row 2: 2 Vibrant Gold Game Cards (COMPUTER & PASS N PLAY)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: LobbyGameCard(
+                              title: 'COMPUTER',
+                              cardType: LobbyCardType.computer,
+                              onTap: () => _launchGameMode(context,
+                                  isVsComputer: true, title: 'Vs Computer'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: LobbyGameCard(
+                              title: 'PASS N PLAY',
+                              cardType: LobbyCardType.passNPlay,
+                              onTap: () => _launchGameMode(context,
+                                  isVsComputer: false,
+                                  title: 'Pass & Play'),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Row 3: Prominent "Watch Ad & Earn Gold" 3D Card
+                      GestureDetector(
+                        onTap: () => _watchAdAndEarnGold(context),
+                        child: Container(
+                          key: _rewardCardKey,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [
+                                Color(0xFFFFEA00),
+                                Color(0xFFFF8F00),
+                                Color(0xFFB76E00)
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            border:
+                                Border.all(color: Colors.white, width: 2),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0xFFFF8F00),
+                                blurRadius: 10,
+                                offset: Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: const BoxDecoration(
+                                  color: Colors.black38,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.ondemand_video_rounded,
+                                  color: Colors.white,
+                                  size: 26,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'WATCH AD & EARN GOLD',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w900,
+                                        color: Colors.black87,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Watch a short video to claim free gold!',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black87,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                      color: AppColors.gold, width: 1.2),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                        Icons.monetization_on_rounded,
+                                        color: AppColors.coinGold,
+                                        size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '+${AdConfig.adRewardGoldAmount}',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w900,
+                                        color: AppColors.gold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+                    ],
                   ),
                 ),
               ),
-
-              // Bottom Navigation Bar (HOME, LIVE CHAT, SOCIAL)
-              LobbyBottomNav(
-                selectedIndex: _currentNavIndex,
-                onTap: (index) {
-                  setState(() => _currentNavIndex = index);
-                  if (index != 0) {
-                    _showComingSoonSnackBar(
-                        context, index == 1 ? 'Live Voice Chat' : 'Social Hub');
-                  }
-                },
-              ),
-            ],
+            ),
           ),
 
-          // 3D Flying Coins Animation Overlay
-          if (_showFlyingCoins)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: FlyingCoinOverlay(
-                  startOffset: Offset(mediaQuery.width / 2, mediaQuery.height * 0.75),
-                  endOffset: Offset(mediaQuery.width - 65, 32),
-                  onComplete: () {
-                    if (mounted) {
-                      setState(() {
-                        _showFlyingCoins = false;
-                      });
-                    }
-                  },
-                ),
-              ),
-            ),
+          // Bottom Navigation Bar (HOME, LIVE CHAT, SOCIAL)
+          LobbyBottomNav(
+            selectedIndex: _currentNavIndex,
+            onTap: (index) {
+              setState(() => _currentNavIndex = index);
+              if (index != 0) {
+                _showComingSoonSnackBar(
+                    context, index == 1 ? 'Live Voice Chat' : 'Social Hub');
+              }
+            },
+          ),
         ],
       ),
     );
