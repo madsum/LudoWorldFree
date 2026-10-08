@@ -79,6 +79,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
   late String _selectedAvatarId;
 
   static const List<CountryItem> _allCountries = [
+    CountryItem('World', 'assets/images/world.png'),
     CountryItem('Afghanistan', '🇦🇫'),
     CountryItem('Albania', '🇦🇱'),
     CountryItem('Algeria', '🇩🇿'),
@@ -150,7 +151,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
     CountryItem('Guinea-Bissau', '🇬🇼'),
     CountryItem('Guyana', '🇬🇾'),
     CountryItem('Haiti', '🇭🇹'),
-    CountryItem('Honduras', '🇭🇳'),
+    CountryItem('Honduras', '🇭HN'),
     CountryItem('Hungary', '🇭🇺'),
     CountryItem('Iceland', '🇮🇸'),
     CountryItem('India', '🇮🇳'),
@@ -232,7 +233,6 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
     CountryItem('Serbia', '🇷🇸'),
     CountryItem('Seychelles', '🇸🇨'),
     CountryItem('Sierra Leone', '🇸🇱'),
-    CountryItem('Sierra Leone', '🇸🇱'),
     CountryItem('Singapore', '🇸🇬'),
     CountryItem('Slovakia', '🇸🇰'),
     CountryItem('Slovenia', '🇸🇮'),
@@ -297,7 +297,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
     _nameController = TextEditingController(text: defaultName);
 
     _selectedCountry = _allCountries.firstWhere(
-      (c) => c.name == (widget.initialCountry ?? 'Netherlands'),
+      (c) => c.name == (widget.initialCountry ?? 'World'),
       orElse: () => _allCountries.first,
     );
 
@@ -308,6 +308,19 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
   void dispose() {
     _nameController.dispose();
     super.dispose();
+  }
+
+  Widget _buildFlagWidget(String flag, {double size = 22}) {
+    if (flag == '🌐' || flag == 'assets/images/world.png' || flag.contains('world')) {
+      return Image.asset(
+        'assets/images/world.png',
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => Text('🌐', style: TextStyle(fontSize: size)),
+      );
+    }
+    return Text(flag, style: TextStyle(fontSize: size));
   }
 
   void _openCountrySearchPicker() {
@@ -520,7 +533,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                   ),
                   child: Row(
                     children: [
-                      Text(_selectedCountry.flag, style: const TextStyle(fontSize: 22)),
+                      _buildFlagWidget(_selectedCountry.flag, size: 22),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -601,6 +614,19 @@ class _CountrySearchSheetState extends State<_CountrySearchSheet> {
     super.dispose();
   }
 
+  Widget _buildFlagWidget(String flag, {double size = 22}) {
+    if (flag == '🌐' || flag == 'assets/images/world.png' || flag.contains('world')) {
+      return Image.asset(
+        'assets/images/world.png',
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => Text('🌐', style: TextStyle(fontSize: size)),
+      );
+    }
+    return Text(flag, style: TextStyle(fontSize: size));
+  }
+
   void _onSearchChanged(String query) {
     setState(() {
       if (query.trim().isEmpty) {
@@ -658,7 +684,7 @@ class _CountrySearchSheetState extends State<_CountrySearchSheet> {
             onChanged: _onSearchChanged,
             style: GoogleFonts.poppins(color: Colors.white),
             decoration: InputDecoration(
-              hintText: 'Type country name (e.g. Zim, Ned, Ind)...',
+              hintText: 'Type country name (e.g. World, Zim, Ned)...',
               hintStyle: const TextStyle(color: Colors.white38),
               prefixIcon: const Icon(Icons.search_rounded, color: AppColors.gold),
               suffixIcon: _searchController.text.isNotEmpty
@@ -704,7 +730,7 @@ class _CountrySearchSheetState extends State<_CountrySearchSheet> {
 
                       return ListTile(
                         onTap: () => widget.onSelected(country),
-                        leading: Text(country.flag, style: const TextStyle(fontSize: 24)),
+                        leading: _buildFlagWidget(country.flag, size: 24),
                         title: Text(
                           country.name,
                           style: GoogleFonts.poppins(

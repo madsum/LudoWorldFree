@@ -132,6 +132,19 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
     super.dispose();
   }
 
+  Widget _buildFlagWidget(String flag, {double size = 12}) {
+    if (flag == '🌐' || flag == 'assets/images/world.png' || flag.contains('world')) {
+      return Image.asset(
+        'assets/images/world.png',
+        width: size * 1.2,
+        height: size * 1.0,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => Text('🌐', style: TextStyle(fontSize: size)),
+      );
+    }
+    return Text(flag, style: TextStyle(fontSize: size));
+  }
+
   @override
   Widget build(BuildContext context) {
     final isRolling = widget.isCurrentTurn && widget.gameState.isDiceRolling;
@@ -220,12 +233,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                           // Line 1: Country Flag, Name, Diamonds, Gold Coins
                           Row(
                             children: [
-                              Text(
-                                widget.player.countryFlag,
-                                style: TextStyle(
-                                  fontSize: widget.compact ? 10 : 12,
-                                ),
-                              ),
+                              _buildFlagWidget(widget.player.countryFlag, size: widget.compact ? 10 : 12),
                               const SizedBox(width: 3),
                               Expanded(
                                 child: Text(
@@ -396,7 +404,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
     required Color avatarBorderColor,
     required bool timerVisible,
   }) {
-    final countryDisplayName = (widget.player.country.isNotEmpty)
+    final countryDisplayName = (widget.player.country.isNotEmpty && widget.player.country != 'assets/images/world.png')
         ? widget.player.country
         : widget.player.name;
 
@@ -407,10 +415,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
         // First Line: Flag and Full Country Name (Untruncated)
         Row(
           children: [
-            Text(
-              widget.player.countryFlag,
-              style: const TextStyle(fontSize: 11),
-            ),
+            _buildFlagWidget(widget.player.countryFlag, size: 11),
             const SizedBox(width: 3),
             Expanded(
               child: Text(
