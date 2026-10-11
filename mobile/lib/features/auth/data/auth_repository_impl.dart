@@ -69,6 +69,23 @@ class AuthRepositoryImpl implements AuthRepository {
     final current = await getCurrentUser() ?? UserModel.guest();
     int newCoins = current.coins + amount;
 
+    // Save locally first so the reward survives navigation or an offline
+    // backend. The controller has already updated the visible wallet.
+    final updated = current.copyWith(coins: newCoins);
+    await _saveAuthSession(
+      token: await _storageService.getAccessToken() ?? 'user_token',
+      userId: updated.id,
+      userName: updated.name,
+      userEmail: updated.email ?? '',
+      avatarUrl: updated.avatarUrl,
+      country: updated.country,
+      countryFlag: updated.countryFlag,
+      coins: updated.coins,
+      diamonds: updated.diamonds,
+      isGuest: updated.isGuest,
+      syncBackendProfile: false,
+    );
+
     try {
       final response = await _dio.post(
         '/api/v1/rewards/ad-reward',
@@ -86,21 +103,23 @@ class AuthRepositoryImpl implements AuthRepository {
       }
     } catch (_) {}
 
-    final updated = current.copyWith(coins: newCoins);
-
-    await _saveAuthSession(
-      token: await _storageService.getAccessToken() ?? 'user_token',
-      userId: updated.id,
-      userName: updated.name,
-      userEmail: updated.email ?? '',
-      avatarUrl: updated.avatarUrl,
-      country: updated.country,
-      countryFlag: updated.countryFlag,
-      coins: updated.coins,
-      diamonds: updated.diamonds,
-      isGuest: updated.isGuest,
-      syncBackendProfile: false,
-    );
+    if (newCoins != updated.coins) {
+      final reconciled = updated.copyWith(coins: newCoins);
+      await _saveAuthSession(
+        token: await _storageService.getAccessToken() ?? 'user_token',
+        userId: reconciled.id,
+        userName: reconciled.name,
+        userEmail: reconciled.email ?? '',
+        avatarUrl: reconciled.avatarUrl,
+        country: reconciled.country,
+        countryFlag: reconciled.countryFlag,
+        coins: reconciled.coins,
+        diamonds: reconciled.diamonds,
+        isGuest: reconciled.isGuest,
+        syncBackendProfile: false,
+      );
+      return reconciled;
+    }
 
     return updated;
   }
@@ -521,6 +540,7 @@ class AuthRepositoryImpl implements AuthRepository {
       coins: user.coins,
       diamonds: user.diamonds,
       isGuest: true,
+      syncBackendProfile: false,
     );
 
     return user;
@@ -570,18 +590,20 @@ class AuthRepositoryImpl implements AuthRepository {
     required bool isGuest,
     bool syncBackendProfile = true,
   }) async {
-    await _storageService.saveAccessToken(token);
-    await _storageService.saveUserData(
-      userId: userId,
-      userName: userName,
-      userEmail: userEmail,
-      isGuest: isGuest,
-      avatarUrl: avatarUrl,
-      country: country,
-      countryFlag: countryFlag,
-      coins: coins,
-      diamonds: diamonds,
-    );
+    await Future.wait([
+      _storageService.saveAccessToken(token),
+      _storageService.saveUserData(
+        userId: userId,
+        userName: userName,
+        userEmail: userEmail,
+        isGuest: isGuest,
+        avatarUrl: avatarUrl,
+        country: country,
+        countryFlag: countryFlag,
+        coins: coins,
+        diamonds: diamonds,
+      ),
+    ]);
 
     if (syncBackendProfile) {
       await _syncBackendProfile(

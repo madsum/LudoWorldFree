@@ -28,50 +28,57 @@ class SecureStorageService {
     int? coins,
     int? diamonds,
   }) async {
-    await _storage.write(key: AppConstants.keyUserId, value: userId);
-    await _storage.write(key: AppConstants.keyUserName, value: userName);
-    await _storage.write(key: AppConstants.keyIsGuest, value: isGuest.toString());
+    final writes = <Future<void>>[
+      _storage.write(key: AppConstants.keyUserId, value: userId),
+      _storage.write(key: AppConstants.keyUserName, value: userName),
+      _storage.write(key: AppConstants.keyIsGuest, value: isGuest.toString()),
+    ];
     if (userEmail != null) {
-      await _storage.write(key: 'user_email', value: userEmail);
+      writes.add(_storage.write(key: 'user_email', value: userEmail));
     }
     if (avatarUrl != null) {
-      await _storage.write(key: 'user_avatar', value: avatarUrl);
+      writes.add(_storage.write(key: 'user_avatar', value: avatarUrl));
     }
     if (country != null) {
-      await _storage.write(key: 'user_country', value: country);
+      writes.add(_storage.write(key: 'user_country', value: country));
     }
     if (countryFlag != null) {
-      await _storage.write(key: 'user_country_flag', value: countryFlag);
+      writes.add(_storage.write(key: 'user_country_flag', value: countryFlag));
     }
     if (coins != null) {
-      await _storage.write(key: 'user_coins', value: coins.toString());
+      writes.add(_storage.write(key: 'user_coins', value: coins.toString()));
     }
     if (diamonds != null) {
-      await _storage.write(key: 'user_diamonds', value: diamonds.toString());
+      writes.add(
+        _storage.write(key: 'user_diamonds', value: diamonds.toString()),
+      );
     }
+    await Future.wait(writes);
   }
 
   Future<Map<String, String?>> getUserData() async {
-    final userId = await _storage.read(key: AppConstants.keyUserId);
-    final userName = await _storage.read(key: AppConstants.keyUserName);
-    final userEmail = await _storage.read(key: 'user_email');
-    final isGuest = await _storage.read(key: AppConstants.keyIsGuest);
-    final avatarUrl = await _storage.read(key: 'user_avatar');
-    final country = await _storage.read(key: 'user_country');
-    final countryFlag = await _storage.read(key: 'user_country_flag');
-    final coins = await _storage.read(key: 'user_coins');
-    final diamonds = await _storage.read(key: 'user_diamonds');
+    final values = await Future.wait([
+      _storage.read(key: AppConstants.keyUserId),
+      _storage.read(key: AppConstants.keyUserName),
+      _storage.read(key: 'user_email'),
+      _storage.read(key: AppConstants.keyIsGuest),
+      _storage.read(key: 'user_avatar'),
+      _storage.read(key: 'user_country'),
+      _storage.read(key: 'user_country_flag'),
+      _storage.read(key: 'user_coins'),
+      _storage.read(key: 'user_diamonds'),
+    ]);
 
     return {
-      'userId': userId,
-      'userName': userName,
-      'userEmail': userEmail,
-      'isGuest': isGuest,
-      'avatarUrl': avatarUrl,
-      'country': country,
-      'countryFlag': countryFlag,
-      'coins': coins,
-      'diamonds': diamonds,
+      'userId': values[0],
+      'userName': values[1],
+      'userEmail': values[2],
+      'isGuest': values[3],
+      'avatarUrl': values[4],
+      'country': values[5],
+      'countryFlag': values[6],
+      'coins': values[7],
+      'diamonds': values[8],
     };
   }
 

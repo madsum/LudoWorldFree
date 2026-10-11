@@ -97,6 +97,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _watchAdAndEarnGold(BuildContext context) async {
     if (_isClaimingReward) return;
     final rewardedAdService = ref.read(rewardedAdServiceProvider);
+    int? earnedAmount;
+    String? providerRewardId;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -110,7 +112,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
 
     await rewardedAdService.showRewardedAd(
-      onRewardEarned: (amount, providerRewardId) {
+      onRewardEarned: (amount, rewardId) {
+        // The reward callback fires while the full-screen ad is still visible.
+        // Save it here and animate only after the ad has closed.
+        earnedAmount = amount;
+        providerRewardId = rewardId;
+      },
+      onAdClosed: () {
+        final amount = earnedAmount;
+        final rewardId = providerRewardId;
+        if (amount == null || rewardId == null || !context.mounted) return;
+
         _isClaimingReward = true;
         final screenSize = MediaQuery.sizeOf(context);
 
@@ -123,27 +135,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           fallback: Offset(screenSize.width - 60, 32),
         );
 
-        // 1. RIGHT AFTER THE AD CLOSES: Trigger 3D Flying Coins Animation INSTANTLY
+        // Start the coin flight after the ad closes so it is visible above the lobby.
         FlyingCoinOverlay.show(
           context,
           startOffset: startOffset,
           endOffset: endOffset,
           onComplete: () {
             _isClaimingReward = false;
-            // 2. When coins land in wallet, update wallet state & show Middle-Screen Gold Reward Dialog
             if (context.mounted) {
-              _showMiddleRewardDialog(context, amount);
+              // Update the wallet as soon as the coins land. Persistence and any
+              // server reconciliation happen asynchronously in the controller.
+              ref.read(authControllerProvider.notifier).addGoldReward(
+                    amount: amount,
+                    providerRewardId: rewardId,
+                  );
             }
           },
         );
-
-        // 3. Asynchronously persist reward on backend & secure storage in parallel
-        ref.read(authControllerProvider.notifier).addGoldReward(
-              amount: amount,
-              providerRewardId: providerRewardId,
-            );
       },
-      onAdClosed: () {},
       onError: (error) {
         _isClaimingReward = false;
         if (context.mounted) {
@@ -165,102 +174,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return renderBox.localToGlobal(renderBox.size.center(Offset.zero));
     }
     return fallback;
-  }
-
-  /// Middle-Screen 3D Gold Reward Dialog
-  void _showMiddleRewardDialog(BuildContext context, int amount) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1B3E),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: const BorderSide(color: AppColors.gold, width: 2.5),
-        ),
-        contentPadding: const EdgeInsets.all(20),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 3D Coin & Crown Icon
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFB76E00)],
-                ),
-                boxShadow: [
-                  BoxShadow(color: Color(0xFFFF8F00), blurRadius: 12),
-                ],
-              ),
-              child: const Icon(
-                Icons.monetization_on_rounded,
-                color: Colors.white,
-                size: 48,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            Text(
-              'REWARD EARNED!',
-              style: GoogleFonts.cinzel(
-                fontSize: 19,
-                fontWeight: FontWeight.w900,
-                color: AppColors.gold,
-                letterSpacing: 1.2,
-              ),
-            ),
-            const SizedBox(height: 6),
-
-            Text(
-              '🎉 You earned +$amount Gold Coins!',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 4),
-
-            Text(
-              '500 Gold Coins have been added to your wallet balance!',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 11.5,
-                color: Colors.white70,
-              ),
-            ),
-
-            const SizedBox(height: 18),
-
-            // AWESOME / CLAIM Button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00E676),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: const BorderSide(color: Color(0xFFB8FF65), width: 1.5),
-                  ),
-                ),
-                onPressed: () => Navigator.of(context).pop(),
-                child: Text(
-                  'AWESOME!',
-                  style: GoogleFonts.poppins(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildFlagWidget(String flag, {double size = 22}) {

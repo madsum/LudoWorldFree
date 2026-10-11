@@ -50,3 +50,4 @@ app.*.map.json
 backend/target/
 mobile/android/build/
 ludo_keystore.jks
+/backend/deploy-global.sh

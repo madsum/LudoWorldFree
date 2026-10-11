@@ -161,6 +161,13 @@ class AuthController extends StateNotifier<AuthState> {
     required int amount,
     required String providerRewardId,
   }) async {
+    final current = state.user;
+    if (current != null) {
+      // Reflect the reward as soon as the animation finishes; storage and the
+      // backend are allowed to complete afterward.
+      applyUserUpdate(current.copyWith(coins: current.coins + amount));
+    }
+
     final updated = await claimGoldReward(
       amount: amount,
       providerRewardId: providerRewardId,
