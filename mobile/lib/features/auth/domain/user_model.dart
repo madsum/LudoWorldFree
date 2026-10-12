@@ -8,6 +8,54 @@ enum AuthProvider {
   guest,
 }
 
+enum GameType {
+  classic,
+  quick,
+  teamUp,
+  computer,
+  passNPlay;
+
+  String get displayName {
+    switch (this) {
+      case GameType.classic:
+        return 'Classic';
+      case GameType.quick:
+        return 'Quick';
+      case GameType.teamUp:
+        return 'Team Up';
+      case GameType.computer:
+        return 'Vs Computer';
+      case GameType.passNPlay:
+        return 'Pass & Play';
+    }
+  }
+
+  String get apiName {
+    switch (this) {
+      case GameType.classic:
+        return 'CLASSIC';
+      case GameType.quick:
+        return 'QUICK';
+      case GameType.teamUp:
+        return 'TEAM_UP';
+      case GameType.computer:
+        return 'COMPUTER';
+      case GameType.passNPlay:
+        return 'PASS_N_PLAY';
+    }
+  }
+
+  static GameType parse(String? value) {
+    if (value == null) return GameType.classic;
+    final normalized = value.toLowerCase().replaceAll('_', '').replaceAll(' ', '');
+    if (normalized.contains('quick')) return GameType.quick;
+    if (normalized.contains('team')) return GameType.teamUp;
+    if (normalized.contains('computer')) return GameType.computer;
+    if (normalized.contains('pass')) return GameType.passNPlay;
+    return GameType.classic;
+  }
+}
+
 class UserModel {
   final String id;
   final String name;
@@ -19,6 +67,8 @@ class UserModel {
   final AuthProvider authProvider;
   final int diamonds;
   final int coins;
+  final GameType preferredGameType;
+  final GameType mostPlayedGameType;
 
   const UserModel({
     required this.id,
@@ -31,6 +81,8 @@ class UserModel {
     required this.authProvider,
     this.diamonds = 100,
     this.coins = 2000,
+    this.preferredGameType = GameType.classic,
+    this.mostPlayedGameType = GameType.classic,
   });
 
   factory UserModel.guest({
@@ -39,6 +91,8 @@ class UserModel {
     String avatarUrl = 'assets/images/black-mask.webp',
     String country = 'World',
     String countryFlag = '🌐',
+    GameType preferredGameType = GameType.classic,
+    GameType mostPlayedGameType = GameType.classic,
   }) {
     return UserModel(
       id: id ?? 'guest_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
@@ -50,6 +104,8 @@ class UserModel {
       authProvider: AuthProvider.guest,
       diamonds: 100,
       coins: 2000,
+      preferredGameType: preferredGameType,
+      mostPlayedGameType: mostPlayedGameType,
     );
   }
 
@@ -61,6 +117,8 @@ class UserModel {
     String country = 'World',
     String countryFlag = '🌐',
     required AuthProvider provider,
+    GameType preferredGameType = GameType.classic,
+    GameType mostPlayedGameType = GameType.classic,
   }) {
     return UserModel(
       id: id,
@@ -73,6 +131,8 @@ class UserModel {
       authProvider: provider,
       diamonds: 100,
       coins: 5000,
+      preferredGameType: preferredGameType,
+      mostPlayedGameType: mostPlayedGameType,
     );
   }
 
@@ -84,6 +144,8 @@ class UserModel {
     String? countryFlag,
     int? diamonds,
     int? coins,
+    GameType? preferredGameType,
+    GameType? mostPlayedGameType,
   }) {
     return UserModel(
       id: id,
@@ -96,6 +158,8 @@ class UserModel {
       authProvider: authProvider,
       diamonds: diamonds ?? this.diamonds,
       coins: coins ?? this.coins,
+      preferredGameType: preferredGameType ?? this.preferredGameType,
+      mostPlayedGameType: mostPlayedGameType ?? this.mostPlayedGameType,
     );
   }
 }

@@ -27,15 +27,35 @@ class AuthRepositoryImpl implements AuthRepository {
     final userData = await _storageService.getUserData();
     if (userData['userId'] == null) return null;
 
+    final userId = userData['userId']!;
     final isGuest = userData['isGuest'] == 'true';
-    final coins =
-        int.tryParse(userData['coins'] ?? '') ?? (isGuest ? 2000 : 5000);
-    final diamonds =
-        int.tryParse(userData['diamonds'] ?? '') ?? 100;
+    int coins = int.tryParse(userData['coins'] ?? '') ?? (isGuest ? 2000 : 5000);
+    int diamonds = int.tryParse(userData['diamonds'] ?? '') ?? 100;
+    GameType preferredGameType = GameType.parse(userData['preferredGameType']);
+    GameType mostPlayedGameType = GameType.parse(userData['mostPlayedGameType']);
+
+    // Attempt backend profile sync for persistent Cloud SQL profile
+    try {
+      final response = await _dio.get(
+        '/player/profile',
+        options: Options(headers: {'X-Player-ID': userId}),
+      );
+      if (response.data != null) {
+        if (response.data['goldCoins'] != null) {
+          coins = (response.data['goldCoins'] as num).toInt();
+        }
+        if (response.data['preferredGameType'] != null) {
+          preferredGameType = GameType.parse(response.data['preferredGameType'].toString());
+        }
+        if (response.data['mostPlayedGameType'] != null) {
+          mostPlayedGameType = GameType.parse(response.data['mostPlayedGameType'].toString());
+        }
+      }
+    } catch (_) {}
 
     if (isGuest) {
       return UserModel(
-        id: userData['userId']!,
+        id: userId,
         name: userData['userName'] ?? 'Guest Player',
         avatarUrl: userData['avatarUrl'] ?? 'assets/images/black-mask.webp',
         country: userData['country'] ?? 'World',
@@ -44,11 +64,13 @@ class AuthRepositoryImpl implements AuthRepository {
         authProvider: AuthProvider.guest,
         coins: coins,
         diamonds: diamonds,
+        preferredGameType: preferredGameType,
+        mostPlayedGameType: mostPlayedGameType,
       );
     }
 
     return UserModel(
-      id: userData['userId']!,
+      id: userId,
       name: userData['userName'] ?? 'Player',
       email: userData['userEmail'] ?? 'player@ludoworldfree.com',
       avatarUrl: userData['avatarUrl'],
@@ -58,6 +80,8 @@ class AuthRepositoryImpl implements AuthRepository {
       authProvider: AuthProvider.google,
       coins: coins,
       diamonds: diamonds,
+      preferredGameType: preferredGameType,
+      mostPlayedGameType: mostPlayedGameType,
     );
   }
 
@@ -69,26 +93,9 @@ class AuthRepositoryImpl implements AuthRepository {
     final current = await getCurrentUser() ?? UserModel.guest();
     int newCoins = current.coins + amount;
 
-    // Save locally first so the reward survives navigation or an offline
-    // backend. The controller has already updated the visible wallet.
-    final updated = current.copyWith(coins: newCoins);
-    await _saveAuthSession(
-      token: await _storageService.getAccessToken() ?? 'user_token',
-      userId: updated.id,
-      userName: updated.name,
-      userEmail: updated.email ?? '',
-      avatarUrl: updated.avatarUrl,
-      country: updated.country,
-      countryFlag: updated.countryFlag,
-      coins: updated.coins,
-      diamonds: updated.diamonds,
-      isGuest: updated.isGuest,
-      syncBackendProfile: false,
-    );
-
     try {
       final response = await _dio.post(
-        '/api/v1/rewards/ad-reward',
+        '/rewards/ad-reward',
         data: {
           'providerRewardId': providerRewardId,
           'amount': amount,
@@ -103,23 +110,23 @@ class AuthRepositoryImpl implements AuthRepository {
       }
     } catch (_) {}
 
-    if (newCoins != updated.coins) {
-      final reconciled = updated.copyWith(coins: newCoins);
-      await _saveAuthSession(
-        token: await _storageService.getAccessToken() ?? 'user_token',
-        userId: reconciled.id,
-        userName: reconciled.name,
-        userEmail: reconciled.email ?? '',
-        avatarUrl: reconciled.avatarUrl,
-        country: reconciled.country,
-        countryFlag: reconciled.countryFlag,
-        coins: reconciled.coins,
-        diamonds: reconciled.diamonds,
-        isGuest: reconciled.isGuest,
-        syncBackendProfile: false,
-      );
-      return reconciled;
-    }
+    final updated = current.copyWith(coins: newCoins);
+
+    await _saveAuthSession(
+      token: await _storageService.getAccessToken() ?? 'user_token',
+      userId: updated.id,
+      userName: updated.name,
+      userEmail: updated.email ?? '',
+      avatarUrl: updated.avatarUrl,
+      country: updated.country,
+      countryFlag: updated.countryFlag,
+      coins: updated.coins,
+      diamonds: updated.diamonds,
+      isGuest: updated.isGuest,
+      preferredGameType: updated.preferredGameType,
+      mostPlayedGameType: updated.mostPlayedGameType,
+      syncBackendProfile: false,
+    );
 
     return updated;
   }
@@ -522,11 +529,20 @@ class AuthRepositoryImpl implements AuthRepository {
     String? country,
     String? countryFlag,
   }) async {
+    final existingUser = await getCurrentUser();
+    final persistentId = existingUser?.id ?? 'guest_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    final persistentCoins = existingUser?.coins ?? 2000;
+    final persistentDiamonds = existingUser?.diamonds ?? 100;
+
     final user = UserModel.guest(
-      name: name ?? 'Guest Player',
-      avatarUrl: avatarUrl ?? 'assets/images/black-mask.webp',
-      country: country ?? 'World',
-      countryFlag: countryFlag ?? '🌐',
+      id: persistentId,
+      name: name ?? existingUser?.name ?? 'Guest Player',
+      avatarUrl: avatarUrl ?? existingUser?.avatarUrl ?? 'assets/images/black-mask.webp',
+      country: country ?? existingUser?.country ?? 'World',
+      countryFlag: countryFlag ?? existingUser?.countryFlag ?? '🌐',
+    ).copyWith(
+      coins: persistentCoins,
+      diamonds: persistentDiamonds,
     );
 
     await _saveAuthSession(
@@ -540,7 +556,7 @@ class AuthRepositoryImpl implements AuthRepository {
       coins: user.coins,
       diamonds: user.diamonds,
       isGuest: true,
-      syncBackendProfile: false,
+      syncBackendProfile: true,
     );
 
     return user;
@@ -572,6 +588,7 @@ class AuthRepositoryImpl implements AuthRepository {
       coins: updated.coins,
       diamonds: updated.diamonds,
       isGuest: updated.isGuest,
+      syncBackendProfile: true,
     );
 
     return updated;
@@ -587,23 +604,25 @@ class AuthRepositoryImpl implements AuthRepository {
     String? countryFlag,
     int? coins,
     int? diamonds,
+    GameType? preferredGameType,
+    GameType? mostPlayedGameType,
     required bool isGuest,
     bool syncBackendProfile = true,
   }) async {
-    await Future.wait([
-      _storageService.saveAccessToken(token),
-      _storageService.saveUserData(
-        userId: userId,
-        userName: userName,
-        userEmail: userEmail,
-        isGuest: isGuest,
-        avatarUrl: avatarUrl,
-        country: country,
-        countryFlag: countryFlag,
-        coins: coins,
-        diamonds: diamonds,
-      ),
-    ]);
+    await _storageService.saveAccessToken(token);
+    await _storageService.saveUserData(
+      userId: userId,
+      userName: userName,
+      userEmail: userEmail,
+      isGuest: isGuest,
+      avatarUrl: avatarUrl,
+      country: country,
+      countryFlag: countryFlag,
+      coins: coins,
+      diamonds: diamonds,
+      preferredGameType: preferredGameType?.apiName,
+      mostPlayedGameType: mostPlayedGameType?.apiName,
+    );
 
     if (syncBackendProfile) {
       await _syncBackendProfile(
@@ -613,6 +632,7 @@ class AuthRepositoryImpl implements AuthRepository {
         country: country,
         countryFlag: countryFlag,
         coins: coins,
+        preferredGameType: preferredGameType?.apiName,
       );
     }
   }
@@ -624,16 +644,18 @@ class AuthRepositoryImpl implements AuthRepository {
     required String? country,
     required String? countryFlag,
     required int? coins,
+    String? preferredGameType,
   }) async {
     try {
       await _dio.put(
-        '/api/v1/player/profile',
+        '/player/profile',
         data: {
           'displayName': name,
           if (avatarUrl != null) 'avatarUrl': avatarUrl,
           if (country != null) 'country': country,
           if (countryFlag != null) 'countryFlag': countryFlag,
           if (coins != null) 'goldCoins': coins,
+          if (preferredGameType != null) 'preferredGameType': preferredGameType,
         },
         options: Options(headers: {'X-Player-ID': id}),
       );

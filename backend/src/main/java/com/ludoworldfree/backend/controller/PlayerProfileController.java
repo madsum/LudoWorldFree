@@ -68,6 +68,16 @@ public class PlayerProfileController {
         setString(payload, "avatarUrl", profile::setAvatarUrl);
         setString(payload, "country", profile::setCountry);
         setString(payload, "countryFlag", profile::setCountryFlag);
+
+        if (payload.containsKey("preferredGameType")) {
+            String preferredStr = (String) payload.get("preferredGameType");
+            if (preferredStr != null) {
+                try {
+                    profile.setPreferredGameType(PlayerProfile.GameType.valueOf(preferredStr.toUpperCase()));
+                } catch (Exception ignored) {}
+            }
+        }
+
         profile = profileRepository.save(profile);
 
         PlayerWallet wallet = walletRepository.findByPlayerId(userId).orElse(null);
@@ -77,6 +87,27 @@ public class PlayerProfileController {
             wallet.setBalance(Math.max(0, longValue(payload.get("goldCoins"), wallet.getBalance())));
         }
         wallet = walletRepository.save(wallet);
+
+        return ResponseEntity.ok(profileResponse(userId, profile, wallet));
+    }
+
+    @PostMapping("/game-session/complete")
+    public ResponseEntity<?> completeGameSession(
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
+            @RequestBody Map<String, Object> payload) {
+        UUID userId = PlayerIdResolver.resolve(headerPlayerId);
+        PlayerProfile profile = profileRepository.findByUserId(userId)
+                .orElseGet(() -> profileRepository.save(new PlayerProfile(userId, "Guest Player", "avatar_crown", "World", "🌐")));
+
+        String gameTypeStr = (String) payload.getOrDefault("gameType", "CLASSIC");
+        try {
+            PlayerProfile.GameType gameType = PlayerProfile.GameType.valueOf(gameTypeStr.toUpperCase());
+            profile.recordGameSession(gameType);
+            profile = profileRepository.save(profile);
+        } catch (Exception ignored) {}
+
+        PlayerWallet wallet = walletRepository.findByPlayerId(userId)
+                .orElseGet(() -> walletRepository.save(new PlayerWallet(userId, 2000L)));
 
         return ResponseEntity.ok(profileResponse(userId, profile, wallet));
     }
@@ -100,6 +131,13 @@ public class PlayerProfileController {
         response.put("avatarUrl", profile.getAvatarUrl());
         response.put("country", profile.getCountry());
         response.put("countryFlag", profile.getCountryFlag());
+        response.put("preferredGameType", profile.getPreferredGameType().name());
+        response.put("mostPlayedGameType", profile.getMostPlayedGameType().name());
+        response.put("classicPlayCount", profile.getClassicPlayCount());
+        response.put("quickPlayCount", profile.getQuickPlayCount());
+        response.put("teamUpPlayCount", profile.getTeamUpPlayCount());
+        response.put("computerPlayCount", profile.getComputerPlayCount());
+        response.put("passNPlayPlayCount", profile.getPassNPlayPlayCount());
         response.put("goldCoins", wallet.getBalance());
         return response;
     }

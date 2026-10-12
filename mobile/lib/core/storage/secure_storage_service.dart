@@ -27,6 +27,8 @@ class SecureStorageService {
     String? countryFlag,
     int? coins,
     int? diamonds,
+    String? preferredGameType,
+    String? mostPlayedGameType,
   }) async {
     final writes = <Future<void>>[
       _storage.write(key: AppConstants.keyUserId, value: userId),
@@ -53,6 +55,12 @@ class SecureStorageService {
         _storage.write(key: 'user_diamonds', value: diamonds.toString()),
       );
     }
+    if (preferredGameType != null) {
+      writes.add(_storage.write(key: 'preferred_game_type', value: preferredGameType));
+    }
+    if (mostPlayedGameType != null) {
+      writes.add(_storage.write(key: 'most_played_game_type', value: mostPlayedGameType));
+    }
     await Future.wait(writes);
   }
 
@@ -67,6 +75,8 @@ class SecureStorageService {
       _storage.read(key: 'user_country_flag'),
       _storage.read(key: 'user_coins'),
       _storage.read(key: 'user_diamonds'),
+      _storage.read(key: 'preferred_game_type'),
+      _storage.read(key: 'most_played_game_type'),
     ]);
 
     return {
@@ -79,6 +89,8 @@ class SecureStorageService {
       'countryFlag': values[6],
       'coins': values[7],
       'diamonds': values[8],
+      'preferredGameType': values[9],
+      'mostPlayedGameType': values[10],
     };
   }
 
