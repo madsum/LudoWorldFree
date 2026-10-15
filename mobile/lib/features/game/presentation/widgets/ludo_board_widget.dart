@@ -183,6 +183,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
                     clipBehavior: Clip.none,
                     children: [
                       ..._buildPawnWidgets(tileSize),
+                      ..._buildPlayerNamePlates(tileSize),
                       ..._buildFinishedPlayerCrowns(tileSize),
                       ..._buildEliminatedPlayerSigns(tileSize),
                     ],
@@ -194,6 +195,49 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
         ),
       ),
     );
+  }
+
+  /// Renders Player Name in white text without background or flag
+  List<Widget> _buildPlayerNamePlates(double tileSize) {
+    return widget.gameState.players.map((player) {
+      final nameCenter = switch (player.color) {
+        LudoColor.red => const Offset(3, 5.2),
+        LudoColor.green => const Offset(12, 0.8),
+        LudoColor.yellow => const Offset(12, 14.2),
+        LudoColor.blue => const Offset(3, 14.2),
+      };
+
+      final nameWidth = tileSize * 5.2;
+      final nameHeight = tileSize * 0.85;
+
+      return Positioned(
+        key: ValueKey('nameplate_${player.id}'),
+        left: (nameCenter.dx * tileSize) - (nameWidth / 2),
+        top: (nameCenter.dy * tileSize) - (nameHeight / 2),
+        width: nameWidth,
+        height: nameHeight,
+        child: IgnorePointer(
+          child: RotatedBox(
+            quarterTurns: (4 - widget.orientationQuarterTurns % 4) % 4,
+            child: Center(
+              child: Text(
+                player.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: tileSize * 0.42,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  shadows: const [
+                    Shadow(color: Colors.black87, blurRadius: 4, offset: Offset(0, 1.5)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }).toList();
   }
 
   /// Renders 3D Golden Crowns and Large Rank Numbers (1, 2, 3) in Yard when a player finishes
@@ -584,17 +628,17 @@ class _LudoBoardPainter extends CustomPainter {
       final rect = Rect.fromLTWH(pos.x * tileSize, pos.y * tileSize, tileSize, tileSize);
       final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(3));
 
-      // Draw Colored Visual Start Markers & Arrows on indices 0, 13, 26, 39
-      if (i == LudoColor.red.visualStartMarkerIndex) {
+      // Draw Colored Visual Start Markers & Arrows on actual entry indices (1, 14, 27, 40)
+      if (i == LudoColor.red.actualEntryTrackIndex) {
         canvas.drawRRect(rrect, redGradient);
         _drawStartArrow(canvas, rect, LudoColor.red, tileSize);
-      } else if (i == LudoColor.green.visualStartMarkerIndex) {
+      } else if (i == LudoColor.green.actualEntryTrackIndex) {
         canvas.drawRRect(rrect, greenGradient);
         _drawStartArrow(canvas, rect, LudoColor.green, tileSize);
-      } else if (i == LudoColor.yellow.visualStartMarkerIndex) {
+      } else if (i == LudoColor.yellow.actualEntryTrackIndex) {
         canvas.drawRRect(rrect, yellowGradient);
         _drawStartArrow(canvas, rect, LudoColor.yellow, tileSize);
-      } else if (i == LudoColor.blue.visualStartMarkerIndex) {
+      } else if (i == LudoColor.blue.actualEntryTrackIndex) {
         canvas.drawRRect(rrect, blueGradient);
         _drawStartArrow(canvas, rect, LudoColor.blue, tileSize);
       } else {
@@ -603,8 +647,8 @@ class _LudoBoardPainter extends CustomPainter {
 
       canvas.drawRRect(rrect, gridLinePaint);
 
-      // Draw Outlined 5-Point Safe Stars on (8, 21, 34, 47) and Start Markers (0, 13, 26, 39)
-      if (GameEngine.safeGlobalTiles.contains(i)) {
+      // Draw Outlined 5-Point Safe Stars ONLY on shared arm safe tiles (9, 22, 35, 48)
+      if (GameEngine.sharedSafeTiles.contains(i)) {
         _drawSafeStar(canvas, rect.center, tileSize * 0.35);
       }
     }

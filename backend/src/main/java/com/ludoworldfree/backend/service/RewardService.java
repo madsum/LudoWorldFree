@@ -2,6 +2,8 @@ package com.ludoworldfree.backend.service;
 
 import com.ludoworldfree.backend.model.*;
 import com.ludoworldfree.backend.repository.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -10,6 +12,8 @@ import java.util.UUID;
 
 @Service
 public class RewardService {
+
+    private static final Logger log = LoggerFactory.getLogger(RewardService.class);
 
     private final PlayerWalletRepository walletRepository;
     private final GoldTransactionRepository transactionRepository;
@@ -33,6 +37,7 @@ public class RewardService {
                 .orElseGet(() -> walletRepository.save(new PlayerWallet(playerId, 2000L)));
 
         if (existingEvent.isPresent()) {
+            log.warn("⚠️ [Duplicate Ad Reward Rejected] Player ID: {} attempted replayed event ID: {}", playerId, providerRewardId);
             return new RewardResult(true, wallet.getBalance(), "Reward already processed.", true);
         }
 
@@ -64,6 +69,9 @@ public class RewardService {
                 "PROCESSED"
         );
         rewardEventRepository.save(rewardEvent);
+
+        log.info("🪙 [Ad Reward Credited] Player ID: {} | Reward: +{} Gold Coins | New Balance: {}",
+                playerId, rewardAmount, balanceAfter);
 
         return new RewardResult(true, balanceAfter, "Reward processed successfully.", false);
     }

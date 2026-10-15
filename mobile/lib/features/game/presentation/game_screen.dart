@@ -12,6 +12,7 @@ import '../../../shared/widgets/banner_ad_widget.dart';
 import '../domain/models/game_state.dart';
 import '../domain/models/player_model.dart';
 import 'controllers/game_controller.dart';
+import 'widgets/exit_game_dialog.dart';
 import 'widgets/ludo_board_widget.dart';
 import 'widgets/player_info_card.dart';
 import 'widgets/victory_dialog.dart';
@@ -120,210 +121,217 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final boardQuarterTurns =
         isVsComputer && humanColor != null ? (3 - humanColor.index) % 4 : 0;
 
-    return Scaffold(
-      backgroundColor: AppColors.bgDark,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                if (!gameState.isGameOver)
-                  BannerAdWidget(
-                    consentService: ref.read(adMobConsentServiceProvider),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _confirmExitDialog(context);
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.bgDark,
+        body: SafeArea(
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  if (!gameState.isGameOver)
+                    BannerAdWidget(
+                      consentService: ref.read(adMobConsentServiceProvider),
+                    ),
+
+                  if (!isTwoPlayerMode && !gameState.isGameOver)
+                    _buildBackButtonRow(context),
+
+                  if (!isTwoPlayerMode)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 3,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          if (gameState.players.isNotEmpty)
+                            PlayerInfoCard(
+                              player: gameState.players[0],
+                              gameState: gameState,
+                              isCurrentTurn: gameState.currentTurnIndex == 0,
+                              onRoll: () => gameNotifier.rollDice(),
+                              compact: true,
+                            ),
+                          if (gameState.players.length > 1)
+                            PlayerInfoCard(
+                              player: gameState.players[1],
+                              gameState: gameState,
+                              isCurrentTurn: gameState.currentTurnIndex == 1,
+                              onRoll: () => gameNotifier.rollDice(),
+                              compact: true,
+                            ),
+                        ],
+                      ),
+                    ),
+
+                  if (isTwoPlayerMode && !gameState.isGameOver)
+                    _buildBackButtonRow(context),
+
+                  // Main Interactive Ludo Board
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final missedTurnIndicators = <Widget>[];
+                        for (final player in gameState.players) {
+                          final boardCorner =
+                              (player.color.index + boardQuarterTurns) % 4;
+                          final isLeftSide = boardCorner == 0 || boardCorner == 3;
+                          final isTopSide = boardCorner == 0 || boardCorner == 1;
+                          final indicatorTop =
+                              (constraints.maxHeight * (isTopSide ? 0.25 : 0.75) -
+                                      25)
+                                  .clamp(0.0, constraints.maxHeight - 50)
+                                  .toDouble();
+
+                          missedTurnIndicators.add(
+                            Positioned(
+                              left: isLeftSide ? 7 : null,
+                              right: isLeftSide ? null : 7,
+                              top: indicatorTop,
+                              child: _BoardMissedTurnIndicator(player: player),
+                            ),
+                          );
+                        }
+
+                        return Stack(
+                          children: [
+                            Center(
+                              child: RotatedBox(
+                                quarterTurns: boardQuarterTurns,
+                                child: LudoBoardWidget(
+                                  gameState: gameState,
+                                  onPawnTap: (pawn) =>
+                                      gameNotifier.movePawn(pawn),
+                                  orientationQuarterTurns: boardQuarterTurns,
+                                  compactFrame: !isTwoPlayerMode,
+                                ),
+                              ),
+                            ),
+                            ...missedTurnIndicators,
+                          ],
+                        );
+                      },
+                    ),
                   ),
 
-                if (!isTwoPlayerMode && !gameState.isGameOver)
-                  _buildBackButtonRow(context),
-
-                if (!isTwoPlayerMode)
+                  // Bottom Player Info Cards Row
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
                       vertical: 3,
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        if (gameState.players.isNotEmpty)
-                          PlayerInfoCard(
-                            player: gameState.players[0],
-                            gameState: gameState,
-                            isCurrentTurn: gameState.currentTurnIndex == 0,
-                            onRoll: () => gameNotifier.rollDice(),
-                            compact: true,
+                    child: isTwoPlayerMode
+                        ? Row(
+                            children: [
+                              Expanded(
+                                child: PlayerInfoCard(
+                                  player: gameState.players[0],
+                                  gameState: gameState,
+                                  isCurrentTurn: gameState.currentTurnIndex == 0,
+                                  onRoll: () => gameNotifier.rollDice(),
+                                  twoPlayerLayout: true,
+                                  showRollArrow: isHumanRollWindow &&
+                                      gameState.currentTurnIndex == 0,
+                                  rollArrowPointsLeft: true,
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                ),
+                                child: SharedDiceButton(
+                                  gameState: gameState,
+                                  onRoll: () => gameNotifier.rollDice(),
+                                ),
+                              ),
+                              Expanded(
+                                child: PlayerInfoCard(
+                                  player: gameState.players[1],
+                                  gameState: gameState,
+                                  isCurrentTurn: gameState.currentTurnIndex == 1,
+                                  onRoll: () => gameNotifier.rollDice(),
+                                  twoPlayerLayout: true,
+                                  showRollArrow: isHumanRollWindow &&
+                                      gameState.currentTurnIndex == 1,
+                                ),
+                              ),
+                            ],
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              if (gameState.players.length > 3)
+                                PlayerInfoCard(
+                                  player: gameState.players[3],
+                                  gameState: gameState,
+                                  isCurrentTurn: gameState.currentTurnIndex == 3,
+                                  onRoll: () => gameNotifier.rollDice(),
+                                  compact: true,
+                                  showRollArrow: isHumanRollWindow &&
+                                      gameState.currentTurnIndex == 3,
+                                  rollArrowPointsLeft: true,
+                                ),
+                              if (gameState.players.length > 2)
+                                PlayerInfoCard(
+                                  player: gameState.players[2],
+                                  gameState: gameState,
+                                  isCurrentTurn: gameState.currentTurnIndex == 2,
+                                  onRoll: () => gameNotifier.rollDice(),
+                                  compact: true,
+                                  showRollArrow: isHumanRollWindow &&
+                                      gameState.currentTurnIndex == 2,
+                                ),
+                            ],
                           ),
-                        if (gameState.players.length > 1)
-                          PlayerInfoCard(
-                            player: gameState.players[1],
-                            gameState: gameState,
-                            isCurrentTurn: gameState.currentTurnIndex == 1,
-                            onRoll: () => gameNotifier.rollDice(),
-                            compact: true,
-                          ),
-                      ],
-                    ),
                   ),
 
-                if (isTwoPlayerMode && !gameState.isGameOver)
-                  _buildBackButtonRow(context),
+                  const SizedBox(height: 4),
+                ],
+              ),
 
-                // Main Interactive Ludo Board
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final missedTurnIndicators = <Widget>[];
-                      for (final player in gameState.players) {
-                        final boardCorner =
-                            (player.color.index + boardQuarterTurns) % 4;
-                        final isLeftSide = boardCorner == 0 || boardCorner == 3;
-                        final isTopSide = boardCorner == 0 || boardCorner == 1;
-                        final indicatorTop =
-                            (constraints.maxHeight * (isTopSide ? 0.25 : 0.75) -
-                                    25)
-                                .clamp(0.0, constraints.maxHeight - 50)
-                                .toDouble();
-
-                        missedTurnIndicators.add(
-                          Positioned(
-                            left: isLeftSide ? 7 : null,
-                            right: isLeftSide ? null : 7,
-                            top: indicatorTop,
-                            child: _BoardMissedTurnIndicator(player: player),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 180),
+                    opacity: _showTimeoutNotice ? 1 : 0,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 28,
+                            vertical: 14,
                           ),
-                        );
-                      }
-
-                      return Stack(
-                        children: [
-                          Center(
-                            child: RotatedBox(
-                              quarterTurns: boardQuarterTurns,
-                              child: LudoBoardWidget(
-                                gameState: gameState,
-                                onPawnTap: (pawn) =>
-                                    gameNotifier.movePawn(pawn),
-                                orientationQuarterTurns: boardQuarterTurns,
-                                compactFrame: !isTwoPlayerMode,
-                              ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xE6000000),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.28),
+                              width: 1.2,
                             ),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x99000000),
+                                blurRadius: 18,
+                                spreadRadius: 2,
+                              ),
+                            ],
                           ),
-                          ...missedTurnIndicators,
-                        ],
-                      );
-                    },
-                  ),
-                ),
-
-                // Bottom Player Info Cards Row
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 3,
-                  ),
-                  child: isTwoPlayerMode
-                      ? Row(
-                          children: [
-                            Expanded(
-                              child: PlayerInfoCard(
-                                player: gameState.players[0],
-                                gameState: gameState,
-                                isCurrentTurn: gameState.currentTurnIndex == 0,
-                                onRoll: () => gameNotifier.rollDice(),
-                                twoPlayerLayout: true,
-                                showRollArrow: isHumanRollWindow &&
-                                    gameState.currentTurnIndex == 0,
-                                rollArrowPointsLeft: true,
-                              ),
+                          child: Text(
+                            'You ran out of time!',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.poppins(
+                              color: const Color(0xFFFFF3B0),
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
                             ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                              ),
-                              child: SharedDiceButton(
-                                gameState: gameState,
-                                onRoll: () => gameNotifier.rollDice(),
-                              ),
-                            ),
-                            Expanded(
-                              child: PlayerInfoCard(
-                                player: gameState.players[1],
-                                gameState: gameState,
-                                isCurrentTurn: gameState.currentTurnIndex == 1,
-                                onRoll: () => gameNotifier.rollDice(),
-                                twoPlayerLayout: true,
-                                showRollArrow: isHumanRollWindow &&
-                                    gameState.currentTurnIndex == 1,
-                              ),
-                            ),
-                          ],
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            if (gameState.players.length > 3)
-                              PlayerInfoCard(
-                                player: gameState.players[3],
-                                gameState: gameState,
-                                isCurrentTurn: gameState.currentTurnIndex == 3,
-                                onRoll: () => gameNotifier.rollDice(),
-                                compact: true,
-                                showRollArrow: isHumanRollWindow &&
-                                    gameState.currentTurnIndex == 3,
-                                rollArrowPointsLeft: true,
-                              ),
-                            if (gameState.players.length > 2)
-                              PlayerInfoCard(
-                                player: gameState.players[2],
-                                gameState: gameState,
-                                isCurrentTurn: gameState.currentTurnIndex == 2,
-                                onRoll: () => gameNotifier.rollDice(),
-                                compact: true,
-                                showRollArrow: isHumanRollWindow &&
-                                    gameState.currentTurnIndex == 2,
-                              ),
-                          ],
-                        ),
-                ),
-
-                const SizedBox(height: 4),
-              ],
-            ),
-
-            Positioned.fill(
-              child: IgnorePointer(
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 180),
-                  opacity: _showTimeoutNotice ? 1 : 0,
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 28,
-                          vertical: 14,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xE6000000),
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.28),
-                            width: 1.2,
-                          ),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x99000000),
-                              blurRadius: 18,
-                              spreadRadius: 2,
-                            ),
-                          ],
-                        ),
-                        child: Text(
-                          'You ran out of time!',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.poppins(
-                            color: const Color(0xFFFFF3B0),
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ),
@@ -331,34 +339,34 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   ),
                 ),
               ),
-            ),
 
-            // Victory Dialog (Shows ONLY after the Fullscreen Interstitial Ad completes and is dismissed)
-            if (gameState.isGameOver && _readyToShowVictoryDialog)
-              Positioned.fill(
-                child: Stack(
-                  children: [
-                    const ModalBarrier(
-                      dismissible: false,
-                      color: Color(0x99000000),
-                    ),
-                    VictoryDialog(
-                      gameState: gameState,
-                      onPlayAgain: () {
-                        setState(() {
-                          _hasTriggeredGameOverAd = false;
-                          _readyToShowVictoryDialog = false;
-                        });
-                        gameNotifier.startNewGame(
-                          players: gameState.players,
-                        );
-                      },
-                      onExitToLobby: () => context.go('/home'),
-                    ),
-                  ],
+              // Victory Dialog (Shows ONLY after the Fullscreen Interstitial Ad completes and is dismissed)
+              if (gameState.isGameOver && _readyToShowVictoryDialog)
+                Positioned.fill(
+                  child: Stack(
+                    children: [
+                      const ModalBarrier(
+                        dismissible: false,
+                        color: Color(0x99000000),
+                      ),
+                      VictoryDialog(
+                        gameState: gameState,
+                        onPlayAgain: () {
+                          setState(() {
+                            _hasTriggeredGameOverAd = false;
+                            _readyToShowVictoryDialog = false;
+                          });
+                          gameNotifier.startNewGame(
+                            players: gameState.players,
+                          );
+                        },
+                        onExitToLobby: () => context.go('/home'),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -388,51 +396,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
       );
 
   void _confirmExitDialog(BuildContext context) {
-    final recordsForfeit = ref.read(gameControllerProvider).players.length == 2;
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.bgNavy,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.gold, width: 1.5),
-        ),
-        title: Text(
-          'Leave Match?',
-          style: GoogleFonts.poppins(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        content: Text(
-          recordsForfeit
-              ? 'Leaving forfeits this match. The result will appear before you return to the Lobby.'
-              : 'Are you sure you want to exit to the Lobby?',
-          style: GoogleFonts.poppins(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(
-              'Resume',
-              style: GoogleFonts.poppins(color: AppColors.gold),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
-            onPressed: () {
-              final gameNotifier = ref.read(gameControllerProvider.notifier);
-              final matchCompleted = gameNotifier.forfeitHumanPlayer();
-              Navigator.of(context).pop();
-              if (!matchCompleted) context.go('/home');
-            },
-            child: Text(
-              recordsForfeit ? 'Forfeit' : 'Exit',
-              style: GoogleFonts.poppins(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
+    ExitGameDialog.show(
+      context,
+      onYes: () {
+        final gameNotifier = ref.read(gameControllerProvider.notifier);
+        final matchCompleted = gameNotifier.forfeitHumanPlayer();
+        if (!matchCompleted) context.go('/home');
+      },
+      onNo: () {},
     );
   }
 }

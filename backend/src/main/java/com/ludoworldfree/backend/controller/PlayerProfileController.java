@@ -5,6 +5,8 @@ import com.ludoworldfree.backend.model.PlayerWallet;
 import com.ludoworldfree.backend.repository.PlayerProfileRepository;
 import com.ludoworldfree.backend.repository.PlayerWalletRepository;
 import com.ludoworldfree.backend.util.PlayerIdResolver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +19,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/player")
 public class PlayerProfileController {
+
+    private static final Logger log = LoggerFactory.getLogger(PlayerProfileController.class);
 
     private final PlayerProfileRepository profileRepository;
     private final PlayerWalletRepository walletRepository;
@@ -38,6 +42,9 @@ public class PlayerProfileController {
         PlayerWallet wallet = walletRepository.findByPlayerId(userId)
                 .orElseGet(() -> walletRepository.save(new PlayerWallet(userId, 2000L)));
 
+        log.info("👤 [Profile] Fetched profile for player ID: {} | Name: {} | Coins: {}",
+                userId, profile.getDisplayName(), wallet.getBalance());
+
         return ResponseEntity.ok(profileResponse(userId, profile, wallet));
     }
 
@@ -51,6 +58,8 @@ public class PlayerProfileController {
 
         PlayerWallet wallet = walletRepository.findByPlayerId(profile.getUserId())
                 .orElseThrow();
+
+        log.info("🔍 [Profile Search] Found player by username: {} -> ID: {}", username, profile.getUserId());
 
         return ResponseEntity.ok(profileResponse(
                 profile.getUserId(), profile, wallet));
@@ -88,6 +97,9 @@ public class PlayerProfileController {
         }
         wallet = walletRepository.save(wallet);
 
+        log.info("💾 [Profile Saved] Player ID: {} | Name: {} | Coins: {} | Preferred Mode: {}",
+                userId, profile.getDisplayName(), wallet.getBalance(), profile.getPreferredGameType());
+
         return ResponseEntity.ok(profileResponse(userId, profile, wallet));
     }
 
@@ -104,7 +116,11 @@ public class PlayerProfileController {
             PlayerProfile.GameType gameType = PlayerProfile.GameType.valueOf(gameTypeStr.toUpperCase());
             profile.recordGameSession(gameType);
             profile = profileRepository.save(profile);
-        } catch (Exception ignored) {}
+            log.info("🎮 [Game Complete] Player ID: {} | Recorded Mode: {} | New Most Played: {}",
+                    userId, gameType, profile.getMostPlayedGameType());
+        } catch (Exception e) {
+            log.warn("⚠️ [Game Complete] Failed to parse game type: {}", gameTypeStr);
+        }
 
         PlayerWallet wallet = walletRepository.findByPlayerId(userId)
                 .orElseGet(() -> walletRepository.save(new PlayerWallet(userId, 2000L)));

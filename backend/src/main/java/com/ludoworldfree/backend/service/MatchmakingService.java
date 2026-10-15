@@ -6,6 +6,8 @@ import com.ludoworldfree.backend.model.GoldTransaction;
 import com.ludoworldfree.backend.model.PlayerWallet;
 import com.ludoworldfree.backend.repository.GoldTransactionRepository;
 import com.ludoworldfree.backend.repository.PlayerWalletRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,6 +16,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class MatchmakingService {
+
+    private static final Logger log = LoggerFactory.getLogger(MatchmakingService.class);
 
     private final PlayerWalletRepository walletRepository;
     private final GoldTransactionRepository transactionRepository;
@@ -34,7 +38,9 @@ public class MatchmakingService {
 
         // 1. Check if already matched
         if (matchedResults.containsKey(playerId)) {
-            return matchedResults.get(playerId);
+            MatchmakingResponseDto result = matchedResults.get(playerId);
+            log.info("⚔️ [Matchmaking] Returning existing match result for Player ID: {} -> Room: {}", playerId, result.getRoomId());
+            return result;
         }
 
         // 2. Check and deduct entry fee
@@ -43,11 +49,13 @@ public class MatchmakingService {
                 .orElseGet(() -> walletRepository.save(new PlayerWallet(playerId, 2000L)));
 
         if (wallet.getBalance() < entryFee) {
+            log.warn("⚠️ [Matchmaking] Player ID: {} has insufficient gold balance ({} < {})", playerId, wallet.getBalance(), entryFee);
             return new MatchmakingResponseDto(false, null, null, null, null, null, null, "Insufficient gold coins for entry fee.");
         }
 
         // Add to queue
         queue.put(playerId, request);
+        log.info("⚔️ [Matchmaking] Player ID: {} ({}) joined queue. Active Queue Size: {}", playerId, request.getDisplayName(), queue.size());
 
         // 3. Matchmaking logic: If 2 or more players in queue, match them!
         if (queue.size() >= 2) {
@@ -78,6 +86,9 @@ public class MatchmakingService {
             matchedResults.put(playerAId, resultForA);
             matchedResults.put(playerBId, resultForB);
 
+            log.info("🎉 [Match Found] Room: {} | Player A: {} ({}) vs Player B: {} ({})",
+                    roomId, playerA.getDisplayName(), playerAId, playerB.getDisplayName(), playerBId);
+
             return resultForA.getOpponentId().equals(playerBId) ? resultForA : resultForB;
         }
 
@@ -95,6 +106,7 @@ public class MatchmakingService {
     public synchronized void cancelQueue(UUID playerId) {
         queue.remove(playerId);
         matchedResults.remove(playerId);
+        log.info("🚪 [Matchmaking] Player ID: {} left the queue.", playerId);
     }
 
     private void deductEntryFee(UUID playerId, long entryFee, String roomId) {
@@ -115,6 +127,7 @@ public class MatchmakingService {
                     "MATCHMAKING_ENTRY_FEE"
             );
             transactionRepository.save(transaction);
+            log.info("🪙 [Entry Fee Deducted] Player ID: {} | Deducted: {} | Balance: {} -> {}", playerId, entryFee, before, after);
         }
     }
 }
