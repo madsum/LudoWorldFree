@@ -12,6 +12,7 @@ import '../../../core/ads/rewarded_ad_service.dart';
 import '../../../shared/widgets/flying_coin_overlay.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
 import '../../auth/presentation/widgets/guest_setup_dialog.dart';
+import '../../daily_rewards/presentation/widgets/daily_bonus_dialog.dart';
 import '../../game/presentation/controllers/game_controller.dart';
 import '../../game/presentation/widgets/exit_game_dialog.dart';
 import '../../game/presentation/widgets/mode_config_dialog.dart';
@@ -29,6 +30,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  static bool _hasCheckedDailyBonusThisSession = false;
+
   int _currentNavIndex = 0;
   bool _isClaimingReward = false;
   final GlobalKey _rewardCardKey = GlobalKey();
@@ -39,7 +42,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     Future.microtask(() {
       ref.read(rewardedAdServiceProvider).preloadAd();
+
+      // Automatic Daily Bonus Popup upon entering Home Lobby
+      if (!_hasCheckedDailyBonusThisSession) {
+        _hasCheckedDailyBonusThisSession = true;
+        _checkAndShowDailyBonus();
+      }
     });
+  }
+
+  void _checkAndShowDailyBonus() async {
+    if (!mounted) return;
+    DailyBonusDialog.show(context);
   }
 
   void _showComingSoonSnackBar(String modeName) {
