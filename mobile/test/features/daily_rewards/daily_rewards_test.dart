@@ -12,7 +12,8 @@ void main() {
       expect(fallback.rewards.length, 7);
       expect(fallback.milestones.length, 4);
       expect(fallback.canClaimToday, isTrue);
-      expect(fallback.rewards[0].amount, 1000);
+      expect(fallback.rewards[0].amount, 500);
+      expect(fallback.rewards[1].amount, 1000);
       expect(fallback.rewards[0].status, RewardItemStatus.claimable);
       expect(fallback.rewards[1].status, RewardItemStatus.locked);
     });
@@ -29,18 +30,18 @@ void main() {
           {
             'day': 1,
             'rewardType': 'COINS',
+            'amount': 500,
+            'status': 'CLAIMED',
+            'label': '500',
+            'description': '500 Gold Coins'
+          },
+          {
+            'day': 2,
+            'rewardType': 'COINS',
             'amount': 1000,
             'status': 'CLAIMED',
             'label': '1000',
             'description': '1000 Gold Coins'
-          },
-          {
-            'day': 2,
-            'rewardType': 'SPIN_TOKENS',
-            'amount': 2,
-            'status': 'CLAIMED',
-            'label': '2',
-            'description': '2 Spin Tokens'
           },
           {
             'day': 3,
@@ -72,8 +73,8 @@ void main() {
         'message': 'Successfully claimed Day 1 daily bonus!',
         'claimedDay': 1,
         'rewardType': 'COINS',
-        'amount': 1000,
-        'currentCoins': 3000,
+        'amount': 500,
+        'currentCoins': 2500,
         'currentDiamonds': 100,
       };
 
@@ -81,8 +82,8 @@ void main() {
 
       expect(result.success, isTrue);
       expect(result.claimedDay, 1);
-      expect(result.amount, 1000);
-      expect(result.currentCoins, 3000);
+      expect(result.amount, 500);
+      expect(result.currentCoins, 2500);
     });
   });
 
@@ -105,6 +106,8 @@ void main() {
       expect(find.text('Come back every day for new reward'), findsOneWidget);
       expect(find.text('Day 1'), findsOneWidget);
       expect(find.text('Day 7 Milestone'), findsOneWidget);
+      expect(find.text('500 COINS'), findsNWidgets(2));
+      expect(find.text('1000 COINS'), findsOneWidget);
     });
   });
 }

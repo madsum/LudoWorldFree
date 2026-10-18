@@ -29,6 +29,8 @@ public class PlayerProfile {
     private String avatarUrl;
     private String country;
     private String countryFlag;
+    private String authProvider;
+    private String providerId;
 
     @Enumerated(EnumType.STRING)
     private GameType preferredGameType = GameType.CLASSIC;
@@ -104,6 +106,10 @@ public class PlayerProfile {
     public void setCountry(String country) { this.country = country; }
     public String getCountryFlag() { return countryFlag; }
     public void setCountryFlag(String countryFlag) { this.countryFlag = countryFlag; }
+    public String getAuthProvider() { return authProvider; }
+    public void setAuthProvider(String authProvider) { this.authProvider = authProvider; }
+    public String getProviderId() { return providerId; }
+    public void setProviderId(String providerId) { this.providerId = providerId; }
     
     public GameType getPreferredGameType() { return preferredGameType; }
     public void setPreferredGameType(GameType preferredGameType) { this.preferredGameType = preferredGameType; }

@@ -56,11 +56,11 @@ class DailyRewardServiceTest {
         assertEquals(1, status.activeDay());
         assertEquals(7, status.rewards().size());
         assertEquals("CLAIMABLE", status.rewards().get(0).status());
-        assertEquals(1000, status.rewards().get(0).amount());
+        assertEquals(500, status.rewards().get(0).amount());
     }
 
     @Test
-    @DisplayName("First claim for new player credits Day 1 reward (1000 Gold Coins)")
+    @DisplayName("First claim for new player credits Day 1 reward (500 Gold Coins)")
     void testClaimDailyReward_FirstClaim() {
         DailyRewardProgress progress = new DailyRewardProgress(playerId);
         PlayerWallet wallet = new PlayerWallet(playerId, 2000L);
@@ -75,8 +75,8 @@ class DailyRewardServiceTest {
         assertTrue(response.success());
         assertEquals(1, response.claimedDay());
         assertEquals("COINS", response.rewardType());
-        assertEquals(1000, response.amount());
-        assertEquals(3000, response.currentCoins());
+        assertEquals(500, response.amount());
+        assertEquals(2500, response.currentCoins());
         verify(transactionRepository, times(1)).save(any());
     }
 
@@ -102,7 +102,7 @@ class DailyRewardServiceTest {
     }
 
     @Test
-    @DisplayName("Consecutive day claim increments streak to Day 2 (2 Spin Tokens)")
+    @DisplayName("Consecutive day claim increments streak to Day 2 (1000 Gold Coins)")
     void testClaimDailyReward_ConsecutiveDay() {
         LocalDate yesterday = LocalDate.now(ZoneOffset.UTC).minusDays(1);
         DailyRewardProgress progress = new DailyRewardProgress(playerId);
@@ -120,8 +120,8 @@ class DailyRewardServiceTest {
 
         assertTrue(response.success());
         assertEquals(2, response.claimedDay());
-        assertEquals("SPIN_TOKENS", response.rewardType());
-        assertEquals(2, response.amount());
+        assertEquals("COINS", response.rewardType());
+        assertEquals(1000, response.amount());
     }
 
     @Test
@@ -143,8 +143,8 @@ class DailyRewardServiceTest {
 
         assertTrue(response.success());
         assertEquals(1, response.claimedDay()); // Streak reset to Day 1
-        assertEquals(1000, response.amount());
-        assertEquals(6000, response.currentCoins());
+        assertEquals(500, response.amount());
+        assertEquals(5500, response.currentCoins());
     }
 
     @Test

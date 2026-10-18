@@ -53,7 +53,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _checkAndShowDailyBonus() async {
     if (!mounted) return;
-    DailyBonusDialog.show(context);
+    DailyBonusDialog.show(context, walletKey: _walletKey);
   }
 
   void _showComingSoonSnackBar(String modeName) {

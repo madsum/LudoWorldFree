@@ -21,6 +21,7 @@ class SecureStorageService {
     required String userId,
     required String userName,
     required bool isGuest,
+    String? authProvider,
     String? userEmail,
     String? avatarUrl,
     String? country,
@@ -37,6 +38,9 @@ class SecureStorageService {
     ];
     if (userEmail != null) {
       writes.add(_storage.write(key: 'user_email', value: userEmail));
+    }
+    if (authProvider != null) {
+      writes.add(_storage.write(key: 'auth_provider', value: authProvider));
     }
     if (avatarUrl != null) {
       writes.add(_storage.write(key: 'user_avatar', value: avatarUrl));
@@ -70,6 +74,7 @@ class SecureStorageService {
       _storage.read(key: AppConstants.keyUserName),
       _storage.read(key: 'user_email'),
       _storage.read(key: AppConstants.keyIsGuest),
+      _storage.read(key: 'auth_provider'),
       _storage.read(key: 'user_avatar'),
       _storage.read(key: 'user_country'),
       _storage.read(key: 'user_country_flag'),
@@ -84,13 +89,14 @@ class SecureStorageService {
       'userName': values[1],
       'userEmail': values[2],
       'isGuest': values[3],
-      'avatarUrl': values[4],
-      'country': values[5],
-      'countryFlag': values[6],
-      'coins': values[7],
-      'diamonds': values[8],
-      'preferredGameType': values[9],
-      'mostPlayedGameType': values[10],
+      'authProvider': values[4],
+      'avatarUrl': values[5],
+      'country': values[6],
+      'countryFlag': values[7],
+      'coins': values[8],
+      'diamonds': values[9],
+      'preferredGameType': values[10],
+      'mostPlayedGameType': values[11],
     };
   }
 

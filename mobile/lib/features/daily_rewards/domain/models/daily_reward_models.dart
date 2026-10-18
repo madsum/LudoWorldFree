@@ -124,9 +124,9 @@ class DailyRewardStatusModel {
       bonusAdClaimedToday: false,
       rewards: [
         const DailyRewardItemModel(
-            day: 1, rewardType: 'COINS', amount: 1000, status: RewardItemStatus.claimable, label: '1000', description: '1000 Gold Coins'),
+            day: 1, rewardType: 'COINS', amount: 500, status: RewardItemStatus.claimable, label: '500', description: '500 Gold Coins'),
         const DailyRewardItemModel(
-            day: 2, rewardType: 'SPIN_TOKENS', amount: 2, status: RewardItemStatus.locked, label: '2', description: '2 Spin Tokens'),
+            day: 2, rewardType: 'COINS', amount: 1000, status: RewardItemStatus.locked, label: '1000', description: '1000 Gold Coins'),
         const DailyRewardItemModel(
             day: 3, rewardType: 'DIAMONDS', amount: 6, status: RewardItemStatus.locked, label: '6', description: '6 Diamonds'),
         const DailyRewardItemModel(

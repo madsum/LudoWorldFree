@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../../../core/ads/interstitial_ad_service.dart';
 import '../../../../core/ads/rewarded_ad_service.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../shared/widgets/flying_coin_overlay.dart';
@@ -12,14 +11,16 @@ import '../../domain/models/daily_reward_models.dart';
 import '../controllers/daily_reward_controller.dart';
 
 class DailyBonusDialog extends ConsumerStatefulWidget {
-  const DailyBonusDialog({super.key});
+  final GlobalKey? walletKey;
 
-  static void show(BuildContext context) {
+  const DailyBonusDialog({super.key, this.walletKey});
+
+  static void show(BuildContext context, {GlobalKey? walletKey}) {
     showDialog(
       context: context,
       barrierDismissible: false,
       barrierColor: const Color(0x99000000),
-      builder: (context) => const DailyBonusDialog(),
+      builder: (context) => DailyBonusDialog(walletKey: walletKey),
     );
   }
 
@@ -30,16 +31,15 @@ class DailyBonusDialog extends ConsumerStatefulWidget {
 class _DailyBonusDialogState extends ConsumerState<DailyBonusDialog> {
   Timer? _countdownTimer;
   int _secondsRemaining = 0;
+  bool _isAnimatingClaim = false;
   final GlobalKey _dialogKey = GlobalKey();
   final Map<int, GlobalKey> _cardKeys = {};
 
   @override
   void initState() {
     super.initState();
-    // Preload Interstitial Ad for post-claim playback
     Future.microtask(() {
       ref.read(dailyRewardControllerProvider.notifier).fetchStatus();
-      ref.read(interstitialAdServiceProvider).preloadAd();
     });
   }
 
@@ -83,6 +83,7 @@ class _DailyBonusDialogState extends ConsumerState<DailyBonusDialog> {
   }
 
   void _claimReward(DailyRewardItemModel reward) async {
+    if (_isAnimatingClaim) return;
     final status = ref.read(dailyRewardControllerProvider).status;
 
     // Allow claim if status is claimable OR if user can claim today and this is active day
@@ -101,44 +102,66 @@ class _DailyBonusDialogState extends ConsumerState<DailyBonusDialog> {
         startOffset = box.localToGlobal(box.size.center(Offset.zero));
       }
     }
-    final endOffset = Offset(screenSize.width - 60, 32);
+    final endOffset = _walletCenter() ?? Offset(screenSize.width - 60, 32);
 
     final controller = ref.read(dailyRewardControllerProvider.notifier);
     final result = await controller.claimDailyReward();
 
-    if (result != null && result.success && mounted) {
-      // 1. Trigger Flying Gold Coins Animation Overlay to wallet
+    if (!mounted) return;
+    if (result == null || !result.success) {
+      await controller.fetchStatus();
+      if (!mounted) return;
+      final message = result?.message ??
+          ref.read(dailyRewardControllerProvider).errorMessage ??
+          'Could not claim the daily reward. Please try again.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+      return;
+    }
+
+    if (result.success) {
+      if (result.rewardType.toUpperCase() == 'DIAMONDS' ||
+          result.rewardType.toUpperCase() == 'SPIN_TOKENS') {
+        await controller.persistClaimWallet(result);
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        return;
+      }
+      setState(() => _isAnimatingClaim = true);
       FlyingCoinOverlay.show(
         context,
         startOffset: startOffset,
         endOffset: endOffset,
         onComplete: () async {
           if (!mounted) return;
-
-          // 2. Immediately after flying coin animation completes, show Interstitial Ad!
-          final interstitialAdService = ref.read(interstitialAdServiceProvider);
-          await interstitialAdService.showInterstitialAd(
-            onAdClosed: () {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    backgroundColor: const Color(0xFF0D1B3E),
-                    content: Text(
-                      '🎉 Day ${result.claimedDay} Bonus Claimed! +${result.amount} ${result.rewardType}!',
-                      style: GoogleFonts.poppins(
-                        color: AppColors.gold,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              }
-            },
+          await controller.persistClaimWallet(result);
+          if (!mounted) return;
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF0D1B3E),
+              content: Text(
+                '🎉 Day ${result.claimedDay}: +${result.amount} Gold Coins!',
+                style: GoogleFonts.poppins(
+                  color: AppColors.gold,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              duration: const Duration(seconds: 2),
+            ),
           );
         },
       );
     }
+  }
+
+  Offset? _walletCenter() {
+    final renderObject = widget.walletKey?.currentContext?.findRenderObject();
+    if (renderObject is RenderBox && renderObject.hasSize) {
+      return renderObject.localToGlobal(renderObject.size.center(Offset.zero));
+    }
+    return null;
   }
 
   void _watchAdForExtraRewards() async {
@@ -165,7 +188,7 @@ class _DailyBonusDialogState extends ConsumerState<DailyBonusDialog> {
           FlyingCoinOverlay.show(
             context,
             startOffset: Offset(screenSize.width / 2, screenSize.height * 0.75),
-            endOffset: Offset(screenSize.width - 60, 32),
+            endOffset: _walletCenter() ?? Offset(screenSize.width - 60, 32),
             onComplete: () {},
           );
 
@@ -568,7 +591,8 @@ class _DailyBonusDialogState extends ConsumerState<DailyBonusDialog> {
 
   /// Individual Reward Card (Days 1–6)
   Widget _buildRewardCard(DailyRewardItemModel reward) {
-    final status = ref.watch(dailyRewardControllerProvider).status;
+    final rewardState = ref.watch(dailyRewardControllerProvider);
+    final status = rewardState.status;
     final isClaimed = reward.status == RewardItemStatus.claimed;
     final isClaimable = reward.status == RewardItemStatus.claimable ||
         (status.canClaimToday && reward.day == status.activeDay);
@@ -587,7 +611,9 @@ class _DailyBonusDialogState extends ConsumerState<DailyBonusDialog> {
 
     return GestureDetector(
       key: _getCardKey(reward.day),
-      onTap: () => _claimReward(reward),
+      onTap: isClaimable && !rewardState.isClaiming && !_isAnimatingClaim
+          ? () => _claimReward(reward)
+          : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         height: 125,
@@ -675,7 +701,7 @@ class _DailyBonusDialogState extends ConsumerState<DailyBonusDialog> {
             // Amount / Claim Label
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 3),
+              padding: const EdgeInsets.symmetric(vertical: 2),
               decoration: BoxDecoration(
                 color: isClaimable ? const Color(0xFF00E676) : Colors.black45,
                 borderRadius: const BorderRadius.only(
@@ -683,14 +709,31 @@ class _DailyBonusDialogState extends ConsumerState<DailyBonusDialog> {
                   bottomRight: Radius.circular(12),
                 ),
               ),
-              child: Text(
-                isClaimable ? 'CLAIM' : reward.label,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _rewardAmountLabel(reward),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                    ),
+                  ),
+                  if (isClaimable)
+                    Text(
+                      'TAP TO CLAIM',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
+                    ),
+                ],
               ),
             ),
           ],
@@ -701,14 +744,17 @@ class _DailyBonusDialogState extends ConsumerState<DailyBonusDialog> {
 
   /// Day 7 Wide Milestone Card
   Widget _buildDay7WideCard(DailyRewardItemModel reward) {
-    final status = ref.watch(dailyRewardControllerProvider).status;
+    final rewardState = ref.watch(dailyRewardControllerProvider);
+    final status = rewardState.status;
     final isClaimed = reward.status == RewardItemStatus.claimed;
     final isClaimable = reward.status == RewardItemStatus.claimable ||
         (status.canClaimToday && reward.day == status.activeDay);
 
     return GestureDetector(
       key: _getCardKey(reward.day),
-      onTap: () => _claimReward(reward),
+      onTap: isClaimable && !rewardState.isClaiming && !_isAnimatingClaim
+          ? () => _claimReward(reward)
+          : null,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
         height: 104,
@@ -783,6 +829,16 @@ class _DailyBonusDialogState extends ConsumerState<DailyBonusDialog> {
                           letterSpacing: 0.8,
                         ),
                       ),
+                      Text(
+                        reward.description,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.gold,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -834,6 +890,17 @@ class _DailyBonusDialogState extends ConsumerState<DailyBonusDialog> {
         return Icon(Icons.inventory_2_rounded, color: const Color(0xFF26A69A), size: size);
       default:
         return Icon(Icons.monetization_on_rounded, color: AppColors.coinGold, size: size);
+    }
+  }
+
+  String _rewardAmountLabel(DailyRewardItemModel reward) {
+    switch (reward.rewardType.toUpperCase()) {
+      case 'COINS':
+        return '${reward.amount} COINS';
+      case 'CHEST':
+        return reward.label;
+      default:
+        return '${reward.amount} ${reward.rewardType.replaceAll('_', ' ')}';
     }
   }
 }

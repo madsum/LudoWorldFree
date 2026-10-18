@@ -29,5 +29,7 @@ abstract class AuthRepository {
     required String providerRewardId,
   });
 
+  Future<void> persistWalletBalance(UserModel user);
+
   Future<void> signOut();
 }

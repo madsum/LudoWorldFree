@@ -77,6 +77,8 @@ public class PlayerProfileController {
         setString(payload, "avatarUrl", profile::setAvatarUrl);
         setString(payload, "country", profile::setCountry);
         setString(payload, "countryFlag", profile::setCountryFlag);
+        setString(payload, "authProvider", profile::setAuthProvider);
+        setString(payload, "providerId", profile::setProviderId);
 
         if (payload.containsKey("preferredGameType")) {
             String preferredStr = (String) payload.get("preferredGameType");

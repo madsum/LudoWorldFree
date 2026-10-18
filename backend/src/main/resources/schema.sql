@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS player_profiles (
     avatar_url VARCHAR(255),
     country VARCHAR(100),
     country_flag VARCHAR(10),
+    auth_provider VARCHAR(50),
+    provider_id VARCHAR(255),
     preferred_game_type VARCHAR(50) DEFAULT 'CLASSIC',
     most_played_game_type VARCHAR(50) DEFAULT 'CLASSIC',
     classic_play_count INT DEFAULT 0,

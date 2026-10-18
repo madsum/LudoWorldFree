@@ -72,20 +72,24 @@ class DailyRewardController extends StateNotifier<DailyRewardState> {
         lastClaimResult: result,
       );
 
-      // Update Riverpod Auth User Wallet state immediately!
-      final authNotifier = _ref.read(authControllerProvider.notifier);
-      final currentUser = _ref.read(authControllerProvider).user;
-      if (currentUser != null) {
-        authNotifier.applyUserUpdate(currentUser.copyWith(
-          coins: result.currentCoins,
-          diamonds: result.currentDiamonds > 0 ? result.currentDiamonds : currentUser.diamonds,
-        ));
-      }
     } else {
       state = state.copyWith(isClaiming: false, errorMessage: result.message);
     }
 
     return result;
+  }
+
+  Future<void> persistClaimWallet(DailyRewardClaimResult result) async {
+    final currentUser = _ref.read(authControllerProvider).user;
+    if (currentUser == null) return;
+    await _ref.read(authControllerProvider.notifier).persistWalletBalance(
+          currentUser.copyWith(
+            coins: result.currentCoins,
+            diamonds: result.currentDiamonds > 0
+                ? result.currentDiamonds
+                : currentUser.diamonds,
+          ),
+        );
   }
 
   Future<DailyRewardClaimResult?> claimBonusAdReward(String providerRewardId) async {
@@ -106,7 +110,7 @@ class DailyRewardController extends StateNotifier<DailyRewardState> {
       final authNotifier = _ref.read(authControllerProvider.notifier);
       final currentUser = _ref.read(authControllerProvider).user;
       if (currentUser != null) {
-        authNotifier.applyUserUpdate(currentUser.copyWith(
+        await authNotifier.persistWalletBalance(currentUser.copyWith(
           coins: result.currentCoins,
         ));
       }

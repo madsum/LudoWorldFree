@@ -48,8 +48,8 @@ public class DailyRewardService {
     public static RewardDefinition getRewardDefinitionForDay(int day) {
         int cycleDay = ((day - 1) % 28) + 1;
         return switch (cycleDay) {
-            case 1 -> new RewardDefinition(1, "COINS", 1000, 0, "1000", "1000 Gold Coins");
-            case 2 -> new RewardDefinition(2, "SPIN_TOKENS", 2, 0, "2", "2 Spin Tokens");
+            case 1 -> new RewardDefinition(1, "COINS", 500, 0, "500", "500 Gold Coins");
+            case 2 -> new RewardDefinition(2, "COINS", 1000, 0, "1000", "1000 Gold Coins");
             case 3 -> new RewardDefinition(3, "DIAMONDS", 6, 6, "6", "6 Diamonds");
             case 4 -> new RewardDefinition(4, "COINS", 500, 0, "500", "500 Gold Coins");
             case 5 -> new RewardDefinition(5, "DIAMONDS", 8, 8, "8", "8 Diamonds");
@@ -61,8 +61,8 @@ public class DailyRewardService {
             default -> {
                 int modDay = ((cycleDay - 1) % 7) + 1;
                 yield switch (modDay) {
-                    case 1 -> new RewardDefinition(cycleDay, "COINS", 1000, 0, "1000", "1000 Gold Coins");
-                    case 2 -> new RewardDefinition(cycleDay, "SPIN_TOKENS", 2, 0, "2", "2 Spin Tokens");
+                    case 1 -> new RewardDefinition(cycleDay, "COINS", 500, 0, "500", "500 Gold Coins");
+                    case 2 -> new RewardDefinition(cycleDay, "COINS", 1000, 0, "1000", "1000 Gold Coins");
                     case 3 -> new RewardDefinition(cycleDay, "DIAMONDS", 6, 6, "6", "6 Diamonds");
                     case 4 -> new RewardDefinition(cycleDay, "COINS", 500, 0, "500", "500 Gold Coins");
                     case 5 -> new RewardDefinition(cycleDay, "DIAMONDS", 8, 8, "8", "8 Diamonds");

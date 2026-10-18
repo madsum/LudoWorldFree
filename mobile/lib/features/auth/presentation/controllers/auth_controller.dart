@@ -157,6 +157,11 @@ class AuthController extends StateNotifier<AuthState> {
     state = AuthState(user: user, isLoading: false);
   }
 
+  Future<void> persistWalletBalance(UserModel user) async {
+    await _repository.persistWalletBalance(user);
+    applyUserUpdate(user);
+  }
+
   Future<bool> addGoldReward({
     required int amount,
     required String providerRewardId,

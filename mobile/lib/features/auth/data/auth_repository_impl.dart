@@ -29,6 +29,10 @@ class AuthRepositoryImpl implements AuthRepository {
 
     final userId = userData['userId']!;
     final isGuest = userData['isGuest'] == 'true';
+    final authProvider = AuthProvider.values.firstWhere(
+      (provider) => provider.name == userData['authProvider'],
+      orElse: () => isGuest ? AuthProvider.guest : AuthProvider.google,
+    );
     int coins = int.tryParse(userData['coins'] ?? '') ?? (isGuest ? 2000 : 5000);
     int diamonds = int.tryParse(userData['diamonds'] ?? '') ?? 100;
     GameType preferredGameType = GameType.parse(userData['preferredGameType']);
@@ -61,7 +65,7 @@ class AuthRepositoryImpl implements AuthRepository {
         country: userData['country'] ?? 'World',
         countryFlag: userData['countryFlag'] ?? '🌐',
         isGuest: true,
-        authProvider: AuthProvider.guest,
+        authProvider: authProvider,
         coins: coins,
         diamonds: diamonds,
         preferredGameType: preferredGameType,
@@ -77,7 +81,7 @@ class AuthRepositoryImpl implements AuthRepository {
       country: userData['country'] ?? 'World',
       countryFlag: userData['countryFlag'] ?? '🌐',
       isGuest: false,
-      authProvider: AuthProvider.google,
+      authProvider: authProvider,
       coins: coins,
       diamonds: diamonds,
       preferredGameType: preferredGameType,
@@ -115,6 +119,7 @@ class AuthRepositoryImpl implements AuthRepository {
     await _saveAuthSession(
       token: await _storageService.getAccessToken() ?? 'user_token',
       userId: updated.id,
+      authProvider: updated.authProvider,
       userName: updated.name,
       userEmail: updated.email ?? '',
       avatarUrl: updated.avatarUrl,
@@ -129,6 +134,26 @@ class AuthRepositoryImpl implements AuthRepository {
     );
 
     return updated;
+  }
+
+  @override
+  Future<void> persistWalletBalance(UserModel user) async {
+    await _saveAuthSession(
+      token: await _storageService.getAccessToken() ?? 'user_token',
+      userId: user.id,
+      authProvider: user.authProvider,
+      userName: user.name,
+      userEmail: user.email ?? '',
+      avatarUrl: user.avatarUrl,
+      country: user.country,
+      countryFlag: user.countryFlag,
+      coins: user.coins,
+      diamonds: user.diamonds,
+      isGuest: user.isGuest,
+      preferredGameType: user.preferredGameType,
+      mostPlayedGameType: user.mostPlayedGameType,
+      syncBackendProfile: false,
+    );
   }
 
   @override
@@ -164,6 +189,7 @@ class AuthRepositoryImpl implements AuthRepository {
       await _saveAuthSession(
         token: token,
         userId: user.id,
+        authProvider: user.authProvider,
         userName: user.name,
         userEmail: user.email ?? '',
         avatarUrl: user.avatarUrl,
@@ -342,6 +368,7 @@ class AuthRepositoryImpl implements AuthRepository {
       await _saveAuthSession(
         token: credential.identityToken ?? 'apple_identity_token',
         userId: user.id,
+        authProvider: user.authProvider,
         userName: user.name,
         userEmail: user.email ?? '',
         avatarUrl: user.avatarUrl,
@@ -471,6 +498,7 @@ class AuthRepositoryImpl implements AuthRepository {
       await _saveAuthSession(
         token: token,
         userId: user.id,
+        authProvider: user.authProvider,
         userName: user.name,
         userEmail: user.email ?? '',
         avatarUrl: user.avatarUrl,
@@ -509,6 +537,7 @@ class AuthRepositoryImpl implements AuthRepository {
     await _saveAuthSession(
       token: 'authenticated_${provider.name}_token',
       userId: user.id,
+      authProvider: user.authProvider,
       userName: user.name,
       userEmail: user.email ?? '',
       avatarUrl: user.avatarUrl,
@@ -548,6 +577,7 @@ class AuthRepositoryImpl implements AuthRepository {
     await _saveAuthSession(
       token: 'guest_token_${user.id}',
       userId: user.id,
+      authProvider: user.authProvider,
       userName: user.name,
       userEmail: '',
       avatarUrl: user.avatarUrl,
@@ -580,6 +610,7 @@ class AuthRepositoryImpl implements AuthRepository {
     await _saveAuthSession(
       token: await _storageService.getAccessToken() ?? 'user_token',
       userId: updated.id,
+      authProvider: updated.authProvider,
       userName: updated.name,
       userEmail: updated.email ?? '',
       avatarUrl: updated.avatarUrl,
@@ -597,6 +628,7 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<void> _saveAuthSession({
     required String token,
     required String userId,
+    required AuthProvider authProvider,
     required String userName,
     required String userEmail,
     String? avatarUrl,
@@ -615,6 +647,7 @@ class AuthRepositoryImpl implements AuthRepository {
       userName: userName,
       userEmail: userEmail,
       isGuest: isGuest,
+      authProvider: authProvider.name,
       avatarUrl: avatarUrl,
       country: country,
       countryFlag: countryFlag,
@@ -627,11 +660,12 @@ class AuthRepositoryImpl implements AuthRepository {
     if (syncBackendProfile) {
       await _syncBackendProfile(
         id: userId,
+        authProvider: authProvider,
+        providerId: userId,
         name: userName,
         avatarUrl: avatarUrl,
         country: country,
         countryFlag: countryFlag,
-        coins: coins,
         preferredGameType: preferredGameType?.apiName,
       );
     }
@@ -639,11 +673,12 @@ class AuthRepositoryImpl implements AuthRepository {
 
   Future<void> _syncBackendProfile({
     required String id,
+    required AuthProvider authProvider,
+    required String providerId,
     required String name,
     required String? avatarUrl,
     required String? country,
     required String? countryFlag,
-    required int? coins,
     String? preferredGameType,
   }) async {
     try {
@@ -651,10 +686,11 @@ class AuthRepositoryImpl implements AuthRepository {
         '/player/profile',
         data: {
           'displayName': name,
+          'authProvider': authProvider.name,
+          'providerId': providerId,
           if (avatarUrl != null) 'avatarUrl': avatarUrl,
           if (country != null) 'country': country,
           if (countryFlag != null) 'countryFlag': countryFlag,
-          if (coins != null) 'goldCoins': coins,
           if (preferredGameType != null) 'preferredGameType': preferredGameType,
         },
         options: Options(headers: {'X-Player-ID': id}),
