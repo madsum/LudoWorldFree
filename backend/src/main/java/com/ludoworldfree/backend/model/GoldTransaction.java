@@ -11,7 +11,6 @@ public class GoldTransaction {
     public enum TransactionType {
         AD_REWARD,
         GAME_REWARD,
-        DAILY_REWARD,
         BONUS,
         PURCHASE,
         SPEND,
