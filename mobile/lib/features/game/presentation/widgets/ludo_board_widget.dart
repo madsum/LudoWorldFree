@@ -42,8 +42,10 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
   /// Tracks the capture event currently being animated with a flame effect.
   PawnCaptureEvent? _flameCaptureEvent;
 
-  /// Animation controller for the capture flame (620 ms, matching the
-  /// [captureFlameDurationMicroseconds] in GameNotifier).
+  /// Tracks the last processed capture event to ensure the flame plays ONCE and stops.
+  PawnCaptureEvent? _lastProcessedCaptureEvent;
+
+  /// Animation controller for the capture flame.
   AnimationController? _flameController;
 
   @override
@@ -57,11 +59,11 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
     super.didUpdateWidget(oldWidget);
     _syncVisualStepsWithGameState(isInitial: false);
 
-    // Start the capture flame animation when a new capture event is emitted.
-    if (widget.gameState.lastCaptureEvent !=
-            oldWidget.gameState.lastCaptureEvent &&
-        widget.gameState.lastCaptureEvent != null) {
-      _startCaptureFlame(widget.gameState.lastCaptureEvent!);
+    // Start the capture flame animation ONCE when a new capture event occurs.
+    final captureEvent = widget.gameState.lastCaptureEvent;
+    if (captureEvent != null && captureEvent != _lastProcessedCaptureEvent) {
+      _lastProcessedCaptureEvent = captureEvent;
+      _startCaptureFlame(captureEvent);
     }
   }
 
@@ -159,13 +161,16 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
     controller.forward();
   }
 
-  /// Starts the fire/flame animation at the captured pawn's tile.
+  /// Starts the fire/flame and rising black smoke animation at the captured pawn's tile.
   void _startCaptureFlame(PawnCaptureEvent event) {
-    _flameCaptureEvent = event;
+    if (!mounted) return;
+    setState(() {
+      _flameCaptureEvent = event;
+    });
     _flameController?.dispose();
     _flameController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 620),
+      duration: const Duration(milliseconds: 800),
     )..addStatusListener((status) {
         if (status == AnimationStatus.completed && mounted) {
           setState(() {
@@ -184,28 +189,16 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
 
     return [
       Positioned(
-        left: pos.x * tileSize,
-        top: pos.y * tileSize,
-        width: tileSize,
-        height: tileSize,
+        left: pos.x * tileSize - tileSize * 0.25,
+        top: pos.y * tileSize - tileSize * 0.75,
+        width: tileSize * 1.5,
+        height: tileSize * 1.75,
         child: AnimatedBuilder(
           animation: _flameController!,
           builder: (context, child) {
-            final scale = 0.5 + (_flameController!.value * 1.0);
-            final opacity = (1.0 - _flameController!.value) * 0.95;
-            return Transform.scale(
-              scale: scale,
-              child: Opacity(
-                opacity: opacity.clamp(0.0, 1.0),
-                child: SizedBox(
-                  width: tileSize * 0.85,
-                  height: tileSize * 0.85,
-                  child: _CaptureFlamePainterWidget(
-                    color: _flameCaptureEvent!.color.color,
-                    progress: _flameController!.value,
-                  ),
-                ),
-              ),
+            return _CaptureFlamePainterWidget(
+              color: _flameCaptureEvent!.color.color,
+              progress: _flameController!.value,
             );
           },
         ),
@@ -677,7 +670,7 @@ class _CaptureFlamePainterWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CustomPaint(
-        size: const Size(64, 64),
+        size: const Size(64, 80),
         painter: _CaptureFlamePainter(color: color, progress: progress),
       );
 }
@@ -690,60 +683,132 @@ class _CaptureFlamePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height * 0.72);
-    final baseRadius = size.width * 0.32;
-    final pulseRadius = baseRadius * (1.0 + progress * 0.5);
+    final centerX = size.width / 2;
+    final baseY = size.height * 0.85;
 
-    // Outer glow that fades out as the flame burns
+    final scale = progress < 0.3
+        ? (progress / 0.3)
+        : 1.0 - ((progress - 0.3) / 0.7) * 0.3;
+    final opacity = (1.0 - progress).clamp(0.0, 1.0);
+
+    final flameHeight = size.height * 0.85 * scale;
+    final flameWidth = size.width * 0.75 * scale;
+
+    // 1. Fiery Shockwave Ring at tile base
+    final shockwaveRadius = size.width * (0.2 + progress * 0.6);
+    final shockwavePaint = Paint()
+      ..color = const Color(0xFFFF3D00).withValues(alpha: (0.8 * opacity).clamp(0.0, 1.0))
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0 * (1.0 - progress)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+    canvas.drawCircle(Offset(centerX, baseY), shockwaveRadius, shockwavePaint);
+
+    // 2. Outer Fire Glow
     final glowPaint = Paint()
-      ..color = color.withValues(alpha: 0.25 * (1.0 - progress))
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
-    canvas.drawCircle(center, pulseRadius * 0.65, glowPaint);
+      ..color = color.withValues(alpha: (0.5 * opacity).clamp(0.0, 1.0))
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
+    canvas.drawCircle(Offset(centerX, baseY - flameHeight * 0.4), flameWidth * 0.7, glowPaint);
 
-    // Flame body: a teardrop shape with gradient
-    final flamePath = Path()
-      ..moveTo(center.dx, center.dy - pulseRadius * 0.15)
+    // 3. Main Outer Flame Path (Fiery Orange/Red)
+    final outerFlame = Path()
+      ..moveTo(centerX, baseY - flameHeight)
       ..cubicTo(
-        center.dx - pulseRadius,
-        center.dy - pulseRadius * 0.45,
-        center.dx - pulseRadius * 0.45,
-        center.dy + pulseRadius * 0.85,
-        center.dx,
-        center.dy + pulseRadius * 0.2,
+        centerX + flameWidth * 0.6, baseY - flameHeight * 0.6,
+        centerX + flameWidth * 0.5, baseY,
+        centerX, baseY,
       )
       ..cubicTo(
-        center.dx + pulseRadius * 0.45,
-        center.dy + pulseRadius * 0.85,
-        center.dx + pulseRadius,
-        center.dy - pulseRadius * 0.45,
-        center.dx,
-        center.dy - pulseRadius * 0.15,
+        centerX - flameWidth * 0.5, baseY,
+        centerX - flameWidth * 0.6, baseY - flameHeight * 0.6,
+        centerX, baseY - flameHeight,
       );
 
-    final flamePaint = Paint()
+    final outerFlamePaint = Paint()
       ..shader = RadialGradient(
-        center: Alignment(0, -0.3),
-        radius: 0.75,
+        center: const Alignment(0, 0.3),
+        radius: 0.8,
         colors: [
-          const Color(0xFFFFEA00),
-          const Color(0xFFFFB300),
-          color.withValues(alpha: 0.85),
+          const Color(0xFFFFD600),
+          const Color(0xFFFF6D00),
+          const Color(0xFFDD2C00),
           Colors.transparent,
         ],
-        stops: const [0.0, 0.35, 0.65, 1.0],
-      ).createShader(Rect.fromCircle(center: center, radius: pulseRadius))
+        stops: const [0.0, 0.4, 0.8, 1.0],
+      ).createShader(Rect.fromLTWH(
+        centerX - flameWidth,
+        baseY - flameHeight,
+        flameWidth * 2,
+        flameHeight,
+      ))
       ..style = PaintingStyle.fill;
-    canvas.drawPath(flamePath, flamePaint);
+    canvas.drawPath(outerFlame, outerFlamePaint);
 
-    // Inner bright core
-    final corePaint = Paint()
-      ..color = const Color(0xFFFFFFDD).withValues(alpha: 0.85 * (1.0 - progress * 0.5))
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
-    canvas.drawCircle(
-      Offset(center.dx, center.dy - pulseRadius * 0.1),
-      pulseRadius * 0.25,
-      corePaint,
-    );
+    // 4. Inner Fiery Yellow Core Flame
+    final innerFlameHeight = flameHeight * 0.65;
+    final innerFlameWidth = flameWidth * 0.55;
+    final innerFlame = Path()
+      ..moveTo(centerX, baseY - innerFlameHeight)
+      ..cubicTo(
+        centerX + innerFlameWidth * 0.6, baseY - innerFlameHeight * 0.5,
+        centerX + innerFlameWidth * 0.4, baseY,
+        centerX, baseY,
+      )
+      ..cubicTo(
+        centerX - innerFlameWidth * 0.4, baseY,
+        centerX - innerFlameWidth * 0.6, baseY - innerFlameHeight * 0.5,
+        centerX, baseY - innerFlameHeight,
+      );
+
+    final innerFlamePaint = Paint()
+      ..shader = const LinearGradient(
+        colors: [Color(0xFFFFFFFF), Color(0xFFFFEA00), Color(0xFFFF6D00)],
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+      ).createShader(Rect.fromLTWH(
+        centerX - innerFlameWidth,
+        baseY - innerFlameHeight,
+        innerFlameWidth * 2,
+        innerFlameHeight,
+      ))
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(innerFlame, innerFlamePaint);
+
+    // 5. Flying Flame & Rising Black Smoke Clouds
+    final smokePaint = Paint()..style = PaintingStyle.fill;
+    for (int i = 0; i < 6; i++) {
+      final smokeT = ((progress - i * 0.1) / 0.8).clamp(0.0, 1.0);
+      if (smokeT <= 0.0) continue;
+
+      final smokeX = centerX + (math.sin(smokeT * math.pi * 3 + i * 1.5) * flameWidth * 0.5);
+      final smokeY = baseY - flameHeight * 0.5 - (smokeT * flameHeight * 1.2);
+      final smokeRadius = (size.width * 0.14) + (smokeT * size.width * 0.22);
+      final smokeOpacity = (math.sin(smokeT * math.pi) * 0.7 * opacity).clamp(0.0, 1.0);
+
+      smokePaint
+        ..color = Color.lerp(
+          const Color(0xFF2E2E2E),
+          const Color(0xFF111111),
+          smokeT,
+        )!.withValues(alpha: smokeOpacity)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, 5.0 + smokeT * 3.0);
+
+      canvas.drawCircle(Offset(smokeX, smokeY), smokeRadius, smokePaint);
+    }
+
+    // 6. Rising Fiery Sparks & Embers
+    final sparkPaint = Paint()..style = PaintingStyle.fill;
+    for (int i = 0; i < 8; i++) {
+      final sparkT = (progress + i * 0.12) % 1.0;
+      final sparkX = centerX + (math.sin(sparkT * math.pi * 5 + i) * flameWidth * 0.45);
+      final sparkY = baseY - (sparkT * flameHeight * 1.5);
+      final sparkSize = (1.0 - sparkT) * 3.5;
+
+      sparkPaint.color = i % 2 == 0
+          ? const Color(0xFFFFEA00).withValues(alpha: ((1.0 - sparkT) * opacity).clamp(0.0, 1.0))
+          : const Color(0xFFFF3D00).withValues(alpha: ((1.0 - sparkT) * opacity).clamp(0.0, 1.0));
+
+      canvas.drawCircle(Offset(sparkX, sparkY), sparkSize, sparkPaint);
+    }
   }
 
   @override
