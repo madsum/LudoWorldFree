@@ -404,22 +404,18 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
     required Color avatarBorderColor,
     required bool timerVisible,
   }) {
-    final countryDisplayName = (widget.player.country.isNotEmpty && widget.player.country != 'assets/images/world.png')
-        ? widget.player.country
-        : widget.player.name;
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // First Line: Flag and Full Country Name (Untruncated)
+        // First Line: Flag and Player Name (Untruncated)
         Row(
           children: [
             _buildFlagWidget(widget.player.countryFlag, size: 11),
             const SizedBox(width: 3),
             Expanded(
               child: Text(
-                countryDisplayName,
+                widget.player.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.poppins(

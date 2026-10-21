@@ -39,6 +39,13 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
   /// Stores paths for moving pawns so only each pawn subtree animates.
   final Map<String, List<BoardPosition>> _animationPaths = {};
 
+  /// Tracks the capture event currently being animated with a flame effect.
+  PawnCaptureEvent? _flameCaptureEvent;
+
+  /// Animation controller for the capture flame (620 ms, matching the
+  /// [captureFlameDurationMicroseconds] in GameNotifier).
+  AnimationController? _flameController;
+
   @override
   void initState() {
     super.initState();
@@ -49,10 +56,18 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
   void didUpdateWidget(covariant LudoBoardWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncVisualStepsWithGameState(isInitial: false);
+
+    // Start the capture flame animation when a new capture event is emitted.
+    if (widget.gameState.lastCaptureEvent !=
+            oldWidget.gameState.lastCaptureEvent &&
+        widget.gameState.lastCaptureEvent != null) {
+      _startCaptureFlame(widget.gameState.lastCaptureEvent!);
+    }
   }
 
   @override
   void dispose() {
+    _flameController?.dispose();
     for (final controller in _activeControllers.values) {
       controller.dispose();
     }
@@ -144,6 +159,60 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
     controller.forward();
   }
 
+  /// Starts the fire/flame animation at the captured pawn's tile.
+  void _startCaptureFlame(PawnCaptureEvent event) {
+    _flameCaptureEvent = event;
+    _flameController?.dispose();
+    _flameController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 620),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed && mounted) {
+          setState(() {
+            _flameCaptureEvent = null;
+          });
+        }
+      });
+    _flameController!.forward();
+  }
+
+  /// Renders a fire/flame effect at the tile where a pawn was captured.
+  List<Widget> _buildCaptureFlame(double tileSize) {
+    if (_flameCaptureEvent == null || _flameController == null) return [];
+
+    final pos = BoardPosition.mainTrack[_flameCaptureEvent!.globalTrackIndex];
+
+    return [
+      Positioned(
+        left: pos.x * tileSize,
+        top: pos.y * tileSize,
+        width: tileSize,
+        height: tileSize,
+        child: AnimatedBuilder(
+          animation: _flameController!,
+          builder: (context, child) {
+            final scale = 0.5 + (_flameController!.value * 1.0);
+            final opacity = (1.0 - _flameController!.value) * 0.95;
+            return Transform.scale(
+              scale: scale,
+              child: Opacity(
+                opacity: opacity.clamp(0.0, 1.0),
+                child: SizedBox(
+                  width: tileSize * 0.85,
+                  height: tileSize * 0.85,
+                  child: _CaptureFlamePainterWidget(
+                    color: _flameCaptureEvent!.color.color,
+                    progress: _flameController!.value,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     return AspectRatio(
@@ -186,6 +255,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
                       ..._buildPlayerNamePlates(tileSize),
                       ..._buildFinishedPlayerCrowns(tileSize),
                       ..._buildEliminatedPlayerSigns(tileSize),
+                      ..._buildCaptureFlame(tileSize),
                     ],
                   );
                 },
@@ -201,7 +271,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
   List<Widget> _buildPlayerNamePlates(double tileSize) {
     return widget.gameState.players.map((player) {
       final nameCenter = switch (player.color) {
-        LudoColor.red => const Offset(3, 5.2),
+        LudoColor.red => const Offset(3, 0.8),
         LudoColor.green => const Offset(12, 0.8),
         LudoColor.yellow => const Offset(12, 14.2),
         LudoColor.blue => const Offset(3, 14.2),
@@ -593,6 +663,92 @@ class _PawnTileWidget extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Fire/Flame animation painter rendered at the captured pawn's tile.
+class _CaptureFlamePainterWidget extends StatelessWidget {
+  final Color color;
+  final double progress;
+
+  const _CaptureFlamePainterWidget({
+    required this.color,
+    required this.progress,
+  });
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        size: const Size(64, 64),
+        painter: _CaptureFlamePainter(color: color, progress: progress),
+      );
+}
+
+class _CaptureFlamePainter extends CustomPainter {
+  final Color color;
+  final double progress;
+
+  _CaptureFlamePainter({required this.color, required this.progress});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height * 0.72);
+    final baseRadius = size.width * 0.32;
+    final pulseRadius = baseRadius * (1.0 + progress * 0.5);
+
+    // Outer glow that fades out as the flame burns
+    final glowPaint = Paint()
+      ..color = color.withValues(alpha: 0.25 * (1.0 - progress))
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+    canvas.drawCircle(center, pulseRadius * 0.65, glowPaint);
+
+    // Flame body: a teardrop shape with gradient
+    final flamePath = Path()
+      ..moveTo(center.dx, center.dy - pulseRadius * 0.15)
+      ..cubicTo(
+        center.dx - pulseRadius,
+        center.dy - pulseRadius * 0.45,
+        center.dx - pulseRadius * 0.45,
+        center.dy + pulseRadius * 0.85,
+        center.dx,
+        center.dy + pulseRadius * 0.2,
+      )
+      ..cubicTo(
+        center.dx + pulseRadius * 0.45,
+        center.dy + pulseRadius * 0.85,
+        center.dx + pulseRadius,
+        center.dy - pulseRadius * 0.45,
+        center.dx,
+        center.dy - pulseRadius * 0.15,
+      );
+
+    final flamePaint = Paint()
+      ..shader = RadialGradient(
+        center: Alignment(0, -0.3),
+        radius: 0.75,
+        colors: [
+          const Color(0xFFFFEA00),
+          const Color(0xFFFFB300),
+          color.withValues(alpha: 0.85),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.35, 0.65, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: pulseRadius))
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(flamePath, flamePaint);
+
+    // Inner bright core
+    final corePaint = Paint()
+      ..color = const Color(0xFFFFFFDD).withValues(alpha: 0.85 * (1.0 - progress * 0.5))
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+    canvas.drawCircle(
+      Offset(center.dx, center.dy - pulseRadius * 0.1),
+      pulseRadius * 0.25,
+      corePaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _CaptureFlamePainter old) =>
+      old.progress != progress || old.color != color;
 }
 
 /// Commercial Grade Custom Painter for Ludo World Free Board

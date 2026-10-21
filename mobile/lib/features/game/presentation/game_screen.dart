@@ -119,7 +119,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final humanColor =
         humanIndex < 0 ? null : gameState.players[humanIndex].color;
     final boardQuarterTurns =
-        isVsComputer && humanColor != null ? (3 - humanColor.index) % 4 : 0;
+        isVsComputer && humanColor != null
+            ? (3 - humanColor.index) % 4
+            : gameState.players.isNotEmpty
+                ? (3 - gameState.players[0].color.index) % 4
+                : 0;
 
     return PopScope(
       canPop: false,
