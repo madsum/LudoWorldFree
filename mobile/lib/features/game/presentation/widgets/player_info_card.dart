@@ -132,6 +132,14 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
     super.dispose();
   }
 
+  String get _displayCountryName {
+    final country = widget.player.country;
+    if (country.isEmpty || country.contains('assets/images')) {
+      return 'World';
+    }
+    return country;
+  }
+
   Widget _buildFlagWidget(String flag, {double size = 12}) {
     if (flag == '🌐' || flag == 'assets/images/world.png' || flag.contains('world')) {
       return Image.asset(
@@ -230,14 +238,14 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          // Line 1: Country Flag, Name, Diamonds, Gold Coins
+                          // Line 1: Country Flag, Country Name, Diamonds, Gold Coins
                           Row(
                             children: [
                               _buildFlagWidget(widget.player.countryFlag, size: widget.compact ? 10 : 12),
                               const SizedBox(width: 3),
                               Expanded(
                                 child: Text(
-                                  widget.player.name,
+                                  _displayCountryName,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.poppins(
@@ -408,14 +416,14 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // First Line: Flag and Player Name (Untruncated)
+        // First Line: Flag and Country Name
         Row(
           children: [
             _buildFlagWidget(widget.player.countryFlag, size: 11),
             const SizedBox(width: 3),
             Expanded(
               child: Text(
-                widget.player.name,
+                _displayCountryName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.poppins(

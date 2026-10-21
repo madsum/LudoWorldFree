@@ -260,18 +260,18 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
     );
   }
 
-  /// Renders Player Name in white text without background or flag
+  /// Renders Player Name in white text centered in the colored bar of each yard
   List<Widget> _buildPlayerNamePlates(double tileSize) {
     return widget.gameState.players.map((player) {
       final nameCenter = switch (player.color) {
-        LudoColor.red => const Offset(3, 0.8),
-        LudoColor.green => const Offset(12, 0.8),
-        LudoColor.yellow => const Offset(12, 14.2),
-        LudoColor.blue => const Offset(3, 14.2),
+        LudoColor.red => const Offset(3.0, 0.5),
+        LudoColor.green => const Offset(12.0, 0.5),
+        LudoColor.yellow => const Offset(12.0, 14.5),
+        LudoColor.blue => const Offset(3.0, 14.5),
       };
 
       final nameWidth = tileSize * 5.2;
-      final nameHeight = tileSize * 0.85;
+      final nameHeight = tileSize * 0.72;
 
       return Positioned(
         key: ValueKey('nameplate_${player.id}'),
@@ -283,17 +283,28 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget> with TickerProviderSt
           child: RotatedBox(
             quarterTurns: (4 - widget.orientationQuarterTurns % 4) % 4,
             child: Center(
-              child: Text(
-                player.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.poppins(
-                  fontSize: tileSize * 0.42,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                  shadows: const [
-                    Shadow(color: Colors.black87, blurRadius: 4, offset: Offset(0, 1.5)),
-                  ],
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  player.name,
+                  maxLines: 1,
+                  style: GoogleFonts.poppins(
+                    fontSize: tileSize * 0.38,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    shadows: const [
+                      Shadow(
+                        color: Colors.black,
+                        blurRadius: 5,
+                        offset: Offset(0, 1.5),
+                      ),
+                      Shadow(
+                        color: Colors.black87,
+                        blurRadius: 2,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
