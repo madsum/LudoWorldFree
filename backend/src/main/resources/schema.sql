@@ -120,3 +120,33 @@ CREATE TABLE IF NOT EXISTS daily_reward_progress (
 );
 
 CREATE INDEX IF NOT EXISTS idx_daily_reward_player_id ON daily_reward_progress(player_id);
+
+-- 10. Daily Reward Claims Ledger (hard duplicate-claim guard)
+-- UNIQUE(player_id, claim_date) makes it impossible for a claim transaction
+-- to commit twice for the same player on the same day, even concurrently.
+CREATE TABLE IF NOT EXISTS daily_reward_claims (
+    id UUID PRIMARY KEY,
+    player_id UUID NOT NULL,
+    claim_date DATE NOT NULL,
+    streak_day INT NOT NULL,
+    reward_type VARCHAR(50) NOT NULL,
+    amount BIGINT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uk_daily_reward_player_day UNIQUE (player_id, claim_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_reward_claims_player ON daily_reward_claims(player_id);
+
+-- 11. Free Bonus Progress (Watch Ads for Gold Coins)
+CREATE TABLE IF NOT EXISTS free_bonus_progress (
+    id UUID PRIMARY KEY,
+    player_id UUID NOT NULL UNIQUE,
+    claimed_count INT NOT NULL DEFAULT 0,
+    current_cycle_key VARCHAR(50),
+    last_claim_time TIMESTAMP WITH TIME ZONE,
+    version BIGINT DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_free_bonus_player_id ON free_bonus_progress(player_id);
