@@ -38,7 +38,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _isClaimingDailyBonus = false;
   bool _dailyBonusDialogShowing = false;
   String? _dailyBonusPopupPlayerId;
-  final GlobalKey _rewardCardKey = GlobalKey();
   final GlobalKey _walletKey = GlobalKey();
 
   @override
@@ -106,6 +105,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ).then((result) async {
         _dailyBonusDialogShowing = false;
         if (mounted && result?.success == true) {
+          await _flyCoinsFromBottomToWallet();
           await _showDailyBonusCongratulations(result!);
         }
       });
@@ -254,6 +254,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _watchAdAndEarnGold(BuildContext context) async {
     if (_isClaimingReward) return;
     final rewardedAdService = ref.read(rewardedAdServiceProvider);
+    var earnedAmount = 0;
+    var earnedProviderRewardId = '';
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -267,37 +269,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
 
     await rewardedAdService.showRewardedAd(
-      onRewardEarned: (amount, providerRewardId) {
+      onRewardEarned: (amount, rewardId) {
         _isClaimingReward = true;
-        final screenSize = MediaQuery.sizeOf(context);
-
-        final startOffset = _getWidgetCenter(
-          _rewardCardKey,
-          fallback: Offset(screenSize.width / 2, screenSize.height * 0.75),
-        );
-        final endOffset = _getWidgetCenter(
-          _walletKey,
-          fallback: Offset(screenSize.width - 60, 32),
-        );
-
-        FlyingCoinOverlay.show(
-          context,
-          startOffset: startOffset,
-          endOffset: endOffset,
-          onComplete: () {
-            _isClaimingReward = false;
-            if (context.mounted) {
-              _showMiddleRewardDialog(context, amount);
-            }
-          },
-        );
-
-        ref.read(authControllerProvider.notifier).addGoldReward(
-              amount: amount,
-              providerRewardId: providerRewardId,
-            );
+        earnedAmount = amount;
+        earnedProviderRewardId = rewardId;
       },
-      onAdClosed: () {},
+      onAdClosed: () {
+        if (earnedAmount <= 0 || earnedProviderRewardId.isEmpty) {
+          _isClaimingReward = false;
+          return;
+        }
+        unawaited(_finishWatchAdReward(
+          context,
+          earnedAmount,
+          earnedProviderRewardId,
+        ));
+      },
       onError: (error) {
         _isClaimingReward = false;
         if (context.mounted) {
@@ -313,12 +300,63 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Future<void> _finishWatchAdReward(
+    BuildContext context,
+    int amount,
+    String providerRewardId,
+  ) async {
+    final credited =
+        await ref.read(authControllerProvider.notifier).addGoldReward(
+              amount: amount,
+              providerRewardId: providerRewardId,
+            );
+    if (!context.mounted) return;
+    if (!credited) {
+      _isClaimingReward = false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.bgNavy,
+          content: Text(
+            'Your ad reward could not be added. Please try again.',
+            style: GoogleFonts.poppins(color: AppColors.gold),
+          ),
+        ),
+      );
+      return;
+    }
+
+    await _flyCoinsFromBottomToWallet();
+    _isClaimingReward = false;
+    if (context.mounted) _showMiddleRewardDialog(context, amount);
+  }
+
   Offset _getWidgetCenter(GlobalKey key, {required Offset fallback}) {
     final renderBox = key.currentContext?.findRenderObject();
     if (renderBox is RenderBox && renderBox.hasSize) {
       return renderBox.localToGlobal(renderBox.size.center(Offset.zero));
     }
     return fallback;
+  }
+
+  Future<void> _flyCoinsFromBottomToWallet() {
+    if (!mounted) return Future<void>.value();
+
+    final screenSize = MediaQuery.sizeOf(context);
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final animationComplete = Completer<void>();
+    FlyingCoinOverlay.show(
+      context,
+      startOffset: Offset(
+        screenSize.width / 2,
+        screenSize.height - safeBottom - 28,
+      ),
+      endOffset: _getWidgetCenter(
+        _walletKey,
+        fallback: Offset(screenSize.width - 60, 32),
+      ),
+      onComplete: () => animationComplete.complete(),
+    );
+    return animationComplete.future;
   }
 
   void _showMiddleRewardDialog(BuildContext context, int amount) {
@@ -795,7 +833,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         GestureDetector(
                           onTap: () => _watchAdAndEarnGold(context),
                           child: Container(
-                            key: _rewardCardKey,
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 12),
                             decoration: BoxDecoration(

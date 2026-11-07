@@ -79,14 +79,20 @@ class _FlyingCoinWidgetState extends State<_FlyingCoinWidget>
         builder: (context, child) {
           return Stack(
             children: _coins.map((coin) {
-              final double t = ((_controller.value - coin.staggerDelay) / (1.0 - coin.staggerDelay))
+              final double t = ((_controller.value - coin.staggerDelay) /
+                      (1.0 - coin.staggerDelay))
                   .clamp(0.0, 1.0);
 
               if (t <= 0 || t >= 1) return const SizedBox.shrink();
 
               // Bezier curve interpolation from startOffset to endOffset
-              final double controlX = (widget.startOffset.dx + widget.endOffset.dx) / 2 + coin.curveSpreadX;
-              final double controlY = math.min(widget.startOffset.dy, widget.endOffset.dy) - 90 + coin.curveSpreadY;
+              final double controlX =
+                  (widget.startOffset.dx + widget.endOffset.dx) / 2 +
+                      coin.curveSpreadX;
+              final double controlY =
+                  (widget.startOffset.dy + widget.endOffset.dy) / 2 -
+                      60 +
+                      coin.curveSpreadY;
 
               final double x = (1 - t) * (1 - t) * widget.startOffset.dx +
                   2 * (1 - t) * t * controlX +
@@ -111,7 +117,11 @@ class _FlyingCoinWidgetState extends State<_FlyingCoinWidget>
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: const RadialGradient(
-                          colors: [Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFB76E00)],
+                          colors: [
+                            Color(0xFFFFEA00),
+                            Color(0xFFFF8F00),
+                            Color(0xFFB76E00)
+                          ],
                         ),
                         border: Border.all(color: Colors.white, width: 1.5),
                         boxShadow: const [
