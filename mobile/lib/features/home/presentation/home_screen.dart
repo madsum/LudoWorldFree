@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +13,7 @@ import '../../../core/ads/ad_mob_consent_service.dart';
 import '../../../core/ads/rewarded_ad_service.dart';
 import '../../../shared/widgets/flying_coin_overlay.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
+import '../../auth/domain/auth_repository.dart';
 import '../../auth/presentation/widgets/guest_setup_dialog.dart';
 import '../../game/presentation/controllers/game_controller.dart';
 import '../../game/presentation/widgets/exit_game_dialog.dart';
@@ -20,6 +23,7 @@ import 'widgets/lobby_center_graphic.dart';
 import 'widgets/lobby_game_card.dart';
 import 'widgets/lobby_header_bar.dart';
 import 'widgets/online_matchmaking_dialog.dart';
+import 'widgets/daily_bonus_dialog.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -31,6 +35,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _currentNavIndex = 0;
   bool _isClaimingReward = false;
+  bool _isClaimingDailyBonus = false;
+  bool _dailyBonusDialogShowing = false;
+  String? _dailyBonusPopupPlayerId;
   final GlobalKey _rewardCardKey = GlobalKey();
   final GlobalKey _walletKey = GlobalKey();
 
@@ -68,6 +75,153 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ],
         ),
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _loadDailyBonusStatus() async {
+    final status =
+        await ref.read(authControllerProvider.notifier).getDailyBonusStatus();
+    if (!mounted || _dailyBonusPopupPlayerId == null) return;
+    final bonusStatus = status ??
+        const DailyBonusStatus(
+          claimedToday: false,
+          streak: 0,
+          rewardDay: 1,
+          rewardAmount: 1000,
+          balance: 0,
+        );
+    if (bonusStatus.claimedToday || _dailyBonusDialogShowing) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _dailyBonusDialogShowing) return;
+      _dailyBonusDialogShowing = true;
+      showDialog<DailyBonusStatus>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => DailyBonusDialog(
+          status: bonusStatus,
+          onClaim: _watchAdAndClaimDailyBonus,
+        ),
+      ).then((result) async {
+        _dailyBonusDialogShowing = false;
+        if (mounted && result?.success == true) {
+          await _showDailyBonusCongratulations(result!);
+        }
+      });
+    });
+  }
+
+  Future<DailyBonusStatus?> _watchAdAndClaimDailyBonus() async {
+    if (_isClaimingDailyBonus) return null;
+    setState(() => _isClaimingDailyBonus = true);
+    final resultCompleter = Completer<DailyBonusStatus?>();
+    var earnedReward = false;
+    var completed = false;
+    void complete(DailyBonusStatus? result) {
+      if (completed) return;
+      completed = true;
+      if (mounted) setState(() => _isClaimingDailyBonus = false);
+      resultCompleter.complete(result);
+    }
+
+    await ref.read(rewardedAdServiceProvider).showRewardedAd(
+      onRewardEarned: (amount, providerRewardId) {
+        earnedReward = amount > 0 && providerRewardId.isNotEmpty;
+      },
+      onAdClosed: () {
+        if (!earnedReward) {
+          complete(null);
+          return;
+        }
+        ref
+            .read(authControllerProvider.notifier)
+            .claimDailyBonus()
+            .then(complete);
+      },
+      onError: (error) {
+        complete(null);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: AppColors.bgNavy,
+          content:
+              Text(error, style: GoogleFonts.poppins(color: AppColors.gold)),
+        ));
+      },
+    );
+    return resultCompleter.future;
+  }
+
+  Future<void> _showDailyBonusCongratulations(DailyBonusStatus result) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1B3E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: AppColors.gold, width: 2.5),
+        ),
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    Color(0xFFFFEA00),
+                    Color(0xFFFF8F00),
+                    Color(0xFFB76E00)
+                  ],
+                ),
+                boxShadow: [
+                  BoxShadow(color: Color(0xFFFF8F00), blurRadius: 14)
+                ],
+              ),
+              child: const Icon(Icons.monetization_on_rounded,
+                  color: Colors.white, size: 52),
+            ),
+            const SizedBox(height: 16),
+            Text('CONGRATULATIONS!',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  color: AppColors.gold,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                )),
+            const SizedBox(height: 8),
+            Text('You got your Day ${result.rewardDay} daily bonus!',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                )),
+            const SizedBox(height: 8),
+            Text('+${result.rewardAmount} coins added to your wallet',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  color: AppColors.coinGold,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                )),
+            const SizedBox(height: 18),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.gold,
+                foregroundColor: const Color(0xFF07122E),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              child: Text('AWESOME',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w900)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -185,7 +339,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               decoration: const BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
-                  colors: [Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFB76E00)],
+                  colors: [
+                    Color(0xFFFFEA00),
+                    Color(0xFFFF8F00),
+                    Color(0xFFB76E00)
+                  ],
                 ),
                 boxShadow: [
                   BoxShadow(color: Color(0xFFFF8F00), blurRadius: 12),
@@ -198,7 +356,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
             const SizedBox(height: 12),
-
             Text(
               'REWARD EARNED!',
               style: GoogleFonts.cinzel(
@@ -209,7 +366,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
             const SizedBox(height: 6),
-
             Text(
               '🎉 You earned +$amount Gold Coins!',
               textAlign: TextAlign.center,
@@ -220,7 +376,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
             const SizedBox(height: 4),
-
             Text(
               '500 Gold Coins have been added to your wallet balance!',
               textAlign: TextAlign.center,
@@ -229,9 +384,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 color: Colors.white70,
               ),
             ),
-
             const SizedBox(height: 18),
-
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -241,7 +394,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
-                    side: const BorderSide(color: Color(0xFFB8FF65), width: 1.5),
+                    side:
+                        const BorderSide(color: Color(0xFFB8FF65), width: 1.5),
                   ),
                 ),
                 onPressed: () => Navigator.of(context).pop(),
@@ -261,13 +415,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildFlagWidget(String flag, {double size = 22}) {
-    if (flag == '🌐' || flag == 'assets/images/world.png' || flag.contains('world')) {
+    if (flag == '🌐' ||
+        flag == 'assets/images/world.png' ||
+        flag.contains('world')) {
       return Image.asset(
         'assets/images/world.png',
         width: size * 1.2,
         height: size * 1.0,
         fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => Text('🌐', style: TextStyle(fontSize: size)),
+        errorBuilder: (context, error, stackTrace) =>
+            Text('🌐', style: TextStyle(fontSize: size)),
       );
     }
     return Text(flag, style: TextStyle(fontSize: size));
@@ -277,9 +434,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final user = ref.read(authControllerProvider).user;
     if (user == null) return;
 
-    final displayCountry = (user.country.contains('assets/images') || user.country.isEmpty)
-        ? 'World'
-        : user.country;
+    final displayCountry =
+        (user.country.contains('assets/images') || user.country.isEmpty)
+            ? 'World'
+            : user.country;
 
     showDialog(
       context: context,
@@ -336,7 +494,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SizedBox(height: 2),
             Text(
               'Most Played Mode: ${user.mostPlayedGameType.displayName}',
-              style: GoogleFonts.poppins(fontSize: 12, color: AppColors.gold, fontWeight: FontWeight.bold),
+              style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: AppColors.gold,
+                  fontWeight: FontWeight.bold),
             ),
             if (user.email != null && user.email!.isNotEmpty) ...[
               const SizedBox(height: 2),
@@ -509,6 +670,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
     final user = authState.user;
+    if (user != null && _dailyBonusPopupPlayerId != user.id) {
+      _dailyBonusPopupPlayerId = user.id;
+      Future.microtask(_loadDailyBonusStatus);
+    }
     final playerName = user?.name ?? 'Guest Player';
     final avatarUrl = user?.avatarUrl;
     final countryFlag = user?.countryFlag ?? '🌐';
@@ -544,15 +709,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               level: 3,
               onProfilePressed: () => _showProfileInfoDialog(context),
               onSettingsPressed: () => _showSettingsDialog(context),
-              onInboxPressed: () =>
-                  _showComingSoonSnackBar('Mailbox Inbox'),
+              onInboxPressed: () => _showComingSoonSnackBar('Mailbox Inbox'),
               onShopPressed: () =>
                   _showComingSoonSnackBar('Coin & Diamond Store'),
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12.0, vertical: 6.0),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
                 physics: const BouncingScrollPhysics(),
                 child: Center(
                   child: ConstrainedBox(
@@ -574,7 +738,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   OnlineMatchmakingDialog.show(
                                     context,
                                     onMatchFound: (players) {
-                                      ref.read(gameControllerProvider.notifier).startNewGame(players: players);
+                                      ref
+                                          .read(gameControllerProvider.notifier)
+                                          .startNewGame(players: players);
                                       context.push('/game');
                                     },
                                   );
@@ -587,7 +753,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 title: 'TEAM UP',
                                 playerCount: '4,144',
                                 cardType: LobbyCardType.teamUp,
-                                onTap: () => _showComingSoonSnackBar('Team Up 2v2'),
+                                onTap: () =>
+                                    _showComingSoonSnackBar('Team Up 2v2'),
                               ),
                             ),
                             const SizedBox(width: 6),
@@ -596,7 +763,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 title: 'FRIENDS',
                                 playerCount: '16,393',
                                 cardType: LobbyCardType.friends,
-                                onTap: () => _showComingSoonSnackBar('Play with Friends'),
+                                onTap: () => _showComingSoonSnackBar(
+                                    'Play with Friends'),
                               ),
                             ),
                           ],
@@ -618,8 +786,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 title: 'PASS N PLAY',
                                 cardType: LobbyCardType.passNPlay,
                                 onTap: () => _launchGameMode(context,
-                                    isVsComputer: false,
-                                    title: 'Pass & Play'),
+                                    isVsComputer: false, title: 'Pass & Play'),
                               ),
                             ),
                           ],
@@ -642,8 +809,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 end: Alignment.bottomRight,
                               ),
                               borderRadius: BorderRadius.circular(16),
-                              border:
-                                  Border.all(color: Colors.white, width: 2),
+                              border: Border.all(color: Colors.white, width: 2),
                               boxShadow: const [
                                 BoxShadow(
                                   color: Color(0xFFFF8F00),
@@ -703,10 +869,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   ),
                                   child: Row(
                                     children: [
-                                      const Icon(
-                                          Icons.monetization_on_rounded,
-                                          color: AppColors.coinGold,
-                                          size: 16),
+                                      const Icon(Icons.monetization_on_rounded,
+                                          color: AppColors.coinGold, size: 16),
                                       const SizedBox(width: 4),
                                       Text(
                                         '+${AdConfig.adRewardGoldAmount}',

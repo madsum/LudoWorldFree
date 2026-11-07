@@ -10,6 +10,7 @@ public class GoldTransaction {
 
     public enum TransactionType {
         AD_REWARD,
+        DAILY_BONUS,
         GAME_REWARD,
         BONUS,
         PURCHASE,

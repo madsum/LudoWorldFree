@@ -12,32 +12,49 @@ final rewardedAdServiceProvider = Provider<RewardedAdService>((ref) {
 class RewardedAdService {
   RewardedAd? _rewardedAd;
   bool _isAdLoading = false;
+  Completer<void>? _adLoadCompleter;
 
   bool get isAdReady => _rewardedAd != null;
   bool get isAdLoading => _isAdLoading;
 
   /// Preloads a Rewarded Ad from Google AdMob
-  Future<void> preloadAd() async {
-    if (_rewardedAd != null || _isAdLoading) return;
+  Future<void> preloadAd() {
+    if (_rewardedAd != null) return Future<void>.value();
+    final currentLoad = _adLoadCompleter;
+    if (currentLoad != null) return currentLoad.future;
 
+    final completer = Completer<void>();
+    _adLoadCompleter = completer;
     _isAdLoading = true;
-
-    await RewardedAd.load(
-      adUnitId: AdConfig.rewardedAdUnitId,
-      request: const AdRequest(),
-      rewardedAdLoadCallback: RewardedAdLoadCallback(
-        onAdLoaded: (RewardedAd ad) {
-          _rewardedAd = ad;
-          _isAdLoading = false;
-          debugPrint('🎬 [AdMob] Rewarded Ad loaded successfully.');
-        },
-        onAdFailedToLoad: (LoadAdError error) {
-          _rewardedAd = null;
-          _isAdLoading = false;
-          debugPrint('❌ [AdMob] Rewarded Ad failed to load: ${error.message}');
-        },
-      ),
-    );
+    try {
+      RewardedAd.load(
+        adUnitId: AdConfig.rewardedAdUnitId,
+        request: const AdRequest(),
+        rewardedAdLoadCallback: RewardedAdLoadCallback(
+          onAdLoaded: (RewardedAd ad) {
+            _rewardedAd = ad;
+            _isAdLoading = false;
+            _adLoadCompleter = null;
+            debugPrint('🎬 [AdMob] Rewarded Ad loaded successfully.');
+            if (!completer.isCompleted) completer.complete();
+          },
+          onAdFailedToLoad: (LoadAdError error) {
+            _rewardedAd = null;
+            _isAdLoading = false;
+            _adLoadCompleter = null;
+            debugPrint(
+                '❌ [AdMob] Rewarded Ad failed to load: ${error.message}');
+            if (!completer.isCompleted) completer.complete();
+          },
+        ),
+      );
+    } catch (error) {
+      _isAdLoading = false;
+      _adLoadCompleter = null;
+      debugPrint('❌ [AdMob] Rewarded Ad load failed: $error');
+      if (!completer.isCompleted) completer.complete();
+    }
+    return completer.future;
   }
 
   /// Displays the preloaded Rewarded Ad and executes instant reward callback
@@ -47,8 +64,14 @@ class RewardedAdService {
     required Function(String error) onError,
   }) async {
     if (_rewardedAd == null) {
-      // Attempt quick load
-      await preloadAd();
+      // Join any in-flight preload so the first tap can wait for the ad.
+      try {
+        await preloadAd().timeout(const Duration(seconds: 25));
+      } catch (error) {
+        onError('Rewarded ad is taking too long to load. Please try again.');
+        debugPrint('❌ [AdMob] Rewarded Ad load timed out: $error');
+        return false;
+      }
     }
 
     if (_rewardedAd == null) {

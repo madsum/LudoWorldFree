@@ -2,6 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 
+String _compactWalletValue(String value) {
+  final amount = int.tryParse(value);
+  if (amount == null || amount < 1000) return value;
+  if (amount >= 1000000) {
+    final millions = amount / 1000000;
+    return '${millions.toStringAsFixed(millions % 1 == 0 ? 0 : 1)}M';
+  }
+  final thousands = amount / 1000;
+  return '${thousands.toStringAsFixed(thousands % 1 == 0 ? 0 : 1)}K';
+}
+
 class LobbyHeaderBar extends StatelessWidget {
   final String playerName;
   final String? avatarUrl;
@@ -275,7 +286,7 @@ class _LobbyCurrencyPill extends StatelessWidget {
           const SizedBox(width: 3),
           Flexible(
             child: Text(
-              value,
+              _compactWalletValue(value),
               style: GoogleFonts.poppins(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w900,

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/auth_repository_impl.dart';
 import '../../domain/auth_repository.dart';
@@ -173,13 +174,64 @@ class AuthController extends StateNotifier<AuthState> {
       applyUserUpdate(current.copyWith(coins: current.coins + amount));
     }
 
-    final updated = await claimGoldReward(
-      amount: amount,
-      providerRewardId: providerRewardId,
-    );
-    if (updated == null) return false;
-    applyUserUpdate(updated);
-    return true;
+    try {
+      final updated = await claimGoldReward(
+        amount: amount,
+        providerRewardId: providerRewardId,
+      );
+      if (updated == null) {
+        if (current != null) applyUserUpdate(current);
+        return false;
+      }
+      applyUserUpdate(updated);
+      return true;
+    } catch (error) {
+      debugPrint('Ad reward claim failed: $error');
+      if (current != null) applyUserUpdate(current);
+      return false;
+    }
+  }
+
+  Future<DailyBonusStatus?> getDailyBonusStatus() async {
+    try {
+      return await _repository.getDailyBonusStatus();
+    } catch (error) {
+      debugPrint('Daily bonus status request failed: $error');
+      return null;
+    }
+  }
+
+  Future<DailyBonusStatus?> claimDailyBonus() async {
+    try {
+      final result = await _repository.claimDailyBonus();
+      if (!result.success) {
+        // A duplicate claim is not a new reward. Still reload the wallet so
+        // the visible balance matches the backend's current balance.
+        await refreshWalletFromBackend();
+        return null;
+      }
+
+      // Match the ad reward flow: the server response is authoritative, and
+      // the provider is updated immediately so the header and profile rebuild.
+      final current = state.user;
+      if (current != null) {
+        applyUserUpdate(current.copyWith(coins: result.balance));
+      }
+      await refreshWalletFromBackend();
+      return result;
+    } catch (error) {
+      debugPrint('Daily bonus claim failed: $error');
+      return null;
+    }
+  }
+
+  Future<void> refreshWalletFromBackend() async {
+    try {
+      final refreshed = await _repository.getCurrentUser();
+      if (refreshed != null) applyUserUpdate(refreshed);
+    } catch (error) {
+      debugPrint('Wallet refresh after daily bonus failed: $error');
+    }
   }
 
   Future<void> signOut() async {

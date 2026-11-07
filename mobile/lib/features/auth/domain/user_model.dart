@@ -47,7 +47,8 @@ enum GameType {
 
   static GameType parse(String? value) {
     if (value == null) return GameType.classic;
-    final normalized = value.toLowerCase().replaceAll('_', '').replaceAll(' ', '');
+    final normalized =
+        value.toLowerCase().replaceAll('_', '').replaceAll(' ', '');
     if (normalized.contains('quick')) return GameType.quick;
     if (normalized.contains('team')) return GameType.teamUp;
     if (normalized.contains('computer')) return GameType.computer;
@@ -95,7 +96,8 @@ class UserModel {
     GameType mostPlayedGameType = GameType.classic,
   }) {
     return UserModel(
-      id: id ?? 'guest_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
+      id: id ??
+          'guest_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
       name: name,
       avatarUrl: avatarUrl,
       country: country,

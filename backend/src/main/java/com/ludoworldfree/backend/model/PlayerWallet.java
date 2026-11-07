@@ -2,6 +2,7 @@ package com.ludoworldfree.backend.model;
 
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
@@ -20,6 +21,11 @@ public class PlayerWallet {
 
     @Column(nullable = false)
     private long diamonds = 100;
+
+    private LocalDate dailyBonusClaimDate;
+
+    @Column(nullable = false)
+    private int dailyBonusStreak = 0;
 
     @Version
     private Long version;
@@ -43,6 +49,10 @@ public class PlayerWallet {
     public void setBalance(long balance) { this.balance = balance; }
     public long getDiamonds() { return diamonds; }
     public void setDiamonds(long diamonds) { this.diamonds = diamonds; }
+    public LocalDate getDailyBonusClaimDate() { return dailyBonusClaimDate; }
+    public void setDailyBonusClaimDate(LocalDate dailyBonusClaimDate) { this.dailyBonusClaimDate = dailyBonusClaimDate; }
+    public int getDailyBonusStreak() { return dailyBonusStreak; }
+    public void setDailyBonusStreak(int dailyBonusStreak) { this.dailyBonusStreak = dailyBonusStreak; }
     public Long getVersion() { return version; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

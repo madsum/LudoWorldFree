@@ -33,10 +33,12 @@ class AuthRepositoryImpl implements AuthRepository {
       (provider) => provider.name == userData['authProvider'],
       orElse: () => isGuest ? AuthProvider.guest : AuthProvider.google,
     );
-    int coins = int.tryParse(userData['coins'] ?? '') ?? (isGuest ? 2000 : 5000);
+    int coins =
+        int.tryParse(userData['coins'] ?? '') ?? (isGuest ? 2000 : 5000);
     int diamonds = int.tryParse(userData['diamonds'] ?? '') ?? 100;
     GameType preferredGameType = GameType.parse(userData['preferredGameType']);
-    GameType mostPlayedGameType = GameType.parse(userData['mostPlayedGameType']);
+    GameType mostPlayedGameType =
+        GameType.parse(userData['mostPlayedGameType']);
 
     // Attempt backend profile sync for persistent Cloud SQL profile
     try {
@@ -49,10 +51,12 @@ class AuthRepositoryImpl implements AuthRepository {
           coins = (response.data['goldCoins'] as num).toInt();
         }
         if (response.data['preferredGameType'] != null) {
-          preferredGameType = GameType.parse(response.data['preferredGameType'].toString());
+          preferredGameType =
+              GameType.parse(response.data['preferredGameType'].toString());
         }
         if (response.data['mostPlayedGameType'] != null) {
-          mostPlayedGameType = GameType.parse(response.data['mostPlayedGameType'].toString());
+          mostPlayedGameType =
+              GameType.parse(response.data['mostPlayedGameType'].toString());
         }
       }
     } catch (_) {}
@@ -134,6 +138,48 @@ class AuthRepositoryImpl implements AuthRepository {
     );
 
     return updated;
+  }
+
+  @override
+  Future<DailyBonusStatus> getDailyBonusStatus() async {
+    final current = await getCurrentUser() ?? UserModel.guest();
+    final response = await _dio.get(
+      '/rewards/daily-bonus',
+      options: Options(headers: {'X-Player-ID': current.id}),
+    );
+    return DailyBonusStatus.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  @override
+  Future<DailyBonusStatus> claimDailyBonus() async {
+    final current = await getCurrentUser() ?? UserModel.guest();
+    final response = await _dio.post(
+      '/rewards/daily-bonus/claim',
+      options: Options(headers: {'X-Player-ID': current.id}),
+    );
+    final result = DailyBonusStatus.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+    final updated = current.copyWith(coins: result.balance);
+    await _saveAuthSession(
+      token: await _storageService.getAccessToken() ?? 'user_token',
+      userId: updated.id,
+      authProvider: updated.authProvider,
+      userName: updated.name,
+      userEmail: updated.email ?? '',
+      avatarUrl: updated.avatarUrl,
+      country: updated.country,
+      countryFlag: updated.countryFlag,
+      coins: updated.coins,
+      diamonds: updated.diamonds,
+      isGuest: updated.isGuest,
+      preferredGameType: updated.preferredGameType,
+      mostPlayedGameType: updated.mostPlayedGameType,
+      syncBackendProfile: false,
+    );
+    return result;
   }
 
   @override
@@ -559,14 +605,17 @@ class AuthRepositoryImpl implements AuthRepository {
     String? countryFlag,
   }) async {
     final existingUser = await getCurrentUser();
-    final persistentId = existingUser?.id ?? 'guest_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    final persistentId = existingUser?.id ??
+        'guest_${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
     final persistentCoins = existingUser?.coins ?? 2000;
     final persistentDiamonds = existingUser?.diamonds ?? 100;
 
     final user = UserModel.guest(
       id: persistentId,
       name: name ?? existingUser?.name ?? 'Guest Player',
-      avatarUrl: avatarUrl ?? existingUser?.avatarUrl ?? 'assets/images/black-mask.webp',
+      avatarUrl: avatarUrl ??
+          existingUser?.avatarUrl ??
+          'assets/images/black-mask.webp',
       country: country ?? existingUser?.country ?? 'World',
       countryFlag: countryFlag ?? existingUser?.countryFlag ?? '🌐',
     ).copyWith(
