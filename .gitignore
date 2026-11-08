@@ -2,7 +2,6 @@
 .env
 *.env
 *.env.example
-*.sh
 
 # Miscellaneous
 run.sh
@@ -52,3 +51,4 @@ app.*.map.json
 backend/target/
 mobile/android/build/
 ludo_keystore.jks
+*.sh

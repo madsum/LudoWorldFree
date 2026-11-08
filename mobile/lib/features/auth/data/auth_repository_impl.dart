@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
@@ -23,7 +25,7 @@ class AuthRepositoryImpl implements AuthRepository {
   AuthRepositoryImpl(this._storageService, this._dio);
 
   @override
-  Future<UserModel?> getCurrentUser() async {
+  Future<UserModel?> getStoredCurrentUser() async {
     final userData = await _storageService.getUserData();
     if (userData['userId'] == null) return null;
 
@@ -40,11 +42,31 @@ class AuthRepositoryImpl implements AuthRepository {
     GameType mostPlayedGameType =
         GameType.parse(userData['mostPlayedGameType']);
 
-    // Attempt backend profile sync for persistent Cloud SQL profile
+    return _buildUser(
+      userData,
+      userId: userId,
+      isGuest: isGuest,
+      authProvider: authProvider,
+      coins: coins,
+      diamonds: diamonds,
+      preferredGameType: preferredGameType,
+      mostPlayedGameType: mostPlayedGameType,
+    );
+  }
+
+  @override
+  Future<UserModel?> getCurrentUser() async {
+    final current = await getStoredCurrentUser();
+    if (current == null) return null;
+
+    var coins = current.coins;
+    var preferredGameType = current.preferredGameType;
+    var mostPlayedGameType = current.mostPlayedGameType;
+    // Refresh the locally available profile from Cloud SQL when requested.
     try {
       final response = await _dio.get(
         '/player/profile',
-        options: Options(headers: {'X-Player-ID': userId}),
+        options: Options(headers: {'X-Player-ID': current.id}),
       );
       if (response.data != null) {
         if (response.data['goldCoins'] != null) {
@@ -61,6 +83,23 @@ class AuthRepositoryImpl implements AuthRepository {
       }
     } catch (_) {}
 
+    return current.copyWith(
+      coins: coins,
+      preferredGameType: preferredGameType,
+      mostPlayedGameType: mostPlayedGameType,
+    );
+  }
+
+  UserModel _buildUser(
+    Map<String, String?> userData, {
+    required String userId,
+    required bool isGuest,
+    required AuthProvider authProvider,
+    required int coins,
+    required int diamonds,
+    required GameType preferredGameType,
+    required GameType mostPlayedGameType,
+  }) {
     if (isGuest) {
       return UserModel(
         id: userId,
@@ -142,7 +181,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<DailyBonusStatus> getDailyBonusStatus() async {
-    final current = await getCurrentUser() ?? UserModel.guest();
+    final current = await getStoredCurrentUser() ?? UserModel.guest();
     final response = await _dio.get(
       '/rewards/daily-bonus',
       options: Options(headers: {'X-Player-ID': current.id}),
@@ -154,7 +193,7 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<DailyBonusStatus> claimDailyBonus() async {
-    final current = await getCurrentUser() ?? UserModel.guest();
+    final current = await getStoredCurrentUser() ?? UserModel.guest();
     final response = await _dio.post(
       '/rewards/daily-bonus/claim',
       options: Options(headers: {'X-Player-ID': current.id}),
@@ -635,8 +674,18 @@ class AuthRepositoryImpl implements AuthRepository {
       coins: user.coins,
       diamonds: user.diamonds,
       isGuest: true,
-      syncBackendProfile: true,
+      syncBackendProfile: false,
     );
+
+    unawaited(_syncBackendProfile(
+      id: user.id,
+      authProvider: user.authProvider,
+      providerId: user.id,
+      name: user.name,
+      avatarUrl: user.avatarUrl,
+      country: user.country,
+      countryFlag: user.countryFlag,
+    ));
 
     return user;
   }

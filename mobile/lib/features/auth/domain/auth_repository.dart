@@ -41,6 +41,7 @@ class DailyBonusStatus {
 }
 
 abstract class AuthRepository {
+  Future<UserModel?> getStoredCurrentUser();
   Future<UserModel?> getCurrentUser();
 
   Future<UserModel> signInWithGoogle();

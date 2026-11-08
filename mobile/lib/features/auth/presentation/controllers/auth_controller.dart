@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/auth_repository_impl.dart';
@@ -49,8 +51,22 @@ class AuthController extends StateNotifier<AuthState> {
 
   Future<void> checkCurrentUser() async {
     state = state.copyWith(isLoading: true);
-    final user = await _repository.getCurrentUser();
+    final user = await _repository.getStoredCurrentUser();
     state = AuthState(user: user, isLoading: false);
+    if (user != null) {
+      unawaited(_refreshRestoredUser(user.id));
+    }
+  }
+
+  Future<void> _refreshRestoredUser(String userId) async {
+    try {
+      final refreshed = await _repository.getCurrentUser();
+      if (refreshed != null && state.user?.id == userId) {
+        applyUserUpdate(refreshed);
+      }
+    } catch (error) {
+      debugPrint('Restored profile refresh failed: $error');
+    }
   }
 
   Future<bool> signInWithOAuth(AuthProvider provider) async {

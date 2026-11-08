@@ -33,6 +33,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  late final ProviderSubscription<AuthState> _authSubscription;
+  Timer? _dailyBonusStartupTimer;
+  Timer? _dailyBonusStartupPoll;
   int _currentNavIndex = 0;
   bool _isClaimingReward = false;
   bool _isClaimingDailyBonus = false;
@@ -43,8 +46,66 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _waitForStartupUser();
+    _authSubscription = ref.listenManual<AuthState>(
+      authControllerProvider,
+      _handleAuthStateChanged,
+      fireImmediately: true,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final userId = ref.read(authControllerProvider).user?.id;
+      if (userId != null) _queueDailyBonusCheck(userId);
+    });
     Future.microtask(() {
       ref.read(rewardedAdServiceProvider).preloadAd();
+    });
+  }
+
+  void _handleAuthStateChanged(AuthState? previous, AuthState next) {
+    final user = next.user;
+    if (user == null) {
+      _dailyBonusStartupTimer?.cancel();
+      _dailyBonusPopupPlayerId = null;
+      return;
+    }
+    _dailyBonusStartupPoll?.cancel();
+    _dailyBonusStartupPoll = null;
+    if (_dailyBonusPopupPlayerId == user.id) return;
+
+    _dailyBonusPopupPlayerId = user.id;
+    _queueDailyBonusCheck(user.id);
+  }
+
+  void _waitForStartupUser() {
+    var attempts = 0;
+    _dailyBonusStartupPoll = Timer.periodic(
+      const Duration(milliseconds: 250),
+      (timer) {
+        final authState = ref.read(authControllerProvider);
+        if (authState.user != null) {
+          timer.cancel();
+          _dailyBonusStartupPoll = null;
+          _handleAuthStateChanged(null, authState);
+          return;
+        }
+        if (++attempts >= 40) {
+          timer.cancel();
+          _dailyBonusStartupPoll = null;
+        }
+      },
+    );
+  }
+
+  void _queueDailyBonusCheck(String userId) {
+    _dailyBonusStartupTimer?.cancel();
+    _dailyBonusStartupTimer = Timer(const Duration(milliseconds: 400), () {
+      if (!mounted ||
+          _dailyBonusPopupPlayerId != userId ||
+          ref.read(authControllerProvider).user?.id != userId) {
+        return;
+      }
+      _loadDailyBonusStatus(userId);
     });
   }
 
@@ -78,37 +139,61 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Future<void> _loadDailyBonusStatus() async {
+  Future<void> _loadDailyBonusStatus(String userId) async {
     final status =
         await ref.read(authControllerProvider.notifier).getDailyBonusStatus();
-    if (!mounted || _dailyBonusPopupPlayerId == null) return;
-    final bonusStatus = status ??
-        const DailyBonusStatus(
-          claimedToday: false,
-          streak: 0,
-          rewardDay: 1,
-          rewardAmount: 1000,
-          balance: 0,
-        );
+    if (!mounted ||
+        _dailyBonusPopupPlayerId != userId ||
+        ref.read(authControllerProvider).user?.id != userId) {
+      return;
+    }
+    if (status == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.bgNavy,
+          content: Text(
+            'Daily bonus is unavailable. Check your connection and make sure the game backend is running.',
+            style: GoogleFonts.poppins(color: Colors.white),
+          ),
+          action: SnackBarAction(
+            label: 'RETRY',
+            textColor: AppColors.gold,
+            onPressed: () => _loadDailyBonusStatus(userId),
+          ),
+        ),
+      );
+      return;
+    }
+    final bonusStatus = status;
     if (bonusStatus.claimedToday || _dailyBonusDialogShowing) return;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _dailyBonusDialogShowing) return;
-      _dailyBonusDialogShowing = true;
-      showDialog<DailyBonusStatus>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => DailyBonusDialog(
-          status: bonusStatus,
-          onClaim: _watchAdAndClaimDailyBonus,
-        ),
-      ).then((result) async {
-        _dailyBonusDialogShowing = false;
-        if (mounted && result?.success == true) {
-          await _flyCoinsFromBottomToWallet();
-          await _showDailyBonusCongratulations(result!);
-        }
-      });
+    // The status response arrives after the first Home frame. Showing the
+    // dialog directly avoids waiting for another frame, which may not be
+    // scheduled while the app is idle on a physical device.
+    _dailyBonusDialogShowing = true;
+    showDialog<DailyBonusStatus>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => DailyBonusDialog(
+        status: bonusStatus,
+        onClaim: _watchAdAndClaimDailyBonus,
+      ),
+    ).then((result) async {
+      _dailyBonusDialogShowing = false;
+      if (mounted && result?.success == true) {
+        await _flyCoinsFromBottomToWallet();
+        await _showDailyBonusCongratulations(result!);
+      } else if (mounted && result?.claimedToday == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: AppColors.bgNavy,
+            content: Text(
+              'Today’s bonus was already credited. Your wallet has been refreshed.',
+              style: GoogleFonts.poppins(color: AppColors.gold),
+            ),
+          ),
+        );
+      }
     });
   }
 
@@ -705,13 +790,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   @override
+  void dispose() {
+    _dailyBonusStartupTimer?.cancel();
+    _dailyBonusStartupPoll?.cancel();
+    _authSubscription.close();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
     final user = authState.user;
-    if (user != null && _dailyBonusPopupPlayerId != user.id) {
-      _dailyBonusPopupPlayerId = user.id;
-      Future.microtask(_loadDailyBonusStatus);
-    }
     final playerName = user?.name ?? 'Guest Player';
     final avatarUrl = user?.avatarUrl;
     final countryFlag = user?.countryFlag ?? '🌐';
