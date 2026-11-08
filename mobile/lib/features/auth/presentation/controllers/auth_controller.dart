@@ -270,7 +270,7 @@ class AuthController extends StateNotifier<AuthState> {
         // A duplicate claim is not a new reward. Still reload the wallet so
         // the visible balance matches the backend's current balance.
         await refreshWalletFromBackend();
-        return null;
+        return result.claimedToday ? result : null;
       }
 
       // Match the ad reward flow: the server response is authoritative, and
@@ -283,6 +283,17 @@ class AuthController extends StateNotifier<AuthState> {
       return result;
     } catch (error) {
       debugPrint('Daily bonus claim failed: $error');
+      // The server may have committed the claim even if the response was lost.
+      // Re-read status so the dialog can close and the wallet can reconcile.
+      try {
+        final status = await _repository.getDailyBonusStatus();
+        if (status.claimedToday) {
+          await refreshWalletFromBackend();
+          return status;
+        }
+      } catch (statusError) {
+        debugPrint('Daily bonus status recovery failed: $statusError');
+      }
       return null;
     }
   }

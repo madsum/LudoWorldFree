@@ -1,0 +1,9 @@
+.env
+.env.*
+.dart_tool
+.flutter-plugins-dependencies
+.git
+.idea
+build
+**/build
+**/.DS_Store

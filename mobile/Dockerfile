@@ -4,6 +4,8 @@
 FROM ubuntu:24.04 AS builder
 
 ARG FLUTTER_VERSION=3.47.5
+ARG API_BASE_URL=https://ludo-websocket-backend-7rhnb54xmq-ew.a.run.app/api/v1
+ARG WEBSOCKET_URL=wss://ludo-websocket-backend-7rhnb54xmq-ew.a.run.app/ws
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV FLUTTER_HOME=/opt/flutter
@@ -40,9 +42,12 @@ RUN flutter pub get
 
 # Copy application source
 COPY . .
+RUN touch .env
 
 # Build Flutter web application
-RUN flutter build web --release
+RUN flutter build web --release \
+    --dart-define=API_BASE_URL=${API_BASE_URL} \
+    --dart-define=WEBSOCKET_URL=${WEBSOCKET_URL}
 
 
 # ==========================================
@@ -51,7 +56,8 @@ RUN flutter build web --release
 FROM nginx:alpine
 
 COPY --from=builder /app/build/web /usr/share/nginx/html
+COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 80
+EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]

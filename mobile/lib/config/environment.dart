@@ -1,3 +1,5 @@
+import '../core/constants/app_constants.dart';
+
 enum EnvironmentType { dev, staging, prod }
 
 class Environment {
@@ -8,9 +10,9 @@ class Environment {
       case EnvironmentType.dev:
         return 'http://10.0.2.2:8080/api/v1';
       case EnvironmentType.staging:
-        return 'https://staging-api.ludoworldfree.com/api/v1';
+        return AppConstants.prodApiBaseUrl;
       case EnvironmentType.prod:
-        return 'https://api.ludoworldfree.com/api/v1';
+        return AppConstants.defaultApiBaseUrl;
     }
   }
 
@@ -19,9 +21,9 @@ class Environment {
       case EnvironmentType.dev:
         return 'ws://10.0.2.2:8080/ws';
       case EnvironmentType.staging:
-        return 'wss://staging-api.ludoworldfree.com/ws';
+        return AppConstants.prodWebSocketUrl;
       case EnvironmentType.prod:
-        return 'wss://api.ludoworldfree.com/ws';
+        return AppConstants.defaultWebSocketUrl;
     }
   }
 }

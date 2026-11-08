@@ -34,7 +34,7 @@ class _DailyBonusDialogState extends State<DailyBonusDialog> {
     });
     final result = await widget.onClaim();
     if (!mounted) return;
-    if (result?.success == true) {
+    if (result?.success == true || result?.claimedToday == true) {
       Navigator.of(context).pop(result);
       return;
     }

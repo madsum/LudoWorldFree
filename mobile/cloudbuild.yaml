@@ -1,0 +1,13 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - API_BASE_URL=${_API_BASE_URL}
+      - --build-arg
+      - WEBSOCKET_URL=${_WEBSOCKET_URL}
+      - -t
+      - ${_IMAGE_URI}
+      - .
+images:
+  - ${_IMAGE_URI}
