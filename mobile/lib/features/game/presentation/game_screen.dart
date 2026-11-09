@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +9,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
 import '../../../core/ads/interstitial_ad_service.dart';
+import '../../../core/network/websocket_service.dart';
+import '../../../core/network/api_client.dart';
+import '../../auth/presentation/controllers/auth_controller.dart';
 import '../../../shared/widgets/banner_ad_widget.dart';
 import '../domain/models/game_state.dart';
 import '../domain/models/player_model.dart';
@@ -30,11 +34,79 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Timer? _timeoutNoticeTimer;
   bool _hasTriggeredGameOverAd = false;
   bool _readyToShowVictoryDialog = false;
+  StreamSubscription<Map<String, dynamic>>? _onlineSubscription;
+  void Function()? _removeOnlineStateListener;
+  String? _lastOnlineTurnPlayerId;
+  GameNotifier? _onlineGameNotifier;
+  final Set<String> _reportedDailyGoalGameIds = {};
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final gameNotifier = ref.read(gameControllerProvider.notifier);
+    if (gameNotifier.isOnlineMode) {
+      _onlineGameNotifier = gameNotifier;
+      final webSocketService = ref.read(webSocketServiceProvider);
+      _onlineSubscription = webSocketService.messageStream.listen((message) {
+        if (message['type'] == 'game_state' && message['state'] is Map) {
+          gameNotifier.applyRemoteGameState(
+            Map<String, dynamic>.from(message['state'] as Map),
+          );
+        } else if (message['type'] == 'player_disconnected' ||
+            message['type'] == 'connection_lost') {
+          gameNotifier.pauseTurnTimer();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Your opponent disconnected. Waiting for them to reconnect.'),
+          ));
+        } else if (message['type'] == 'connection_restored') {
+          gameNotifier.resumeTurnTimer();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Connection restored. Syncing the game.'),
+            ));
+          }
+        } else if (message['type'] == 'connection_failed' && mounted) {
+          gameNotifier.pauseTurnTimer();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Connection lost. Return to the lobby and search again.'),
+          ));
+        } else if (message['type'] == 'match_finished' && mounted) {
+          ref.read(webSocketServiceProvider).leaveRoom();
+          gameNotifier.clearOnlineMatch();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Your opponent left the match.'),
+          ));
+          Future<void>.delayed(const Duration(seconds: 2), () {
+            if (mounted) context.go('/home');
+          });
+        }
+      });
+      final initialState = ref.read(gameControllerProvider);
+      _lastOnlineTurnPlayerId = initialState.players.isEmpty
+          ? null
+          : initialState.currentPlayer.id;
+      _removeOnlineStateListener = gameNotifier.addListener((next) {
+        final previousTurnPlayerId = _lastOnlineTurnPlayerId;
+        _lastOnlineTurnPlayerId =
+            next.players.isEmpty ? null : next.currentPlayer.id;
+        if (gameNotifier.isApplyingRemoteState ||
+            !gameNotifier.isOnlineMode ||
+            next.players.length != 2) {
+          return;
+        }
+        final localPlayerId = gameNotifier.onlineLocalPlayerId;
+        if (previousTurnPlayerId == localPlayerId ||
+            next.currentPlayer.id == localPlayerId) {
+          webSocketService.sendGameState(next.toJson());
+        }
+      });
+      if (initialState.players.length == 2 &&
+          initialState.currentPlayer.id == gameNotifier.onlineLocalPlayerId) {
+        webSocketService.sendGameState(initialState.toJson());
+      }
+    }
 
     // Preload Fullscreen Interstitial Ad
     Future.microtask(() {
@@ -54,6 +126,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 player.missedTurns > (previousMissedTurns[player.id] ?? 0),
           );
           if (hasMissedRoll) _showTimeoutNoticeOverlay();
+        }
+
+        if (next.isGameOver && previous?.isGameOver != true) {
+          unawaited(_recordDailyGoalEvents(
+            next,
+            ref.read(gameControllerProvider.notifier),
+          ));
         }
 
         // Immediately trigger Fullscreen Ad upon Game Over before Victory Dialog
@@ -97,11 +176,63 @@ class _GameScreenState extends ConsumerState<GameScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _onlineSubscription?.cancel();
+    _removeOnlineStateListener?.call();
+    final gameNotifier = _onlineGameNotifier;
+    _onlineGameNotifier = null;
+    if (gameNotifier?.isOnlineMode == true) {
+      final playerId = ref.read(authControllerProvider).user?.id;
+      ref.read(webSocketServiceProvider).leaveRoom();
+      gameNotifier!.clearOnlineMatch();
+      if (playerId != null) unawaited(_cancelOnlineMatch(playerId));
+    }
     _timeoutNoticeTimer?.cancel();
     ref
         .read(gameControllerProvider.notifier)
         .pauseTurnTimer(updateGameState: false);
     super.dispose();
+  }
+
+  Future<void> _cancelOnlineMatch(String playerId) async {
+    try {
+      await ref.read(apiClientProvider).post(
+            '/matchmaking/cancel',
+            options: Options(headers: {'X-Player-ID': playerId}),
+          );
+    } catch (error) {
+      debugPrint('Could not clear completed online match: $error');
+    }
+  }
+
+  Future<void> _recordDailyGoalEvents(
+    GameState gameState,
+    GameNotifier gameNotifier,
+  ) async {
+    final user = ref.read(authControllerProvider).user;
+    final gameId = gameNotifier.currentGameId;
+    if (user == null || gameId.isEmpty || !_reportedDailyGoalGameIds.add(gameId)) {
+      return;
+    }
+    final events = <String>[
+      gameNotifier.isOnlineMode ? 'ONLINE_GAME_COMPLETED' : 'GAME_COMPLETED',
+    ];
+    if (gameState.winnerIds.contains(user.id)) events.add('GAME_WON');
+    final dio = ref.read(apiClientProvider);
+    for (final eventType in events) {
+      try {
+        await dio.post(
+          '/daily-goals/events',
+          data: {
+            'eventId': '${gameId}_${user.id}_$eventType',
+            'eventType': eventType,
+            'gameId': gameId,
+          },
+          options: Options(headers: {'X-Player-ID': user.id}),
+        );
+      } catch (error) {
+        debugPrint('Daily goal progress could not be saved: $error');
+      }
+    }
   }
 
   @override
@@ -113,6 +244,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         botCount == gameState.players.length - 1 && botCount > 0;
     final isTwoPlayerMode = gameState.players.length == 2;
     final isHumanRollWindow = !gameState.isGameOver &&
+        gameState.isLocalPlayerTurn &&
         !gameState.isCurrentPlayerBot &&
         gameState.turnPhase == GameTurnPhase.rollDice;
     final humanIndex = gameState.players.indexWhere((player) => !player.isBot);

@@ -1,133 +1,619 @@
 package com.ludoworldfree.backend.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ludoworldfree.backend.dto.MatchmakingRequestDto;
 import com.ludoworldfree.backend.dto.MatchmakingResponseDto;
 import com.ludoworldfree.backend.model.GoldTransaction;
+import com.ludoworldfree.backend.model.MatchmakingTicket;
+import com.ludoworldfree.backend.model.OnlineMatchRoom;
+import com.ludoworldfree.backend.model.OnlineMatchStateEvent;
 import com.ludoworldfree.backend.model.PlayerWallet;
 import com.ludoworldfree.backend.repository.GoldTransactionRepository;
+import com.ludoworldfree.backend.repository.MatchmakingTicketRepository;
+import com.ludoworldfree.backend.repository.OnlineMatchRoomRepository;
+import com.ludoworldfree.backend.repository.OnlineMatchStateEventRepository;
 import com.ludoworldfree.backend.repository.PlayerWalletRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.security.SecureRandom;
 
 @Service
 public class MatchmakingService {
-
     private static final Logger log = LoggerFactory.getLogger(MatchmakingService.class);
+    private static final List<OnlineMatchRoom.Status> ACTIVE_STATUSES =
+            List.of(OnlineMatchRoom.Status.MATCHED, OnlineMatchRoom.Status.READY);
 
+    public record RoomSnapshot(
+            String roomId,
+            OnlineMatchRoom.Status status,
+            UUID playerAId,
+            UUID playerBId,
+            boolean playerAConnected,
+            boolean playerBConnected,
+            UUID turnOwnerId,
+            long stateRevision,
+            UUID latestStateSenderId,
+            String latestStateJson) {
+        public boolean isConnected(UUID playerId) {
+            if (playerAId.equals(playerId)) return playerAConnected;
+            return playerBId.equals(playerId) && playerBConnected;
+        }
+
+        public UUID opponentOf(UUID playerId) {
+            if (playerAId.equals(playerId)) return playerBId;
+            if (playerBId.equals(playerId)) return playerAId;
+            return null;
+        }
+    }
+
+    private final MatchmakingTicketRepository ticketRepository;
+    private final OnlineMatchRoomRepository roomRepository;
+    private final OnlineMatchStateEventRepository stateEventRepository;
     private final PlayerWalletRepository walletRepository;
     private final GoldTransactionRepository transactionRepository;
+    private final ObjectMapper objectMapper;
+    private final SecureRandom diceRandom = new SecureRandom();
 
-    private final Map<UUID, MatchmakingRequestDto> queue = new ConcurrentHashMap<>();
-    private final Map<UUID, MatchmakingResponseDto> matchedResults = new ConcurrentHashMap<>();
-
-    public MatchmakingService(
-            PlayerWalletRepository walletRepository,
-            GoldTransactionRepository transactionRepository) {
+    public MatchmakingService(MatchmakingTicketRepository ticketRepository,
+                              OnlineMatchRoomRepository roomRepository,
+                              OnlineMatchStateEventRepository stateEventRepository,
+                              PlayerWalletRepository walletRepository,
+                              GoldTransactionRepository transactionRepository,
+                              ObjectMapper objectMapper) {
+        this.ticketRepository = ticketRepository;
+        this.roomRepository = roomRepository;
+        this.stateEventRepository = stateEventRepository;
         this.walletRepository = walletRepository;
         this.transactionRepository = transactionRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
-    public synchronized MatchmakingResponseDto joinQueue(MatchmakingRequestDto request) {
+    public MatchmakingResponseDto joinQueue(MatchmakingRequestDto request) {
         UUID playerId = request.getPlayerId();
+        if (playerId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A player ID is required.");
+        }
+        if (request.getEntryFee() < 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Entry fee cannot be negative.");
+        }
 
-        // 1. Check if already matched
-        if (matchedResults.containsKey(playerId)) {
-            MatchmakingResponseDto result = matchedResults.get(playerId);
-            log.info("⚔️ [Matchmaking] Returning existing match result for Player ID: {} -> Room: {}", playerId, result.getRoomId());
+        OnlineMatchRoom activeRoom = findActiveRoom(playerId);
+        if (activeRoom != null) return responseFor(activeRoom, playerId);
+
+        var existingTicket = ticketRepository.findByPlayerId(playerId);
+        if (existingTicket.isPresent()) {
+            MatchmakingTicket ticket = existingTicket.get();
+            if (ticket.getEntryFee() == request.getEntryFee()) {
+                return searchingResponse();
+            }
+            ticketRepository.delete(ticket);
+        }
+
+        MatchmakingTicket currentTicket = new MatchmakingTicket(
+                playerId,
+                nonBlank(request.getDisplayName(), "Player"),
+                request.getAvatarUrl(),
+                nonBlank(request.getCountry(), "World"),
+                nonBlank(request.getCountryFlag(), "🌐"),
+                request.getEntryFee());
+
+        List<MatchmakingTicket> candidates = ticketRepository.findWaitingCandidateForUpdate(
+                request.getEntryFee(), playerId, PageRequest.of(0, 1));
+        if (candidates.isEmpty()) {
+            PlayerWallet wallet = walletRepository.findByPlayerId(playerId)
+                    .orElseGet(() -> walletRepository.save(new PlayerWallet(playerId, 2000L)));
+            if (wallet.getBalance() < request.getEntryFee()) return insufficientFunds();
+            ticketRepository.save(currentTicket);
+            return searchingResponse();
+        }
+
+        MatchmakingTicket waitingTicket = candidates.getFirst();
+        Map<UUID, PlayerWallet> wallets = lockWallets(playerId, waitingTicket.getPlayerId());
+        PlayerWallet currentWallet = wallets.get(playerId);
+        PlayerWallet waitingWallet = wallets.get(waitingTicket.getPlayerId());
+        if (currentWallet.getBalance() < request.getEntryFee()) return insufficientFunds();
+        if (waitingWallet.getBalance() < request.getEntryFee()) {
+            ticketRepository.delete(waitingTicket);
+            ticketRepository.save(currentTicket);
+            return searchingResponse();
+        }
+
+        String roomId = UUID.randomUUID().toString();
+        deductEntryFee(currentWallet, request.getEntryFee(), roomId);
+        deductEntryFee(waitingWallet, request.getEntryFee(), roomId);
+        transactionRepository.flush();
+
+        OnlineMatchRoom room = new OnlineMatchRoom(
+                roomId, waitingTicket, currentTicket, request.getEntryFee());
+        roomRepository.saveAndFlush(room);
+        ticketRepository.delete(waitingTicket);
+        log.info("Online match {} created for {} and {}", roomId,
+                waitingTicket.getPlayerId(), playerId);
+        return responseFor(room, playerId);
+    }
+
+    @Transactional(readOnly = true)
+    public MatchmakingResponseDto checkStatus(UUID playerId) {
+        OnlineMatchRoom activeRoom = findActiveRoom(playerId);
+        if (activeRoom != null) return responseFor(activeRoom, playerId);
+        return searchingResponse();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isPlayerInRoom(UUID playerId, String roomId) {
+        if (playerId == null || roomId == null) return false;
+        return roomRepository.findById(roomId)
+                .filter(room -> ACTIVE_STATUSES.contains(room.getStatus()) && room.contains(playerId))
+                .isPresent();
+    }
+
+    @Transactional
+    public void cancelQueue(UUID playerId) {
+        ticketRepository.deleteById(playerId);
+        List<OnlineMatchRoom> rooms = roomRepository.findActiveForPlayerForUpdate(
+                playerId, ACTIVE_STATUSES);
+        for (OnlineMatchRoom room : rooms) cancelOrFinish(room);
+    }
+
+    @Transactional
+    public void finishRoom(String roomId) {
+        OnlineMatchRoom room = roomRepository.findForUpdate(roomId).orElse(null);
+        if (room == null || room.getStatus() == OnlineMatchRoom.Status.FINISHED
+                || room.getStatus() == OnlineMatchRoom.Status.CANCELLED) return;
+        if (room.getStatus() == OnlineMatchRoom.Status.MATCHED) {
+            refundRoom(room);
+            room.cancel();
+        } else {
+            room.finish();
+        }
+        roomRepository.save(room);
+    }
+
+    @Transactional
+    public RoomSnapshot connectPlayer(String roomId, UUID playerId) {
+        OnlineMatchRoom room = roomRepository.findForUpdate(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Match room not found."));
+        if (!room.contains(playerId) || !ACTIVE_STATUSES.contains(room.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This player cannot join that room.");
+        }
+        room.connect(playerId);
+        return snapshot(roomRepository.save(room));
+    }
+
+    @Transactional
+    public RoomSnapshot disconnectPlayer(String roomId, UUID playerId) {
+        OnlineMatchRoom room = roomRepository.findForUpdate(roomId).orElse(null);
+        if (room == null || !room.contains(playerId)) return null;
+        room.disconnect(playerId);
+        return snapshot(roomRepository.save(room));
+    }
+
+    @Transactional(readOnly = true)
+    public RoomSnapshot getRoomSnapshot(String roomId) {
+        return roomRepository.findById(roomId).map(MatchmakingService::snapshot).orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<OnlineMatchStateEvent> getRoomEventsSince(String roomId, long revision) {
+        return stateEventRepository.findByRoomIdAndRevisionGreaterThanOrderByRevisionAsc(
+                roomId, revision);
+    }
+
+    @Transactional
+    public RoomSnapshot recordGameState(String roomId, UUID senderId,
+                                        Set<UUID> statePlayerIds,
+                                        UUID nextTurnOwnerId,
+                                        int rollOpportunityId,
+                                        Integer diceValue,
+                                        boolean isDiceRolling,
+                                        String stateJson) {
+        OnlineMatchRoom room = roomRepository.findForUpdate(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Match room not found."));
+        Set<UUID> roomPlayerIds = Set.of(room.getPlayerAId(), room.getPlayerBId());
+        if (room.getStatus() != OnlineMatchRoom.Status.READY
+                || !roomPlayerIds.equals(statePlayerIds)
+                || !senderId.equals(room.getTurnOwnerId())
+                || !roomPlayerIds.contains(nextTurnOwnerId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This player cannot submit the current game state.");
+        }
+        if (!isDiceRolling && diceValue != null
+                && !room.matchesAuthoritativeRoll(senderId, rollOpportunityId, diceValue)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "The submitted dice result was not issued by the server.");
+        }
+        validatePawnTransition(room, senderId, nextTurnOwnerId, diceValue,
+                rollOpportunityId, isDiceRolling, stateJson);
+        room.recordState(senderId, nextTurnOwnerId, stateJson);
+        roomRepository.save(room);
+        stateEventRepository.save(new OnlineMatchStateEvent(
+                roomId, room.getStateRevision(), senderId, stateJson));
+        return snapshot(room);
+    }
+
+    private void validatePawnTransition(OnlineMatchRoom room, UUID senderId,
+                                        UUID nextTurnOwnerId, Integer diceValue,
+                                        int rollOpportunityId,
+                                        boolean isDiceRolling, String stateJson) {
+        try {
+            JsonNode next = objectMapper.readTree(stateJson);
+            JsonNode previous = room.getLatestStateJson() == null
+                    ? null : objectMapper.readTree(room.getLatestStateJson());
+            Map<String, Integer> before = pawnPositions(previous);
+            Map<String, Integer> after = pawnPositions(next);
+            if (after.size() != 8 || (!before.isEmpty() && !before.keySet().equals(after.keySet()))) {
+                throw invalidState();
+            }
+            if (next.path("isGameOver").asBoolean() && !hasFinishedPlayer(next)) {
+                throw invalidState();
+            }
+            if (previous == null) {
+                if (!room.getTurnOwnerId().equals(senderId)
+                        || !senderId.equals(activePlayerId(next))
+                        || !hasExpectedOnlineSeats(next, room)) throw invalidState();
+                if (after.values().stream().anyMatch(step -> step != -1)) throw invalidState();
+                return;
+            }
+            if (before.size() != 8) throw invalidState();
+
+            List<String> changed = before.keySet().stream()
+                    .filter(key -> !before.get(key).equals(after.get(key))).toList();
+            if (changed.isEmpty()) {
+                UUID nextActivePlayer = activePlayerId(next);
+                if (nextActivePlayer == null || !nextActivePlayer.equals(nextTurnOwnerId)) {
+                    throw invalidState();
+                }
+                if (nextTurnOwnerId.equals(senderId)) {
+                    if (next.path("isGameOver").asBoolean()
+                            && hasFinishedPlayer(next)) return;
+                    if ("turnEnded".equals(next.path("turnPhase").asText())) {
+                        if (diceValue == null || !room.matchesAuthoritativeRoll(
+                                senderId, rollOpportunityId, diceValue)
+                                || hasLegalMove(previous, senderId, diceValue)) {
+                            throw invalidState();
+                        }
+                    }
+                    return;
+                }
+                if (!nextTurnOwnerId.equals(room.opponentOf(senderId))
+                        || !"rollDice".equals(next.path("turnPhase").asText())) {
+                    throw invalidState();
+                }
+                int transitionDice = diceValue != null ? diceValue
+                        : previous == null ? Integer.MIN_VALUE
+                        : previous.path("diceValue").asInt(Integer.MIN_VALUE);
+                if (!room.hasAuthoritativeRoll(senderId, transitionDice)) {
+                    throw invalidState();
+                }
+                boolean noMoveTurnEnd = previous != null
+                        && "turnEnded".equals(previous.path("turnPhase").asText())
+                        && !hasLegalMove(previous, senderId, transitionDice)
+                        && previous.path("diceValue").asInt(Integer.MIN_VALUE) == transitionDice;
+                boolean completedMoveTurnEnd = previous != null
+                        && senderId.equals(activePlayerId(previous))
+                        && "animating".equals(previous.path("turnPhase").asText())
+                        && previous.path("lastMoveEvent").isObject()
+                        && previous.path("diceValue").asInt(Integer.MIN_VALUE) == transitionDice
+                        && transitionDice != 6
+                        && !previous.path("lastCaptureEvent").isObject()
+                        && previous.path("lastMoveEvent").path("toStep").asInt(-1) != 56;
+                if (!noMoveTurnEnd && !completedMoveTurnEnd) throw invalidState();
+                return;
+            }
+            if (isDiceRolling) throw invalidState();
+            if (changed.size() > 2 || diceValue == null || diceValue < 1 || diceValue > 6) {
+                throw invalidState();
+            }
+
+            String movedPawn = changed.stream()
+                    .filter(key -> key.startsWith(senderId + ":"))
+                    .findFirst().orElseThrow(this::invalidState);
+            if (changed.stream().filter(key -> key.startsWith(senderId + ":")).count() != 1) {
+                throw invalidState();
+            }
+            int from = before.get(movedPawn);
+            int to = after.get(movedPawn);
+            int expected = from == -1 && diceValue == 6 ? 0
+                    : from >= 0 && from <= 55 && from + diceValue <= 56
+                            ? from + diceValue : Integer.MIN_VALUE;
+            if (to != expected) throw invalidState();
+
+            List<String> captured = changed.stream()
+                    .filter(key -> !key.startsWith(senderId + ":")).toList();
+            if (captured.size() > 1) throw invalidState();
+            if (!captured.isEmpty()) {
+                if (from < 0 || to > 50
+                        || !isLegalCapture(previous, next, senderId, to, captured.getFirst())) {
+                    throw invalidState();
+                }
+            } else if (from >= 0 && to <= 50 && hasCapturablePawn(previous, senderId, to)) {
+                throw invalidState();
+            }
+            boolean earnsExtraTurn = diceValue == 6 || !captured.isEmpty() || to == 56;
+            UUID expectedTurnOwner = "animating".equals(next.path("turnPhase").asText())
+                    || next.path("isGameOver").asBoolean() || earnsExtraTurn
+                    ? senderId : room.opponentOf(senderId);
+            if (!room.getTurnOwnerId().equals(senderId)
+                    || !nextTurnOwnerId.equals(expectedTurnOwner)) {
+                throw invalidState();
+            }
+            if (next.path("isGameOver").asBoolean() && !hasFinishedPlayer(next)) {
+                throw invalidState();
+            }
+        } catch (IllegalStateException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw invalidState();
+        }
+    }
+
+    private UUID activePlayerId(JsonNode state) {
+        JsonNode players = state.path("players");
+        int currentIndex = state.path("currentTurnIndex").asInt(-1);
+        if (!players.isArray() || currentIndex < 0 || currentIndex >= players.size()) return null;
+        try {
+            return UUID.fromString(players.get(currentIndex).path("id").asText());
+        } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private boolean hasExpectedOnlineSeats(JsonNode state, OnlineMatchRoom room) {
+        JsonNode players = state.path("players");
+        if (!players.isArray() || players.size() != 2) return false;
+        UUID first = room.getPlayerAId().toString().compareTo(room.getPlayerBId().toString()) < 0
+                ? room.getPlayerAId() : room.getPlayerBId();
+        UUID second = room.opponentOf(first);
+        return first.toString().equals(playerIdForColor(state, "red"))
+                && second.toString().equals(playerIdForColor(state, "yellow"));
+    }
+
+    private String playerIdForColor(JsonNode state, String color) {
+        for (JsonNode player : state.path("players")) {
+            if (color.equals(player.path("color").asText())) return player.path("id").asText();
+        }
+        return "";
+    }
+
+    private boolean hasFinishedPlayer(JsonNode state) {
+        for (JsonNode player : state.path("players")) {
+            if (player.path("pawns").isArray() && player.path("pawns").size() == 4) {
+                boolean allFinished = true;
+                for (JsonNode pawn : player.path("pawns")) {
+                    if (pawn.path("stepCount").asInt(-1) != 56) allFinished = false;
+                }
+                if (allFinished) return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasLegalMove(JsonNode state, UUID playerId, int diceValue) {
+        if (diceValue < 1 || diceValue > 6) return false;
+        for (JsonNode player : state.path("players")) {
+            if (!playerId.toString().equals(player.path("id").asText())) continue;
+            for (JsonNode pawn : player.path("pawns")) {
+                int step = pawn.path("stepCount").asInt(-1);
+                if (step == -1 && diceValue == 6) return true;
+                if (step >= 0 && step <= 55 && step + diceValue <= 56) return true;
+            }
+            return false;
+        }
+        return false;
+    }
+
+    private Map<String, Integer> pawnPositions(JsonNode state) {
+        Map<String, Integer> positions = new LinkedHashMap<>();
+        if (state == null || !state.path("players").isArray()) return positions;
+        for (JsonNode player : state.path("players")) {
+            String playerId = player.path("id").asText("");
+            String color = player.path("color").asText("");
+            JsonNode pawns = player.path("pawns");
+            if (playerId.isBlank()
+                    || !Set.of("red", "green", "yellow", "blue").contains(color)
+                    || !pawns.isArray() || pawns.size() != 4) {
+                return Map.of();
+            }
+            for (JsonNode pawn : pawns) {
+                int pawnId = pawn.path("id").asInt(-1);
+                int step = pawn.path("stepCount").asInt(Integer.MIN_VALUE);
+                if (pawnId < 0 || pawnId > 3 || step < -1 || step > 56) return Map.of();
+                positions.put(playerId + ":" + color + ":" + pawnId, step);
+            }
+        }
+        return positions;
+    }
+
+    private boolean isLegalCapture(JsonNode previous, JsonNode next, UUID moverId, int targetStep,
+                                   String capturedKey) {
+        String[] parts = capturedKey.split(":");
+        if (parts.length != 3 || parts[0].equals(moverId.toString())) return false;
+        String color = colorForPlayer(previous, moverId);
+        String opponentColor = parts[1];
+        int target = globalTile(color, targetStep);
+        int previousStep = pawnPositions(previous).getOrDefault(capturedKey, -1);
+        int nextStep = pawnPositions(next).getOrDefault(capturedKey, Integer.MIN_VALUE);
+        return target >= 0 && !isSafeTile(target)
+                && previousStep >= 0 && previousStep <= 50 && nextStep == -1
+                && globalTile(opponentColor, previousStep) == target
+                && countOpponentPawnsOnTile(previous, moverId, target) == 1;
+    }
+
+    private boolean hasCapturablePawn(JsonNode state, UUID moverId, int targetStep) {
+        int target = globalTile(colorForPlayer(state, moverId), targetStep);
+        return target >= 0 && !isSafeTile(target)
+                && countOpponentPawnsOnTile(state, moverId, target) == 1;
+    }
+
+    private int countOpponentPawnsOnTile(JsonNode state, UUID moverId, int target) {
+        int count = 0;
+        for (JsonNode player : state.path("players")) {
+            if (moverId.toString().equals(player.path("id").asText())) continue;
+            String color = player.path("color").asText();
+            for (JsonNode pawn : player.path("pawns")) {
+                int step = pawn.path("stepCount").asInt(-1);
+                if (step >= 0 && step <= 50 && globalTile(color, step) == target) count++;
+            }
+        }
+        return count;
+    }
+
+    private String colorForPlayer(JsonNode state, UUID playerId) {
+        for (JsonNode player : state.path("players")) {
+            if (playerId.toString().equals(player.path("id").asText())) {
+                return player.path("color").asText("");
+            }
+        }
+        return "";
+    }
+
+    private int globalTile(String color, int step) {
+        if (step < 0 || step > 50) return -1;
+        int entry = switch (color) {
+            case "red" -> 1;
+            case "green" -> 14;
+            case "yellow" -> 27;
+            case "blue" -> 40;
+            default -> -100;
+        };
+        return entry < 0 ? -1 : (entry + step) % 52;
+    }
+
+    private boolean isSafeTile(int tile) {
+        return Set.of(1, 14, 27, 40, 9, 22, 35, 48).contains(tile);
+    }
+
+    private IllegalStateException invalidState() {
+        return new IllegalStateException("The submitted board transition is invalid.");
+    }
+
+    @Transactional
+    public int issueDiceRoll(String roomId, UUID playerId, int rollOpportunityId) {
+        if (rollOpportunityId <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "A valid roll opportunity is required.");
+        }
+        OnlineMatchRoom room = roomRepository.findForUpdate(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Match room not found."));
+        try {
+            int diceValue = diceRandom.nextInt(6) + 1;
+            int result = room.issueDiceRoll(playerId, rollOpportunityId, diceValue);
+            roomRepository.save(room);
             return result;
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
         }
-
-        // 2. Check and deduct entry fee
-        long entryFee = request.getEntryFee();
-        PlayerWallet wallet = walletRepository.findByPlayerId(playerId)
-                .orElseGet(() -> walletRepository.save(new PlayerWallet(playerId, 2000L)));
-
-        if (wallet.getBalance() < entryFee) {
-            log.warn("⚠️ [Matchmaking] Player ID: {} has insufficient gold balance ({} < {})", playerId, wallet.getBalance(), entryFee);
-            return new MatchmakingResponseDto(false, null, null, null, null, null, null, "Insufficient gold coins for entry fee.");
-        }
-
-        // Add to queue
-        queue.put(playerId, request);
-        log.info("⚔️ [Matchmaking] Player ID: {} ({}) joined queue. Active Queue Size: {}", playerId, request.getDisplayName(), queue.size());
-
-        // 3. Matchmaking logic: If 2 or more players in queue, match them!
-        if (queue.size() >= 2) {
-            Iterator<UUID> iterator = queue.keySet().iterator();
-            UUID playerAId = iterator.next();
-            UUID playerBId = iterator.next();
-
-            MatchmakingRequestDto playerA = queue.remove(playerAId);
-            MatchmakingRequestDto playerB = queue.remove(playerBId);
-
-            String roomId = "room_online_" + System.currentTimeMillis() + "_" + (System.nanoTime() % 1000);
-
-            // Deduct entry fees
-            deductEntryFee(playerAId, entryFee, roomId);
-            deductEntryFee(playerBId, entryFee, roomId);
-
-            // Create match results for both players
-            MatchmakingResponseDto resultForA = new MatchmakingResponseDto(
-                    true, roomId, playerB.getPlayerId(), playerB.getDisplayName(),
-                    playerB.getAvatarUrl(), playerB.getCountry(), playerB.getCountryFlag(), "Match Found!"
-            );
-
-            MatchmakingResponseDto resultForB = new MatchmakingResponseDto(
-                    true, roomId, playerA.getPlayerId(), playerA.getDisplayName(),
-                    playerA.getAvatarUrl(), playerA.getCountry(), playerA.getCountryFlag(), "Match Found!"
-            );
-
-            matchedResults.put(playerAId, resultForA);
-            matchedResults.put(playerBId, resultForB);
-
-            log.info("🎉 [Match Found] Room: {} | Player A: {} ({}) vs Player B: {} ({})",
-                    roomId, playerA.getDisplayName(), playerAId, playerB.getDisplayName(), playerBId);
-
-            return resultForA.getOpponentId().equals(playerBId) ? resultForA : resultForB;
-        }
-
-        // Single player in queue: return waiting response
-        return new MatchmakingResponseDto(false, null, null, null, null, null, null, "Searching for online players...");
     }
 
-    public synchronized MatchmakingResponseDto checkStatus(UUID playerId) {
-        if (matchedResults.containsKey(playerId)) {
-            return matchedResults.get(playerId);
+    @Transactional(readOnly = true)
+    public List<RoomSnapshot> getActiveRoomsForPlayer(UUID playerId) {
+        return roomRepository.findActiveForPlayer(playerId, ACTIVE_STATUSES).stream()
+                .map(MatchmakingService::snapshot).toList();
+    }
+
+    @Transactional
+    public void touchPlayer(String roomId, UUID playerId) {
+        OnlineMatchRoom room = roomRepository.findForUpdate(roomId).orElse(null);
+        if (room == null || !room.contains(playerId)
+                || !ACTIVE_STATUSES.contains(room.getStatus())) return;
+        room.touch();
+        roomRepository.save(room);
+    }
+
+    private OnlineMatchRoom findActiveRoom(UUID playerId) {
+        List<OnlineMatchRoom> rooms = roomRepository.findActiveForPlayer(playerId, ACTIVE_STATUSES);
+        return rooms.isEmpty() ? null : rooms.getFirst();
+    }
+
+    private Map<UUID, PlayerWallet> lockWallets(UUID firstPlayerId, UUID secondPlayerId) {
+        List<UUID> playerIds = new ArrayList<>(List.of(firstPlayerId, secondPlayerId));
+        playerIds.sort(Comparator.comparing(UUID::toString));
+        Map<UUID, PlayerWallet> wallets = new LinkedHashMap<>();
+        for (UUID playerId : playerIds) {
+            PlayerWallet wallet = walletRepository.findByPlayerIdForUpdate(playerId)
+                    .orElseGet(() -> walletRepository.saveAndFlush(new PlayerWallet(playerId, 2000L)));
+            wallets.put(playerId, wallet);
         }
-        return new MatchmakingResponseDto(false, null, null, null, null, null, null, "Searching for online players...");
+        return wallets;
     }
 
-    public synchronized void cancelQueue(UUID playerId) {
-        queue.remove(playerId);
-        matchedResults.remove(playerId);
-        log.info("🚪 [Matchmaking] Player ID: {} left the queue.", playerId);
+    private void deductEntryFee(PlayerWallet wallet, long entryFee, String roomId) {
+        long before = wallet.getBalance();
+        long after = before - entryFee;
+        wallet.setBalance(after);
+        walletRepository.save(wallet);
+        transactionRepository.save(new GoldTransaction(
+                wallet.getPlayerId(), GoldTransaction.TransactionType.SPEND,
+                entryFee, before, after, roomId, "MATCHMAKING_ENTRY_FEE"));
     }
 
-    private void deductEntryFee(UUID playerId, long entryFee, String roomId) {
-        PlayerWallet wallet = walletRepository.findByPlayerId(playerId).orElse(null);
-        if (wallet != null && wallet.getBalance() >= entryFee) {
+    private void refundRoom(OnlineMatchRoom room) {
+        Map<UUID, PlayerWallet> wallets = lockWallets(room.getPlayerAId(), room.getPlayerBId());
+        for (PlayerWallet wallet : wallets.values()) {
             long before = wallet.getBalance();
-            long after = before - entryFee;
+            long after = before + room.getEntryFee();
             wallet.setBalance(after);
             walletRepository.save(wallet);
-
-            GoldTransaction transaction = new GoldTransaction(
-                    playerId,
-                    GoldTransaction.TransactionType.SPEND,
-                    entryFee,
-                    before,
-                    after,
-                    roomId,
-                    "MATCHMAKING_ENTRY_FEE"
-            );
-            transactionRepository.save(transaction);
-            log.info("🪙 [Entry Fee Deducted] Player ID: {} | Deducted: {} | Balance: {} -> {}", playerId, entryFee, before, after);
+            transactionRepository.save(new GoldTransaction(
+                    wallet.getPlayerId(), GoldTransaction.TransactionType.REFUND,
+                    room.getEntryFee(), before, after,
+                    room.getRoomId(), "MATCHMAKING_CANCELLED"));
         }
+    }
+
+    private void cancelOrFinish(OnlineMatchRoom room) {
+        if (room.getStatus() == OnlineMatchRoom.Status.MATCHED) {
+            refundRoom(room);
+            room.cancel();
+        } else {
+            room.finish();
+        }
+        roomRepository.save(room);
+    }
+
+    private static MatchmakingResponseDto responseFor(OnlineMatchRoom room, UUID playerId) {
+        UUID opponentId = room.opponentOf(playerId);
+        if (opponentId == null) return searchingResponse();
+        return new MatchmakingResponseDto(
+                true, room.getRoomId(), opponentId,
+                room.nameOf(opponentId), room.avatarOf(opponentId),
+                room.countryOf(opponentId), room.flagOf(opponentId), "Match Found!");
+    }
+
+    private static RoomSnapshot snapshot(OnlineMatchRoom room) {
+        return new RoomSnapshot(room.getRoomId(), room.getStatus(),
+                room.getPlayerAId(), room.getPlayerBId(),
+                room.isPlayerAConnected(), room.isPlayerBConnected(),
+                room.getTurnOwnerId(), room.getStateRevision(),
+                room.getLatestStateSenderId(), room.getLatestStateJson());
+    }
+
+    private static MatchmakingResponseDto searchingResponse() {
+        return new MatchmakingResponseDto(false, null, null, null, null, null, null,
+                "Searching for online players...");
+    }
+
+    private static MatchmakingResponseDto insufficientFunds() {
+        return new MatchmakingResponseDto(false, null, null, null, null, null, null,
+                "Insufficient gold coins for entry fee.");
+    }
+
+    private static String nonBlank(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 }

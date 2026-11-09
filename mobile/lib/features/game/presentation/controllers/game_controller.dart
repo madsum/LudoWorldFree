@@ -33,8 +33,72 @@ class GameNotifier extends StateNotifier<GameState> {
   bool _isTurnProcessing = false;
   bool _isDisposed = false;
   bool _turnTimerPaused = false;
+  String? _onlineRoomId;
+  String? _onlineLocalPlayerId;
+  Future<int> Function(int rollOpportunityId)? _onlineDiceRoller;
+  bool _applyingRemoteState = false;
+  String _currentGameId = '';
 
   GameNotifier() : super(const GameState(players: []));
+
+  String? get onlineRoomId => _onlineRoomId;
+  String? get onlineLocalPlayerId => _onlineLocalPlayerId;
+  bool get isOnlineMode => _onlineRoomId != null;
+  bool get isApplyingRemoteState => _applyingRemoteState;
+  String get currentGameId => _currentGameId;
+
+  void configureOnlineMatch({
+    required String roomId,
+    required String playerId,
+    required Future<int> Function(int rollOpportunityId) requestDiceRoll,
+  }) {
+    _onlineRoomId = roomId;
+    _onlineLocalPlayerId = playerId;
+    _onlineDiceRoller = requestDiceRoll;
+    state = state.copyWith(localPlayerId: playerId);
+  }
+
+  void clearOnlineMatch() {
+    _onlineRoomId = null;
+    _onlineLocalPlayerId = null;
+    _onlineDiceRoller = null;
+    state = state.copyWith(clearLocalPlayerId: true);
+  }
+
+  void applyRemoteGameState(Map<String, dynamic> json) {
+    if (!isOnlineMode) return;
+    final remote = GameState.fromJson(json, localPlayerId: _onlineLocalPlayerId);
+    if (remote.players.length != 2 || remote.players.every((player) => player.isBot)) {
+      return;
+    }
+    _botTimer?.cancel();
+    _cancelTurnTimer();
+    _cancelPawnSelectionTimer();
+    _matchEpoch++;
+    _isTurnProcessing = false;
+    _sixSequenceSnapshot = null;
+    _turnTimeRemaining = Duration(
+      milliseconds: remote.turnTimerRemainingMilliseconds,
+    );
+    _pawnSelectionTimeRemaining = Duration(
+      milliseconds: remote.turnTimerRemainingMilliseconds,
+    );
+    _applyingRemoteState = true;
+    state = remote;
+    _applyingRemoteState = false;
+
+    if (remote.isGameOver || remote.currentPlayer.id != _onlineLocalPlayerId) return;
+    if (remote.turnPhase == GameTurnPhase.rollDice) {
+      _scheduleTurnTimeout(Duration(
+        milliseconds: remote.turnTimerRemainingMilliseconds,
+      ));
+    } else if (remote.turnPhase == GameTurnPhase.selectPawn &&
+        remote.movablePawns.length > 1) {
+      _schedulePawnSelectionTimeoutWithRemaining(Duration(
+        milliseconds: remote.turnTimerRemainingMilliseconds,
+      ));
+    }
+  }
 
   @override
   void dispose() {
@@ -49,6 +113,8 @@ class GameNotifier extends StateNotifier<GameState> {
   void startNewGame({
     required List<PlayerModel> players,
   }) {
+    _currentGameId =
+        '${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(1 << 32)}';
     _botTimer?.cancel();
     _cancelTurnTimer();
     _cancelPawnSelectionTimer();
@@ -72,13 +138,21 @@ class GameNotifier extends StateNotifier<GameState> {
         )
         .toList();
     final humanTurnIndex = freshPlayers.indexWhere((player) => !player.isBot);
-    final startingTurnIndex = humanTurnIndex < 0 ? 0 : humanTurnIndex;
+    var startingTurnIndex = humanTurnIndex < 0 ? 0 : humanTurnIndex;
+    if (isOnlineMode && freshPlayers.length == 2) {
+      // Matchmaking chooses the lexicographically first player as the initial
+      // turn owner. Both clients must construct the same initial game state.
+      startingTurnIndex = freshPlayers[0].id.compareTo(freshPlayers[1].id) < 0
+          ? 0
+          : 1;
+    }
     state = GameState(
       players: freshPlayers,
+      localPlayerId: _onlineLocalPlayerId,
       currentTurnIndex: startingTurnIndex,
       turnPhase: GameTurnPhase.rollDice,
       isDiceRolling: false,
-      rollOpportunityId: state.rollOpportunityId,
+      rollOpportunityId: 0,
       turnTimerPaused: false,
       turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
       statusMessage: '${freshPlayers[startingTurnIndex].name}\'s turn to roll!',
@@ -90,6 +164,7 @@ class GameNotifier extends StateNotifier<GameState> {
   /// Rolls the 6-sided dice with 3D animation simulation
   Future<void> rollDice({bool automatic = false}) async {
     if (_isDisposed ||
+        (isOnlineMode && state.currentPlayer.id != _onlineLocalPlayerId) ||
         _isTurnProcessing ||
         state.turnPhase != GameTurnPhase.rollDice ||
         state.isGameOver ||
@@ -102,6 +177,14 @@ class GameNotifier extends StateNotifier<GameState> {
     _botTimer?.cancel();
     _isTurnProcessing = true;
     final matchEpoch = _matchEpoch;
+    final rollOpportunityId = state.rollOpportunityId;
+    final authoritativeDice = isOnlineMode
+        ? _onlineDiceRoller?.call(rollOpportunityId)
+        : null;
+    if (isOnlineMode && authoritativeDice == null) {
+      _isTurnProcessing = false;
+      return;
+    }
 
     state = state.copyWith(
       turnPhase: GameTurnPhase.animating,
@@ -112,7 +195,24 @@ class GameNotifier extends StateNotifier<GameState> {
     // Simulate dice rolling delay
     await Future.delayed(const Duration(milliseconds: 650));
     if (_isDisposed || matchEpoch != _matchEpoch) return;
-    final diceResult = _random.nextInt(6) + 1;
+    int diceResult;
+    try {
+      diceResult = authoritativeDice == null
+          ? _random.nextInt(6) + 1
+          : await authoritativeDice;
+    } catch (_) {
+      if (_isDisposed || matchEpoch != _matchEpoch) return;
+      _isTurnProcessing = false;
+      state = state.copyWith(
+        turnPhase: GameTurnPhase.rollDice,
+        isDiceRolling: false,
+        turnTimerPaused: false,
+        turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
+        statusMessage: 'Could not reach the game server. Tap to roll again.',
+      );
+      _scheduleTurnTimeout(turnDuration);
+      return;
+    }
 
     if (diceResult == 6 && state.consecutiveSixes == 0) {
       _sixSequenceSnapshot = state;
@@ -138,6 +238,7 @@ class GameNotifier extends StateNotifier<GameState> {
           .toList(growable: false);
       state = GameState(
         players: rollbackPlayers,
+        localPlayerId: _onlineLocalPlayerId,
         currentTurnIndex: snapshot?.currentTurnIndex ?? state.currentTurnIndex,
         diceValue: diceResult,
         playerDiceValues: Map<String, int>.unmodifiable({
@@ -227,6 +328,7 @@ class GameNotifier extends StateNotifier<GameState> {
   /// Moves the selected pawn along the Ludo track with step-by-step animation
   Future<void> movePawn(PawnModel selectedPawn) async {
     if (_isDisposed ||
+        (isOnlineMode && state.currentPlayer.id != _onlineLocalPlayerId) ||
         _isTurnProcessing ||
         state.currentPlayer.isEliminated ||
         state.turnPhase != GameTurnPhase.selectPawn ||
@@ -370,6 +472,7 @@ class GameNotifier extends StateNotifier<GameState> {
       movablePawns: const [],
       lastMoveEvent: moveEvent,
       lastCaptureEvent: captureEvent,
+      clearLastCaptureEvent: captureEvent == null,
       winnerIds: newWinnerIds,
       // Keep controls active until the winning pawn's move animation lands.
       isGameOver: false,
@@ -434,6 +537,7 @@ class GameNotifier extends StateNotifier<GameState> {
     state = state.copyWith(
       currentTurnIndex: nextIndex,
       turnPhase: GameTurnPhase.rollDice,
+      clearDiceValue: true,
       consecutiveSixes: 0,
       movablePawns: const [],
       statusMessage: '${state.players[nextIndex].name}\'s turn to roll!',
@@ -462,6 +566,7 @@ class GameNotifier extends StateNotifier<GameState> {
         state.currentPlayer.isEliminated) {
       return;
     }
+    if (isOnlineMode && state.currentPlayer.id != _onlineLocalPlayerId) return;
 
     state = state.copyWith(
       rollOpportunityId: state.rollOpportunityId + 1,
@@ -708,6 +813,7 @@ class GameNotifier extends StateNotifier<GameState> {
         _isTurnProcessing ||
         state.isGameOver ||
         state.turnTimerPaused ||
+        (isOnlineMode && state.currentPlayer.id != _onlineLocalPlayerId) ||
         state.turnPhase != GameTurnPhase.selectPawn ||
         state.isCurrentPlayerBot ||
         state.currentPlayer.isEliminated ||
@@ -816,6 +922,7 @@ class GameNotifier extends StateNotifier<GameState> {
       return;
     }
     state = state.copyWith(turnTimerPaused: false);
+    if (isOnlineMode && state.currentPlayer.id != _onlineLocalPlayerId) return;
     if (state.turnPhase == GameTurnPhase.selectPawn) {
       if (state.isCurrentPlayerBot) {
         _scheduleBotMove();

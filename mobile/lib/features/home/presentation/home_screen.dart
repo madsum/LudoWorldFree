@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../config/ad_config.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/network/websocket_service.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
 import '../../../core/ads/rewarded_ad_service.dart';
 import '../../../shared/widgets/flying_coin_overlay.dart';
@@ -24,6 +25,7 @@ import 'widgets/lobby_game_card.dart';
 import 'widgets/lobby_header_bar.dart';
 import 'widgets/online_matchmaking_dialog.dart';
 import 'widgets/daily_bonus_dialog.dart';
+import 'widgets/social_hub_dialog.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -136,6 +138,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         duration: const Duration(seconds: 2),
       ),
+    );
+  }
+
+  void _showSocialHub() {
+    showDialog<void>(
+      context: context,
+      builder: (_) => const SocialHubDialog(),
     );
   }
 
@@ -328,9 +337,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       coins: user?.coins ?? 0,
       diamonds: user?.diamonds ?? 0,
       onStartGame: (players) {
-        ref
-            .read(gameControllerProvider.notifier)
-            .startNewGame(players: players);
+        final gameController = ref.read(gameControllerProvider.notifier);
+        gameController.clearOnlineMatch();
+        gameController.startNewGame(players: players);
         context.push('/game');
       },
     );
@@ -864,10 +873,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 onTap: () {
                                   OnlineMatchmakingDialog.show(
                                     context,
-                                    onMatchFound: (players) {
-                                      ref
-                                          .read(gameControllerProvider.notifier)
-                                          .startNewGame(players: players);
+                                    onMatchFound: (players, roomId) {
+                                      final playerId = ref
+                                          .read(authControllerProvider)
+                                          .user
+                                          ?.id;
+                                      if (playerId == null) return;
+                                      final gameController = ref
+                                          .read(gameControllerProvider.notifier);
+                                      gameController.configureOnlineMatch(
+                                        roomId: roomId,
+                                        playerId: playerId,
+                                        requestDiceRoll: ref
+                                            .read(webSocketServiceProvider)
+                                            .requestDiceRoll,
+                                      );
+                                      gameController.startNewGame(players: players);
                                       context.push('/game');
                                     },
                                   );
@@ -1024,10 +1045,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               selectedIndex: _currentNavIndex,
               onTap: (index) {
                 setState(() => _currentNavIndex = index);
-                if (index != 0) {
-                  _showComingSoonSnackBar(
-                      index == 1 ? 'Live Voice Chat' : 'Social Hub');
-                }
+                if (index == 1) _showComingSoonSnackBar('Live Voice Chat');
+                if (index == 2) _showSocialHub();
               },
             ),
           ],

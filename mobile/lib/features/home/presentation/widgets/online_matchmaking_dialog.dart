@@ -7,19 +7,22 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/network/websocket_service.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
 import '../../../game/domain/models/ludo_color.dart';
 import '../../../game/domain/models/player_model.dart';
 
 class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
-  final ValueChanged<List<PlayerModel>> onMatchFound;
+  final void Function(List<PlayerModel> players, String roomId) onMatchFound;
 
   const OnlineMatchmakingDialog({
     super.key,
     required this.onMatchFound,
   });
 
-  static void show(BuildContext context, {required ValueChanged<List<PlayerModel>> onMatchFound}) {
+  static void show(BuildContext context, {
+    required void Function(List<PlayerModel> players, String roomId) onMatchFound,
+  }) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -48,6 +51,9 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
   int _secondsRemaining = 45;
 
   bool _isMatchFound = false;
+  bool _searchFailed = false;
+  String? _roomId;
+  String? _opponentId;
   String? _opponentName;
   String? _opponentAvatar;
   String? _opponentCountry;
@@ -66,7 +72,7 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
       if (_secondsRemaining > 0) {
         setState(() => _secondsRemaining--);
       } else {
-        _timerExpiredFallbackMatch();
+        _timerExpiredWithoutMatch();
       }
     });
   }
@@ -120,7 +126,9 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
 
     setState(() {
       _isMatchFound = true;
-      _opponentName = data['opponentName'] ?? 'Smart AI Alpha';
+      _roomId = data['roomId']?.toString();
+      _opponentId = data['opponentId']?.toString();
+      _opponentName = data['opponentName'] ?? 'Opponent';
       _opponentAvatar = data['opponentAvatarUrl'] ?? 'assets/images/blue-mask.webp';
       _opponentCountry = data['opponentCountry'] ?? 'World';
       _opponentFlag = data['opponentCountryFlag'] ?? '🌐';
@@ -129,55 +137,80 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
     _launchGameWithOpponent();
   }
 
-  void _timerExpiredFallbackMatch() {
+  void _timerExpiredWithoutMatch() {
     if (_isMatchFound) return;
     _pollingTimer?.cancel();
     _countdownTimer?.cancel();
-
-    setState(() {
-      _isMatchFound = true;
-      _opponentName = 'Smart AI Alpha';
-      _opponentAvatar = 'assets/images/blue-mask7.webp';
-      _opponentCountry = 'World';
-      _opponentFlag = '🌐';
-    });
-
-    _launchGameWithOpponent();
+    _cancelServerQueue();
+    if (mounted) setState(() => _searchFailed = true);
   }
 
-  void _launchGameWithOpponent() {
+  Future<void> _launchGameWithOpponent() async {
+    final user = ref.read(authControllerProvider).user;
+    final roomId = _roomId;
+    final opponentId = _opponentId;
+    if (user == null || user.id.isEmpty || roomId == null || opponentId == null) {
+      _failMatchedRoom('The match details were incomplete. Please search again.');
+      return;
+    }
+    final connected = await ref.read(webSocketServiceProvider).connectToRoom(
+          roomId: roomId,
+          playerId: user.id,
+        );
+    if (!connected || !mounted) {
+      _failMatchedRoom('Could not connect both players to the game room. No game was started.');
+      return;
+    }
+
     Future.delayed(const Duration(milliseconds: 1400), () {
-      if (!mounted) return;
-      final user = ref.read(authControllerProvider).user;
+      if (!mounted || _roomId == null) return;
+      final isRedSeat = user.id.compareTo(opponentId) < 0;
 
       final humanPlayer = PlayerModel.initial(
-        id: user?.id ?? 'p1',
-        name: user?.name ?? 'Player 1',
-        color: LudoColor.red,
-        avatarUrl: user?.avatarUrl ?? 'assets/images/black-mask.webp',
-        country: user?.country ?? 'World',
-        countryFlag: user?.countryFlag ?? '🌐',
+        id: user.id,
+        name: user.name,
+        color: isRedSeat ? LudoColor.red : LudoColor.yellow,
+        avatarUrl: user.avatarUrl ?? 'assets/images/black-mask.webp',
+        country: user.country,
+        countryFlag: user.countryFlag,
         isBot: false,
       );
 
       final opponentPlayer = PlayerModel.initial(
-        id: 'p2_online',
-        name: _opponentName ?? 'Smart AI Alpha',
-        color: LudoColor.yellow,
+        id: opponentId,
+        name: _opponentName ?? 'Opponent',
+        color: isRedSeat ? LudoColor.yellow : LudoColor.red,
         avatarUrl: _opponentAvatar ?? 'assets/images/blue-mask7.webp',
         country: _opponentCountry ?? 'World',
         countryFlag: _opponentFlag ?? '🌐',
-        isBot: _opponentName == 'Smart AI Alpha',
+        isBot: false,
       );
 
       Navigator.of(context).pop();
-      widget.onMatchFound([humanPlayer, opponentPlayer]);
+      final players = isRedSeat
+          ? [humanPlayer, opponentPlayer]
+          : [opponentPlayer, humanPlayer];
+      widget.onMatchFound(players, roomId);
     });
   }
 
-  void _cancelMatchmaking() async {
+  void _failMatchedRoom(String message) {
     _pollingTimer?.cancel();
     _countdownTimer?.cancel();
+    ref.read(webSocketServiceProvider).leaveRoom();
+    _cancelServerQueue();
+    if (!mounted) return;
+    setState(() {
+      _isMatchFound = false;
+      _searchFailed = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: const Color(0xFF142547),
+      content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
+    ));
+  }
+
+  Future<void> _cancelServerQueue() async {
     try {
       final dio = ref.read(apiClientProvider);
       final user = ref.read(authControllerProvider).user;
@@ -186,6 +219,13 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
         options: Options(headers: {'X-Player-ID': user?.id}),
       );
     } catch (_) {}
+  }
+
+  void _cancelMatchmaking() async {
+    _pollingTimer?.cancel();
+    _countdownTimer?.cancel();
+    ref.read(webSocketServiceProvider).leaveRoom();
+    await _cancelServerQueue();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -374,7 +414,7 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
                             name: _isMatchFound ? (_opponentName ?? 'Opponent') : '???',
                             avatarUrl: _isMatchFound ? _opponentAvatar : null,
                             borderColor: const Color(0xFF1E88E5),
-                            isSearching: !_isMatchFound,
+                            isSearching: !_isMatchFound && !_searchFailed,
                           ),
                         ],
                       ),
@@ -425,9 +465,17 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
                                 const Icon(Icons.search_rounded, color: AppColors.gold, size: 22),
                                 const SizedBox(width: 6),
                                 Text(
-                                  _isMatchFound ? 'MATCH FOUND! LAUNCHING...' : 'SEARCHING FOR PLAYERS...',
+                                  _isMatchFound
+                                      ? 'PLAYERS CONNECTED! STARTING...'
+                                      : _searchFailed
+                                          ? 'NO LIVE MATCH AVAILABLE. TRY AGAIN.'
+                                          : 'SEARCHING FOR PLAYERS...',
                                   style: GoogleFonts.poppins(
-                                    color: _isMatchFound ? const Color(0xFF00E676) : AppColors.gold,
+                                    color: _isMatchFound
+                                        ? const Color(0xFF00E676)
+                                        : _searchFailed
+                                            ? Colors.white70
+                                            : AppColors.gold,
                                     fontSize: 15,
                                     fontWeight: FontWeight.w900,
                                     letterSpacing: 1,

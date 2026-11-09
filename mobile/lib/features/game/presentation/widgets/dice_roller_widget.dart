@@ -15,7 +15,8 @@ class DiceRollerWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isMyTurn = !gameState.isCurrentPlayerBot &&
+    final isMyTurn = gameState.isLocalPlayerTurn &&
+        !gameState.isCurrentPlayerBot &&
         gameState.turnPhase == GameTurnPhase.rollDice &&
         !gameState.isGameOver;
 

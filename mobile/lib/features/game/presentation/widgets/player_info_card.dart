@@ -97,6 +97,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
 
   bool get _timerOpportunityActive =>
       widget.isCurrentTurn &&
+      widget.gameState.isLocalPlayerTurn &&
       !widget.player.isBot &&
       !widget.player.isEliminated &&
       (widget.gameState.turnPhase == GameTurnPhase.rollDice ||
@@ -157,6 +158,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
   Widget build(BuildContext context) {
     final isRolling = widget.isCurrentTurn && widget.gameState.isDiceRolling;
     final canRoll = widget.isCurrentTurn &&
+        widget.gameState.isLocalPlayerTurn &&
         !widget.player.isBot &&
         !widget.player.isEliminated &&
         widget.gameState.turnPhase == GameTurnPhase.rollDice &&
@@ -595,7 +597,8 @@ class SharedDiceButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canRoll = !gameState.isCurrentPlayerBot &&
+    final canRoll = gameState.isLocalPlayerTurn &&
+        !gameState.isCurrentPlayerBot &&
         !gameState.currentPlayer.isEliminated &&
         gameState.turnPhase == GameTurnPhase.rollDice &&
         !gameState.isGameOver;

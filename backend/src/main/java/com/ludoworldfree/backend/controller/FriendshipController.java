@@ -1,0 +1,128 @@
+package com.ludoworldfree.backend.controller;
+
+import com.ludoworldfree.backend.model.Friendship;
+import com.ludoworldfree.backend.model.PlayerProfile;
+import com.ludoworldfree.backend.repository.FriendshipRepository;
+import com.ludoworldfree.backend.repository.PlayerProfileRepository;
+import com.ludoworldfree.backend.util.PlayerIdResolver;
+import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/v1/friends")
+public class FriendshipController {
+    private final FriendshipRepository friendshipRepository;
+    private final PlayerProfileRepository profileRepository;
+
+    public FriendshipController(FriendshipRepository friendshipRepository,
+                                PlayerProfileRepository profileRepository) {
+        this.friendshipRepository = friendshipRepository;
+        this.profileRepository = profileRepository;
+    }
+
+    @GetMapping
+    public Map<String, Object> list(
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId) {
+        UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
+        List<Map<String, Object>> entries = new ArrayList<>();
+        for (Friendship friendship : friendshipRepository
+                .findAllByRequesterIdOrAddresseeId(playerId, playerId)) {
+            UUID otherId = friendship.getRequesterId().equals(playerId)
+                    ? friendship.getAddresseeId() : friendship.getRequesterId();
+            PlayerProfile profile = profileRepository.findByUserId(otherId).orElse(null);
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id", friendship.getId().toString());
+            entry.put("playerId", otherId.toString());
+            entry.put("displayName", profile == null ? "Player" : profile.getDisplayName());
+            entry.put("avatarUrl", profile == null ? null : profile.getAvatarUrl());
+            entry.put("countryFlag", profile == null ? "🌐" : profile.getCountryFlag());
+            entry.put("status", friendship.getStatus().name());
+            entry.put("direction", friendship.getRequesterId().equals(playerId)
+                    ? "OUTGOING" : "INCOMING");
+            entries.add(entry);
+        }
+        return Map.of("entries", entries);
+    }
+
+    @PostMapping("/requests")
+    @Transactional
+    public Map<String, Object> sendRequest(
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
+            @RequestBody Map<String, String> body) {
+        UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
+        UUID targetId = parsePlayerId(body.get("playerId"));
+        if (playerId.equals(targetId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "You cannot add yourself.");
+        }
+        if (!profileRepository.existsByUserId(targetId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Player not found.");
+        }
+
+        var existing = friendshipRepository.findByRequesterIdAndAddresseeId(playerId, targetId);
+        if (existing.isPresent()) return friendshipResponse(existing.get());
+
+        var incoming = friendshipRepository.findByRequesterIdAndAddresseeId(targetId, playerId);
+        if (incoming.isPresent()) {
+            Friendship friendship = incoming.get();
+            friendship.accept();
+            return friendshipResponse(friendshipRepository.save(friendship));
+        }
+        return friendshipResponse(friendshipRepository.save(new Friendship(playerId, targetId)));
+    }
+
+    @PostMapping("/{friendshipId}/accept")
+    @Transactional
+    public Map<String, Object> accept(
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
+            @PathVariable UUID friendshipId) {
+        UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
+        Friendship friendship = findForPlayer(friendshipId, playerId);
+        if (!friendship.getAddresseeId().equals(playerId)
+                || friendship.getStatus() != Friendship.Status.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This request cannot be accepted.");
+        }
+        friendship.accept();
+        return friendshipResponse(friendshipRepository.save(friendship));
+    }
+
+    @DeleteMapping("/{friendshipId}")
+    @Transactional
+    public Map<String, Object> remove(
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
+            @PathVariable UUID friendshipId) {
+        UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
+        Friendship friendship = findForPlayer(friendshipId, playerId);
+        friendshipRepository.delete(friendship);
+        return Map.of("success", true);
+    }
+
+    private Friendship findForPlayer(UUID friendshipId, UUID playerId) {
+        Friendship friendship = friendshipRepository.findById(friendshipId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Friend request not found."));
+        if (!friendship.getRequesterId().equals(playerId)
+                && !friendship.getAddresseeId().equals(playerId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "This friend request belongs to another player.");
+        }
+        return friendship;
+    }
+
+    private static UUID parsePlayerId(String value) {
+        try {
+            return UUID.fromString(value);
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A valid playerId is required.");
+        }
+    }
+
+    private static Map<String, Object> friendshipResponse(Friendship friendship) {
+        return Map.of("id", friendship.getId().toString(), "status", friendship.getStatus().name());
+    }
+}
