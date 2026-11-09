@@ -65,7 +65,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         synchronized (localRoom) {
             LocalConnection connection = new LocalConnection(session, playerId,
                     snapshot.stateRevision(),
-                    snapshot.isConnected(snapshot.opponentOf(playerId)));
+                    snapshot.allOtherPlayersConnected(playerId));
             LocalConnection previousConnection = localRoom.sessions.put(playerId, connection);
             if (previousConnection != null && previousConnection.session != session
                     && previousConnection.session.isOpen()) {
@@ -150,8 +150,8 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         Integer diceValue = state.path("diceValue").isInt()
                 ? state.path("diceValue").asInt() : null;
         boolean isDiceRolling = state.path("isDiceRolling").asBoolean(false);
-        if (activePlayerId == null || statePlayerIds.size() != 2) {
-            sendError(session, "INVALID_STATE", "The game state must contain both matched players.");
+        if (activePlayerId == null || (statePlayerIds.size() != 2 && statePlayerIds.size() != 4)) {
+            sendError(session, "INVALID_STATE", "The game state must contain every matched player.");
             return;
         }
 
@@ -193,11 +193,10 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                     broadcastRoomReady(localRoom, roomId);
                 }
                 for (LocalConnection connection : localRoom.sessions.values()) {
-                    UUID opponentId = snapshot.opponentOf(connection.playerId);
-                    boolean opponentConnected = snapshot.isConnected(opponentId);
-                    if (opponentConnected != connection.opponentConnected) {
-                        connection.opponentConnected = opponentConnected;
-                        send(connection.session, Map.of("type", opponentConnected
+                    boolean opponentsConnected = snapshot.allOtherPlayersConnected(connection.playerId);
+                    if (opponentsConnected != connection.opponentConnected) {
+                        connection.opponentConnected = opponentsConnected;
+                        send(connection.session, Map.of("type", opponentsConnected
                                 ? "connection_restored" : "player_disconnected"));
                     }
 
@@ -300,14 +299,14 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
 
     private static Set<UUID> statePlayerIds(JsonNode state) {
         JsonNode players = state.path("players");
-        if (!players.isArray() || players.size() != 2) return Set.of();
+        if (!players.isArray() || (players.size() != 2 && players.size() != 4)) return Set.of();
         Set<UUID> ids = ConcurrentHashMap.newKeySet();
         for (JsonNode player : players) {
             UUID id = parsePlayerId(player.path("id").asText(null));
             if (id == null) return Set.of();
             ids.add(id);
         }
-        return ids;
+        return ids.size() == players.size() ? ids : Set.of();
     }
 
     private static final class LocalRoom {

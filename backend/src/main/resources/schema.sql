@@ -135,6 +135,14 @@ CREATE TABLE IF NOT EXISTS daily_goal_events (
 );
 
 -- 10. Shared matchmaking queue and online game rooms (Cloud Run instances)
+CREATE TABLE IF NOT EXISTS player_avatar_images (
+    player_id UUID PRIMARY KEY,
+    content_type VARCHAR(32) NOT NULL,
+    image_data BYTEA NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    version BIGINT NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS matchmaking_tickets (
     player_id UUID PRIMARY KEY,
     display_name VARCHAR(100) NOT NULL,
@@ -142,11 +150,15 @@ CREATE TABLE IF NOT EXISTS matchmaking_tickets (
     country VARCHAR(100),
     country_flag VARCHAR(16),
     entry_fee BIGINT NOT NULL,
+    player_count INTEGER NOT NULL DEFAULT 2,
+    selected_color VARCHAR(8) NOT NULL DEFAULT 'red',
     queued_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_matchmaking_tickets_fee_queued
     ON matchmaking_tickets (entry_fee, queued_at);
+CREATE INDEX IF NOT EXISTS idx_matchmaking_tickets_size_fee_queued
+    ON matchmaking_tickets (player_count, entry_fee, queued_at);
 
 CREATE TABLE IF NOT EXISTS online_match_rooms (
     room_id VARCHAR(64) PRIMARY KEY,
@@ -160,10 +172,27 @@ CREATE TABLE IF NOT EXISTS online_match_rooms (
     player_b_avatar VARCHAR(500),
     player_b_country VARCHAR(100),
     player_b_flag VARCHAR(16),
+    player_count INTEGER NOT NULL DEFAULT 2,
+    player_a_color VARCHAR(8) NOT NULL DEFAULT 'red',
+    player_b_color VARCHAR(8) NOT NULL DEFAULT 'yellow',
+    player_c_id UUID,
+    player_c_name VARCHAR(100),
+    player_c_avatar VARCHAR(500),
+    player_c_country VARCHAR(100),
+    player_c_flag VARCHAR(16),
+    player_c_color VARCHAR(8),
+    player_d_id UUID,
+    player_d_name VARCHAR(100),
+    player_d_avatar VARCHAR(500),
+    player_d_country VARCHAR(100),
+    player_d_flag VARCHAR(16),
+    player_d_color VARCHAR(8),
     entry_fee BIGINT NOT NULL,
     status VARCHAR(16) NOT NULL,
     player_a_connected BOOLEAN NOT NULL DEFAULT FALSE,
     player_b_connected BOOLEAN NOT NULL DEFAULT FALSE,
+    player_c_connected BOOLEAN NOT NULL DEFAULT FALSE,
+    player_d_connected BOOLEAN NOT NULL DEFAULT FALSE,
     turn_owner_id UUID,
     authoritative_roll_opportunity_id INTEGER NOT NULL DEFAULT 0,
     authoritative_roll_player_id UUID,
@@ -180,6 +209,10 @@ CREATE INDEX IF NOT EXISTS idx_online_match_player_a_status
     ON online_match_rooms (player_a_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_online_match_player_b_status
     ON online_match_rooms (player_b_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_online_match_player_c_status
+    ON online_match_rooms (player_c_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_online_match_player_d_status
+    ON online_match_rooms (player_d_id, status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS online_match_state_events (
     id UUID PRIMARY KEY,

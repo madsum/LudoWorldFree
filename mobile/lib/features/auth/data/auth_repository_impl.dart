@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -721,6 +722,29 @@ class AuthRepositoryImpl implements AuthRepository {
     );
 
     return updated;
+  }
+
+  @override
+  Future<String> uploadProfileAvatar({
+    required String playerId,
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: fileName),
+    });
+    final response = await _dio.post(
+      '/player/profile/avatar',
+      data: form,
+      options: Options(headers: {'X-Player-ID': playerId}),
+    );
+    final avatarUrl = response.data is Map
+        ? response.data['avatarUrl']?.toString()
+        : null;
+    if (avatarUrl == null || avatarUrl.isEmpty) {
+      throw const FormatException('The server did not return the uploaded image URL.');
+    }
+    return avatarUrl;
   }
 
   Future<void> _saveAuthSession({

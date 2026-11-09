@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -151,6 +152,36 @@ class AuthController extends StateNotifier<AuthState> {
     } catch (e) {
       state = state.copyWith(
           isLoading: false, errorMessage: 'Failed to update profile.');
+      return false;
+    }
+  }
+
+  Future<bool> uploadProfileAvatar({
+    required Uint8List bytes,
+    required String fileName,
+  }) async {
+    final current = state.user;
+    if (current == null) return false;
+    state = state.copyWith(isLoading: true);
+    try {
+      final avatarUrl = await _repository.uploadProfileAvatar(
+        playerId: current.id,
+        bytes: bytes,
+        fileName: fileName,
+      );
+      final updated = await _repository.updateUserProfile(
+        name: current.name,
+        avatarUrl: avatarUrl,
+        country: current.country,
+        countryFlag: current.countryFlag,
+      );
+      state = AuthState(user: updated, isLoading: false);
+      return true;
+    } catch (_) {
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'Image upload failed. Your default avatar is unchanged.',
+      );
       return false;
     }
   }

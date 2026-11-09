@@ -7,6 +7,7 @@ import '../../domain/models/player_model.dart';
 class ModeConfigDialog extends StatefulWidget {
   final String title;
   final bool isVsComputer;
+  final bool isOnline;
   final String playerName;
   final String? avatarUrl;
   final String country;
@@ -14,11 +15,13 @@ class ModeConfigDialog extends StatefulWidget {
   final int coins;
   final int diamonds;
   final void Function(List<PlayerModel> players) onStartGame;
+  final void Function(int playerCount, LudoColor color)? onStartOnlineMatch;
 
   const ModeConfigDialog({
     super.key,
     required this.title,
     required this.isVsComputer,
+    this.isOnline = false,
     required this.playerName,
     this.avatarUrl,
     this.country = 'Local Player',
@@ -26,12 +29,14 @@ class ModeConfigDialog extends StatefulWidget {
     this.coins = 0,
     this.diamonds = 0,
     required this.onStartGame,
+    this.onStartOnlineMatch,
   });
 
   static void show(
     BuildContext context, {
     required String title,
     required bool isVsComputer,
+    bool isOnline = false,
     required String playerName,
     String? avatarUrl,
     String country = 'Local Player',
@@ -39,12 +44,14 @@ class ModeConfigDialog extends StatefulWidget {
     int coins = 0,
     int diamonds = 0,
     required void Function(List<PlayerModel> players) onStartGame,
+    void Function(int playerCount, LudoColor color)? onStartOnlineMatch,
   }) {
     showDialog(
       context: context,
       builder: (context) => ModeConfigDialog(
         title: title,
         isVsComputer: isVsComputer,
+        isOnline: isOnline,
         playerName: playerName,
         avatarUrl: avatarUrl,
         country: country,
@@ -52,6 +59,7 @@ class ModeConfigDialog extends StatefulWidget {
         coins: coins,
         diamonds: diamonds,
         onStartGame: onStartGame,
+        onStartOnlineMatch: onStartOnlineMatch,
       ),
     );
   }
@@ -167,7 +175,9 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
           Icon(
             widget.isVsComputer
                 ? Icons.smart_toy_rounded
-                : Icons.phone_android_rounded,
+                : widget.isOnline
+                    ? Icons.public_rounded
+                    : Icons.phone_android_rounded,
             color: AppColors.gold,
           ),
           const SizedBox(width: 10),
@@ -233,7 +243,7 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
           const SizedBox(height: 16),
 
           // Color Choice (For Vs Computer Mode)
-          if (widget.isVsComputer) ...[
+          if (widget.isVsComputer || widget.isOnline) ...[
             Text(
               'SELECT YOUR COLOR',
               style: GoogleFonts.poppins(
@@ -291,7 +301,11 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
           ),
           onPressed: () {
             Navigator.of(context).pop();
-            widget.onStartGame(_buildPlayers());
+            if (widget.isOnline && widget.onStartOnlineMatch != null) {
+              widget.onStartOnlineMatch!(_playerCount, _selectedColor);
+            } else {
+              widget.onStartGame(_buildPlayers());
+            }
           },
           child: Text(
             'START GAME',

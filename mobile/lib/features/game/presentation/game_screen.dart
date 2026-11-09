@@ -58,7 +58,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
           gameNotifier.pauseTurnTimer();
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Your opponent disconnected. Waiting for them to reconnect.'),
+            content: Text(
+                'Your opponent disconnected. Waiting for them to reconnect.'),
           ));
         } else if (message['type'] == 'connection_restored') {
           gameNotifier.resumeTurnTimer();
@@ -70,7 +71,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
         } else if (message['type'] == 'connection_failed' && mounted) {
           gameNotifier.pauseTurnTimer();
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Connection lost. Return to the lobby and search again.'),
+            content:
+                Text('Connection lost. Return to the lobby and search again.'),
           ));
         } else if (message['type'] == 'match_finished' && mounted) {
           ref.read(webSocketServiceProvider).leaveRoom();
@@ -84,16 +86,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
         }
       });
       final initialState = ref.read(gameControllerProvider);
-      _lastOnlineTurnPlayerId = initialState.players.isEmpty
-          ? null
-          : initialState.currentPlayer.id;
+      _lastOnlineTurnPlayerId =
+          initialState.players.isEmpty ? null : initialState.currentPlayer.id;
       _removeOnlineStateListener = gameNotifier.addListener((next) {
         final previousTurnPlayerId = _lastOnlineTurnPlayerId;
         _lastOnlineTurnPlayerId =
             next.players.isEmpty ? null : next.currentPlayer.id;
         if (gameNotifier.isApplyingRemoteState ||
             !gameNotifier.isOnlineMode ||
-            next.players.length != 2) {
+            (next.players.length != 2 && next.players.length != 4)) {
           return;
         }
         final localPlayerId = gameNotifier.onlineLocalPlayerId;
@@ -102,7 +103,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
           webSocketService.sendGameState(next.toJson());
         }
       });
-      if (initialState.players.length == 2 &&
+      if ((initialState.players.length == 2 ||
+              initialState.players.length == 4) &&
           initialState.currentPlayer.id == gameNotifier.onlineLocalPlayerId) {
         webSocketService.sendGameState(initialState.toJson());
       }
@@ -210,7 +212,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
   ) async {
     final user = ref.read(authControllerProvider).user;
     final gameId = gameNotifier.currentGameId;
-    if (user == null || gameId.isEmpty || !_reportedDailyGoalGameIds.add(gameId)) {
+    if (user == null ||
+        gameId.isEmpty ||
+        !_reportedDailyGoalGameIds.add(gameId)) {
       return;
     }
     final events = <String>[
@@ -250,12 +254,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final humanIndex = gameState.players.indexWhere((player) => !player.isBot);
     final humanColor =
         humanIndex < 0 ? null : gameState.players[humanIndex].color;
-    final boardQuarterTurns =
-        isVsComputer && humanColor != null
-            ? (3 - humanColor.index) % 4
-            : gameState.players.isNotEmpty
-                ? (3 - gameState.players[0].color.index) % 4
-                : 0;
+    final boardQuarterTurns = isVsComputer && humanColor != null
+        ? (3 - humanColor.index) % 4
+        : gameState.players.isNotEmpty
+            ? (3 - gameState.players[0].color.index) % 4
+            : 0;
 
     return PopScope(
       canPop: false,
@@ -318,13 +321,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
                         for (final player in gameState.players) {
                           final boardCorner =
                               (player.color.index + boardQuarterTurns) % 4;
-                          final isLeftSide = boardCorner == 0 || boardCorner == 3;
-                          final isTopSide = boardCorner == 0 || boardCorner == 1;
-                          final indicatorTop =
-                              (constraints.maxHeight * (isTopSide ? 0.25 : 0.75) -
-                                      25)
-                                  .clamp(0.0, constraints.maxHeight - 50)
-                                  .toDouble();
+                          final isLeftSide =
+                              boardCorner == 0 || boardCorner == 3;
+                          final isTopSide =
+                              boardCorner == 0 || boardCorner == 1;
+                          final indicatorTop = (constraints.maxHeight *
+                                      (isTopSide ? 0.25 : 0.75) -
+                                  25)
+                              .clamp(0.0, constraints.maxHeight - 50)
+                              .toDouble();
 
                           missedTurnIndicators.add(
                             Positioned(
@@ -370,7 +375,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 child: PlayerInfoCard(
                                   player: gameState.players[0],
                                   gameState: gameState,
-                                  isCurrentTurn: gameState.currentTurnIndex == 0,
+                                  isCurrentTurn:
+                                      gameState.currentTurnIndex == 0,
                                   onRoll: () => gameNotifier.rollDice(),
                                   twoPlayerLayout: true,
                                   showRollArrow: isHumanRollWindow &&
@@ -391,7 +397,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 child: PlayerInfoCard(
                                   player: gameState.players[1],
                                   gameState: gameState,
-                                  isCurrentTurn: gameState.currentTurnIndex == 1,
+                                  isCurrentTurn:
+                                      gameState.currentTurnIndex == 1,
                                   onRoll: () => gameNotifier.rollDice(),
                                   twoPlayerLayout: true,
                                   showRollArrow: isHumanRollWindow &&
@@ -407,7 +414,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 PlayerInfoCard(
                                   player: gameState.players[3],
                                   gameState: gameState,
-                                  isCurrentTurn: gameState.currentTurnIndex == 3,
+                                  isCurrentTurn:
+                                      gameState.currentTurnIndex == 3,
                                   onRoll: () => gameNotifier.rollDice(),
                                   compact: true,
                                   showRollArrow: isHumanRollWindow &&
@@ -418,7 +426,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 PlayerInfoCard(
                                   player: gameState.players[2],
                                   gameState: gameState,
-                                  isCurrentTurn: gameState.currentTurnIndex == 2,
+                                  isCurrentTurn:
+                                      gameState.currentTurnIndex == 2,
                                   onRoll: () => gameNotifier.rollDice(),
                                   compact: true,
                                   showRollArrow: isHumanRollWindow &&

@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS player_avatar_images (
+    player_id UUID PRIMARY KEY,
+    content_type VARCHAR(32) NOT NULL,
+    image_data BYTEA NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    version BIGINT NOT NULL DEFAULT 0
+);

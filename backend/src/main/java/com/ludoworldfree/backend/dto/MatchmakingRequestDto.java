@@ -9,6 +9,8 @@ public class MatchmakingRequestDto {
     private String country;
     private String countryFlag;
     private long entryFee = 500L;
+    private int playerCount = 2;
+    private String selectedColor = "red";
 
     public MatchmakingRequestDto() {}
 
@@ -33,4 +35,8 @@ public class MatchmakingRequestDto {
     public void setCountryFlag(String countryFlag) { this.countryFlag = countryFlag; }
     public long getEntryFee() { return entryFee; }
     public void setEntryFee(long entryFee) { this.entryFee = entryFee; }
+    public int getPlayerCount() { return playerCount; }
+    public void setPlayerCount(int playerCount) { this.playerCount = playerCount; }
+    public String getSelectedColor() { return selectedColor; }
+    public void setSelectedColor(String selectedColor) { this.selectedColor = selectedColor; }
 }

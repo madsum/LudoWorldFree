@@ -1,5 +1,6 @@
 package com.ludoworldfree.backend.dto;
 
+import java.util.List;
 import java.util.UUID;
 
 public class MatchmakingResponseDto {
@@ -11,6 +12,11 @@ public class MatchmakingResponseDto {
     private String opponentCountry;
     private String opponentCountryFlag;
     private String message;
+    private List<MatchPlayerDto> players = List.of();
+    private int playerCount;
+
+    public record MatchPlayerDto(UUID id, String name, String avatarUrl,
+                                 String country, String countryFlag, String color) {}
 
     public MatchmakingResponseDto() {}
 
@@ -41,4 +47,8 @@ public class MatchmakingResponseDto {
     public void setOpponentCountryFlag(String opponentCountryFlag) { this.opponentCountryFlag = opponentCountryFlag; }
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }
+    public List<MatchPlayerDto> getPlayers() { return players; }
+    public void setPlayers(List<MatchPlayerDto> players) { this.players = players; }
+    public int getPlayerCount() { return playerCount; }
+    public void setPlayerCount(int playerCount) { this.playerCount = playerCount; }
 }

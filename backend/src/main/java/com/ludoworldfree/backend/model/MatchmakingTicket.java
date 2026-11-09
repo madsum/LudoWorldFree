@@ -30,19 +30,33 @@ public class MatchmakingTicket {
     @Column(name = "entry_fee", nullable = false)
     private long entryFee;
 
+    @Column(name = "player_count", nullable = false)
+    private int playerCount = 2;
+
+    @Column(name = "selected_color", nullable = false, length = 8)
+    private String selectedColor = "red";
+
     @Column(name = "queued_at", nullable = false)
     private Instant queuedAt = Instant.now();
 
     protected MatchmakingTicket() {}
 
     public MatchmakingTicket(UUID playerId, String displayName, String avatarUrl,
-                             String country, String countryFlag, long entryFee) {
+                             String country, String countryFlag, long entryFee,
+                             int playerCount, String selectedColor) {
         this.playerId = playerId;
         this.displayName = displayName;
         this.avatarUrl = avatarUrl;
         this.country = country;
         this.countryFlag = countryFlag;
         this.entryFee = entryFee;
+        this.playerCount = playerCount;
+        this.selectedColor = selectedColor;
+    }
+
+    public MatchmakingTicket(UUID playerId, String displayName, String avatarUrl,
+                             String country, String countryFlag, long entryFee) {
+        this(playerId, displayName, avatarUrl, country, countryFlag, entryFee, 2, "red");
     }
 
     public UUID getPlayerId() { return playerId; }
@@ -51,5 +65,7 @@ public class MatchmakingTicket {
     public String getCountry() { return country; }
     public String getCountryFlag() { return countryFlag; }
     public long getEntryFee() { return entryFee; }
+    public int getPlayerCount() { return playerCount; }
+    public String getSelectedColor() { return selectedColor; }
     public Instant getQueuedAt() { return queuedAt; }
 }

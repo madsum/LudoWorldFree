@@ -13,28 +13,42 @@ import '../../../game/domain/models/ludo_color.dart';
 import '../../../game/domain/models/player_model.dart';
 
 class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
+  final int playerCount;
+  final LudoColor selectedColor;
   final void Function(List<PlayerModel> players, String roomId) onMatchFound;
 
   const OnlineMatchmakingDialog({
     super.key,
+    required this.playerCount,
+    required this.selectedColor,
     required this.onMatchFound,
   });
 
-  static void show(BuildContext context, {
-    required void Function(List<PlayerModel> players, String roomId) onMatchFound,
+  static void show(
+    BuildContext context, {
+    required int playerCount,
+    required LudoColor selectedColor,
+    required void Function(List<PlayerModel> players, String roomId)
+        onMatchFound,
   }) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => OnlineMatchmakingDialog(onMatchFound: onMatchFound),
+      builder: (context) => OnlineMatchmakingDialog(
+        playerCount: playerCount,
+        selectedColor: selectedColor,
+        onMatchFound: onMatchFound,
+      ),
     );
   }
 
   @override
-  ConsumerState<OnlineMatchmakingDialog> createState() => _OnlineMatchmakingDialogState();
+  ConsumerState<OnlineMatchmakingDialog> createState() =>
+      _OnlineMatchmakingDialogState();
 }
 
-class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialog>
+class _OnlineMatchmakingDialogState
+    extends ConsumerState<OnlineMatchmakingDialog>
     with TickerProviderStateMixin {
   late final AnimationController _vsGlowController = AnimationController(
     vsync: this,
@@ -58,6 +72,7 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
   String? _opponentAvatar;
   String? _opponentCountry;
   String? _opponentFlag;
+  dynamic _matchPlayers;
 
   @override
   void initState() {
@@ -90,6 +105,8 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
           'country': user?.country ?? 'World',
           'countryFlag': user?.countryFlag ?? '🌐',
           'entryFee': 500,
+          'playerCount': widget.playerCount,
+          'selectedColor': widget.selectedColor.name,
         },
         options: Options(
           headers: {'X-Player-ID': user?.id},
@@ -112,7 +129,8 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
             headers: {'X-Player-ID': user?.id},
           ),
         );
-        if (statusResponse.data != null && statusResponse.data['matchFound'] == true) {
+        if (statusResponse.data != null &&
+            statusResponse.data['matchFound'] == true) {
           _handleMatchFoundResponse(statusResponse.data);
         }
       } catch (_) {}
@@ -129,9 +147,11 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
       _roomId = data['roomId']?.toString();
       _opponentId = data['opponentId']?.toString();
       _opponentName = data['opponentName'] ?? 'Opponent';
-      _opponentAvatar = data['opponentAvatarUrl'] ?? 'assets/images/blue-mask.webp';
+      _opponentAvatar =
+          data['opponentAvatarUrl'] ?? 'assets/images/blue-mask.webp';
       _opponentCountry = data['opponentCountry'] ?? 'World';
       _opponentFlag = data['opponentCountryFlag'] ?? '🌐';
+      _matchPlayers = data['players'];
     });
 
     _launchGameWithOpponent();
@@ -149,8 +169,12 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
     final user = ref.read(authControllerProvider).user;
     final roomId = _roomId;
     final opponentId = _opponentId;
-    if (user == null || user.id.isEmpty || roomId == null || opponentId == null) {
-      _failMatchedRoom('The match details were incomplete. Please search again.');
+    if (user == null ||
+        user.id.isEmpty ||
+        roomId == null ||
+        opponentId == null) {
+      _failMatchedRoom(
+          'The match details were incomplete. Please search again.');
       return;
     }
     final connected = await ref.read(webSocketServiceProvider).connectToRoom(
@@ -158,40 +182,78 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
           playerId: user.id,
         );
     if (!connected || !mounted) {
-      _failMatchedRoom('Could not connect both players to the game room. No game was started.');
+      _failMatchedRoom(
+          'Could not connect both players to the game room. No game was started.');
+      return;
+    }
+
+    final roomPlayers = _playersFromResponse(_matchPlayers, user);
+    if (roomPlayers == null) {
+      _failMatchedRoom(widget.playerCount == 4
+          ? 'This room does not have four human players yet. Please search again.'
+          : 'The match details were incomplete. Please search again.');
       return;
     }
 
     Future.delayed(const Duration(milliseconds: 1400), () {
       if (!mounted || _roomId == null) return;
-      final isRedSeat = user.id.compareTo(opponentId) < 0;
-
-      final humanPlayer = PlayerModel.initial(
-        id: user.id,
-        name: user.name,
-        color: isRedSeat ? LudoColor.red : LudoColor.yellow,
-        avatarUrl: user.avatarUrl ?? 'assets/images/black-mask.webp',
-        country: user.country,
-        countryFlag: user.countryFlag,
-        isBot: false,
-      );
-
-      final opponentPlayer = PlayerModel.initial(
-        id: opponentId,
-        name: _opponentName ?? 'Opponent',
-        color: isRedSeat ? LudoColor.yellow : LudoColor.red,
-        avatarUrl: _opponentAvatar ?? 'assets/images/blue-mask7.webp',
-        country: _opponentCountry ?? 'World',
-        countryFlag: _opponentFlag ?? '🌐',
-        isBot: false,
-      );
-
       Navigator.of(context).pop();
-      final players = isRedSeat
-          ? [humanPlayer, opponentPlayer]
-          : [opponentPlayer, humanPlayer];
-      widget.onMatchFound(players, roomId);
+      widget.onMatchFound(roomPlayers, roomId);
     });
+  }
+
+  List<PlayerModel>? _playersFromResponse(dynamic response, dynamic user) {
+    final rawPlayers = response is List ? response : null;
+    if (rawPlayers != null) {
+      final players = <PlayerModel>[];
+      for (final raw in rawPlayers) {
+        if (raw is! Map) return null;
+        final id = raw['id']?.toString();
+        final name = raw['name']?.toString();
+        final colorName = raw['color']?.toString();
+        final color =
+            LudoColor.values.where((value) => value.name == colorName);
+        if (id == null || name == null || color.isEmpty) return null;
+        players.add(PlayerModel.initial(
+          id: id,
+          name: name,
+          avatarUrl: raw['avatarUrl']?.toString(),
+          country: raw['country']?.toString() ?? 'World',
+          countryFlag: raw['countryFlag']?.toString() ?? '🌐',
+          color: color.first,
+          isBot: false,
+        ));
+      }
+      if (players.length != widget.playerCount ||
+          players.any((player) => player.isBot)) {
+        return null;
+      }
+      return players;
+    }
+
+    // Compatibility with the existing two-player matchmaking response.
+    if (widget.playerCount != 2 || _opponentId == null) return null;
+    final human = PlayerModel.initial(
+      id: user.id,
+      name: user.name,
+      avatarUrl: user.avatarUrl ?? 'assets/images/black-mask.webp',
+      country: user.country,
+      countryFlag: user.countryFlag,
+      color: widget.selectedColor,
+      isBot: false,
+    );
+    final opponentColor = LudoColor
+        .values[(widget.selectedColor.index + 2) % LudoColor.values.length];
+    final opponent = PlayerModel.initial(
+      id: _opponentId!,
+      name: _opponentName ?? 'Opponent',
+      avatarUrl: _opponentAvatar ?? 'assets/images/blue-mask.webp',
+      country: _opponentCountry ?? 'World',
+      countryFlag: _opponentFlag ?? '🌐',
+      color: opponentColor,
+      isBot: false,
+    );
+    return [human, opponent];
   }
 
   void _failMatchedRoom(String message) {
@@ -254,7 +316,8 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
           children: [
             Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 440),
                   child: Column(
@@ -281,7 +344,10 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
                               fontWeight: FontWeight.w900,
                               letterSpacing: 1,
                               shadows: const [
-                                Shadow(color: Colors.black, blurRadius: 8, offset: Offset(0, 3)),
+                                Shadow(
+                                    color: Colors.black,
+                                    blurRadius: 8,
+                                    offset: Offset(0, 3)),
                               ],
                             ),
                           ),
@@ -298,7 +364,10 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
                           fontWeight: FontWeight.w900,
                           letterSpacing: 1.2,
                           shadows: const [
-                            Shadow(color: Colors.black, blurRadius: 6, offset: Offset(0, 2)),
+                            Shadow(
+                                color: Colors.black,
+                                blurRadius: 6,
+                                offset: Offset(0, 2)),
                           ],
                         ),
                       ),
@@ -307,7 +376,8 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
 
                       // Mode & Entry Fee Banner Box
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
                           color: const Color(0xFF7A0000),
                           borderRadius: BorderRadius.circular(12),
@@ -320,36 +390,51 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
                               children: [
                                 Text(
                                   'Game Mode',
-                                  style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                                  style: GoogleFonts.poppins(
+                                      color: Colors.white70,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 2),
                                 Row(
                                   children: [
-                                    const Icon(Icons.emoji_events_rounded, color: AppColors.gold, size: 16),
+                                    const Icon(Icons.emoji_events_rounded,
+                                        color: AppColors.gold, size: 16),
                                     const SizedBox(width: 4),
                                     Text(
                                       'Classic',
-                                      style: GoogleFonts.poppins(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900),
+                                      style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w900),
                                     ),
                                   ],
                                 ),
                               ],
                             ),
-                            Container(width: 1, height: 28, color: Colors.white24),
+                            Container(
+                                width: 1, height: 28, color: Colors.white24),
                             Column(
                               children: [
                                 Text(
                                   'Entry Amount',
-                                  style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                                  style: GoogleFonts.poppins(
+                                      color: Colors.white70,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(height: 2),
                                 Row(
                                   children: [
-                                    const Icon(Icons.monetization_on_rounded, color: AppColors.coinGold, size: 16),
+                                    const Icon(Icons.monetization_on_rounded,
+                                        color: AppColors.coinGold, size: 16),
                                     const SizedBox(width: 4),
                                     Text(
                                       '500',
-                                      style: GoogleFonts.poppins(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900),
+                                      style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w900),
                                     ),
                                   ],
                                 ),
@@ -361,73 +446,106 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
 
                       const SizedBox(height: 24),
 
-                      // VS Player Cards Row
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          // Left Player Box (My Avatar)
-                          _PlayerCardBox(
-                            name: myName,
-                            avatarUrl: myAvatar,
-                            borderColor: const Color(0xFFE53935),
-                          ),
+                      // Show one slot per human seat while matchmaking.
+                      if (widget.playerCount == 4)
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _PlayerCardBox(
+                              name: myName,
+                              avatarUrl: myAvatar,
+                              borderColor: const Color(0xFFE53935),
+                              size: 76,
+                            ),
+                            for (var seat = 2; seat <= 4; seat++)
+                              _PlayerCardBox(
+                                name: 'Player $seat',
+                                borderColor: const Color(0xFF1E88E5),
+                                isSearching: !_isMatchFound,
+                                size: 76,
+                              ),
+                          ],
+                        )
+                      else
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // Left Player Box (My Avatar)
+                            _PlayerCardBox(
+                              name: myName,
+                              avatarUrl: myAvatar,
+                              borderColor: const Color(0xFFE53935),
+                            ),
 
-                          const SizedBox(width: 12),
+                            const SizedBox(width: 12),
 
-                          // Center 3D VS Badge
-                          AnimatedBuilder(
-                            animation: _vsGlowController,
-                            builder: (context, child) {
-                              final glow = _vsGlowController.value;
-                              return Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: const LinearGradient(
-                                    colors: [Color(0xFFFFEA00), Color(0xFFFF8F00), Color(0xFFB76E00)],
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFFFFD700).withValues(alpha: 0.6 + glow * 0.4),
-                                      blurRadius: 12 + glow * 8,
-                                      spreadRadius: 2,
+                            // Center 3D VS Badge
+                            AnimatedBuilder(
+                              animation: _vsGlowController,
+                              builder: (context, child) {
+                                final glow = _vsGlowController.value;
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFFFFEA00),
+                                        Color(0xFFFF8F00),
+                                        Color(0xFFB76E00)
+                                      ],
                                     ),
-                                  ],
-                                ),
-                                child: Text(
-                                  'VS',
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.black87,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w900,
-                                    fontStyle: FontStyle.italic,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFFFFD700)
+                                            .withValues(
+                                                alpha: 0.6 + glow * 0.4),
+                                        blurRadius: 12 + glow * 8,
+                                        spreadRadius: 2,
+                                      ),
+                                    ],
                                   ),
-                                ),
-                              );
-                            },
-                          ),
+                                  child: Text(
+                                    'VS',
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.black87,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
 
-                          const SizedBox(width: 12),
+                            const SizedBox(width: 12),
 
-                          // Right Player Box (Opponent Avatar or Searching Shimmer)
-                          _PlayerCardBox(
-                            name: _isMatchFound ? (_opponentName ?? 'Opponent') : '???',
-                            avatarUrl: _isMatchFound ? _opponentAvatar : null,
-                            borderColor: const Color(0xFF1E88E5),
-                            isSearching: !_isMatchFound && !_searchFailed,
-                          ),
-                        ],
-                      ),
+                            // Right Player Box (Opponent Avatar or Searching Shimmer)
+                            _PlayerCardBox(
+                              name: _isMatchFound
+                                  ? (_opponentName ?? 'Opponent')
+                                  : '???',
+                              avatarUrl: _isMatchFound ? _opponentAvatar : null,
+                              borderColor: const Color(0xFF1E88E5),
+                              isSearching: !_isMatchFound && !_searchFailed,
+                            ),
+                          ],
+                        ),
 
                       const SizedBox(height: 24),
 
                       // Stopwatch Timer Badge
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
                           color: Colors.black87,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: const Color(0xFF00E676), width: 2),
+                          border: Border.all(
+                              color: const Color(0xFF00E676), width: 2),
                           boxShadow: const [
                             BoxShadow(color: Color(0x8800E676), blurRadius: 10),
                           ],
@@ -435,7 +553,8 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.timer_rounded, color: Color(0xFF00E676), size: 22),
+                            const Icon(Icons.timer_rounded,
+                                color: Color(0xFF00E676), size: 22),
                             const SizedBox(width: 8),
                             Text(
                               '$minutes:$seconds',
@@ -462,14 +581,15 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.search_rounded, color: AppColors.gold, size: 22),
+                                const Icon(Icons.search_rounded,
+                                    color: AppColors.gold, size: 22),
                                 const SizedBox(width: 6),
                                 Text(
                                   _isMatchFound
                                       ? 'PLAYERS CONNECTED! STARTING...'
                                       : _searchFailed
                                           ? 'NO LIVE MATCH AVAILABLE. TRY AGAIN.'
-                                          : 'SEARCHING FOR PLAYERS...',
+                                          : 'SEARCHING FOR ${widget.playerCount} HUMAN PLAYERS...',
                                   style: GoogleFonts.poppins(
                                     color: _isMatchFound
                                         ? const Color(0xFF00E676)
@@ -506,10 +626,14 @@ class _OnlineMatchmakingDialogState extends ConsumerState<OnlineMatchmakingDialo
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 2),
                     boxShadow: const [
-                      BoxShadow(color: Colors.black45, blurRadius: 6, offset: Offset(0, 3)),
+                      BoxShadow(
+                          color: Colors.black45,
+                          blurRadius: 6,
+                          offset: Offset(0, 3)),
                     ],
                   ),
-                  child: const Icon(Icons.undo_rounded, color: Colors.black87, size: 24),
+                  child: const Icon(Icons.undo_rounded,
+                      color: Colors.black87, size: 24),
                 ),
               ),
             ),
@@ -525,12 +649,14 @@ class _PlayerCardBox extends StatelessWidget {
   final String? avatarUrl;
   final Color borderColor;
   final bool isSearching;
+  final double size;
 
   const _PlayerCardBox({
     required this.name,
     this.avatarUrl,
     required this.borderColor,
     this.isSearching = false,
+    this.size = 100,
   });
 
   @override
@@ -539,14 +665,15 @@ class _PlayerCardBox extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 100,
-          height: 100,
+          width: size,
+          height: size,
           decoration: BoxDecoration(
             color: const Color(0xFF132B5C),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: borderColor, width: 3),
             boxShadow: [
-              BoxShadow(color: borderColor.withValues(alpha: 0.5), blurRadius: 10),
+              BoxShadow(
+                  color: borderColor.withValues(alpha: 0.5), blurRadius: 10),
             ],
           ),
           clipBehavior: Clip.antiAlias,
@@ -578,15 +705,22 @@ class _PlayerCardBox extends StatelessWidget {
       return const Icon(Icons.person_rounded, color: Colors.white70, size: 48);
     }
     if (url.startsWith('http')) {
-      return Image.network(url, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded, color: Colors.white70, size: 48));
+      return Image.network(url,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded,
+              color: Colors.white70, size: 48));
     }
-    return Image.asset(url, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded, color: Colors.white70, size: 48));
+    return Image.asset(url,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) =>
+            const Icon(Icons.person_rounded, color: Colors.white70, size: 48));
   }
 }
 
 class _SearchingShimmerAvatar extends StatefulWidget {
   @override
-  State<_SearchingShimmerAvatar> createState() => _SearchingShimmerAvatarState();
+  State<_SearchingShimmerAvatar> createState() =>
+      _SearchingShimmerAvatarState();
 }
 
 class _SearchingShimmerAvatarState extends State<_SearchingShimmerAvatar>
@@ -613,7 +747,8 @@ class _SearchingShimmerAvatarState extends State<_SearchingShimmerAvatar>
           child: Center(
             child: Opacity(
               opacity: opacity,
-              child: const Icon(Icons.person_search_rounded, color: AppColors.gold, size: 44),
+              child: const Icon(Icons.person_search_rounded,
+                  color: AppColors.gold, size: 44),
             ),
           ),
         );

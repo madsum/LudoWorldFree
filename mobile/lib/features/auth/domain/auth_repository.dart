@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'user_model.dart';
 
 class DailyBonusStatus {
@@ -63,6 +65,12 @@ abstract class AuthRepository {
     required String avatarUrl,
     required String country,
     required String countryFlag,
+  });
+
+  Future<String> uploadProfileAvatar({
+    required String playerId,
+    required Uint8List bytes,
+    required String fileName,
   });
 
   Future<UserModel> addGoldReward({

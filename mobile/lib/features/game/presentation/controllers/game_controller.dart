@@ -67,8 +67,10 @@ class GameNotifier extends StateNotifier<GameState> {
 
   void applyRemoteGameState(Map<String, dynamic> json) {
     if (!isOnlineMode) return;
-    final remote = GameState.fromJson(json, localPlayerId: _onlineLocalPlayerId);
-    if (remote.players.length != 2 || remote.players.every((player) => player.isBot)) {
+    final remote =
+        GameState.fromJson(json, localPlayerId: _onlineLocalPlayerId);
+    if ((remote.players.length != 2 && remote.players.length != 4) ||
+        remote.players.any((player) => player.isBot)) {
       return;
     }
     _botTimer?.cancel();
@@ -87,7 +89,9 @@ class GameNotifier extends StateNotifier<GameState> {
     state = remote;
     _applyingRemoteState = false;
 
-    if (remote.isGameOver || remote.currentPlayer.id != _onlineLocalPlayerId) return;
+    if (remote.isGameOver || remote.currentPlayer.id != _onlineLocalPlayerId) {
+      return;
+    }
     if (remote.turnPhase == GameTurnPhase.rollDice) {
       _scheduleTurnTimeout(Duration(
         milliseconds: remote.turnTimerRemainingMilliseconds,
@@ -139,12 +143,18 @@ class GameNotifier extends StateNotifier<GameState> {
         .toList();
     final humanTurnIndex = freshPlayers.indexWhere((player) => !player.isBot);
     var startingTurnIndex = humanTurnIndex < 0 ? 0 : humanTurnIndex;
-    if (isOnlineMode && freshPlayers.length == 2) {
+    if (isOnlineMode && freshPlayers.length >= 2) {
       // Matchmaking chooses the lexicographically first player as the initial
-      // turn owner. Both clients must construct the same initial game state.
-      startingTurnIndex = freshPlayers[0].id.compareTo(freshPlayers[1].id) < 0
-          ? 0
-          : 1;
+      // turn owner. Every client must construct the same initial game state.
+      startingTurnIndex = 0;
+      for (var index = 1; index < freshPlayers.length; index++) {
+        if (freshPlayers[index]
+                .id
+                .compareTo(freshPlayers[startingTurnIndex].id) <
+            0) {
+          startingTurnIndex = index;
+        }
+      }
     }
     state = GameState(
       players: freshPlayers,
@@ -178,9 +188,8 @@ class GameNotifier extends StateNotifier<GameState> {
     _isTurnProcessing = true;
     final matchEpoch = _matchEpoch;
     final rollOpportunityId = state.rollOpportunityId;
-    final authoritativeDice = isOnlineMode
-        ? _onlineDiceRoller?.call(rollOpportunityId)
-        : null;
+    final authoritativeDice =
+        isOnlineMode ? _onlineDiceRoller?.call(rollOpportunityId) : null;
     if (isOnlineMode && authoritativeDice == null) {
       _isTurnProcessing = false;
       return;

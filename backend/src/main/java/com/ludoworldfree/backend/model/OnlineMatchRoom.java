@@ -9,6 +9,8 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -42,6 +44,39 @@ public class OnlineMatchRoom {
     @Column(name = "player_b_flag", length = 16)
     private String playerBFlag;
 
+    @Column(name = "player_c_id")
+    private UUID playerCId;
+    @Column(name = "player_c_name", length = 100)
+    private String playerCName;
+    @Column(name = "player_c_avatar", length = 500)
+    private String playerCAvatar;
+    @Column(name = "player_c_country", length = 100)
+    private String playerCCountry;
+    @Column(name = "player_c_flag", length = 16)
+    private String playerCFlag;
+    @Column(name = "player_c_color", length = 8)
+    private String playerCColor;
+
+    @Column(name = "player_d_id")
+    private UUID playerDId;
+    @Column(name = "player_d_name", length = 100)
+    private String playerDName;
+    @Column(name = "player_d_avatar", length = 500)
+    private String playerDAvatar;
+    @Column(name = "player_d_country", length = 100)
+    private String playerDCountry;
+    @Column(name = "player_d_flag", length = 16)
+    private String playerDFlag;
+    @Column(name = "player_d_color", length = 8)
+    private String playerDColor;
+
+    @Column(name = "player_a_color", nullable = false, length = 8)
+    private String playerAColor = "red";
+    @Column(name = "player_b_color", nullable = false, length = 8)
+    private String playerBColor = "yellow";
+    @Column(name = "player_count", nullable = false)
+    private int playerCount = 2;
+
     @Column(name = "entry_fee", nullable = false)
     private long entryFee;
 
@@ -53,6 +88,10 @@ public class OnlineMatchRoom {
     private boolean playerAConnected;
     @Column(name = "player_b_connected", nullable = false)
     private boolean playerBConnected;
+    @Column(name = "player_c_connected", nullable = false)
+    private boolean playerCConnected;
+    @Column(name = "player_d_connected", nullable = false)
+    private boolean playerDConnected;
 
     @Column(name = "turn_owner_id")
     private UUID turnOwnerId;
@@ -81,8 +120,32 @@ public class OnlineMatchRoom {
 
     protected OnlineMatchRoom() {}
 
-    public OnlineMatchRoom(String roomId, MatchmakingTicket playerA,
-                           MatchmakingTicket playerB, long entryFee) {
+    public OnlineMatchRoom(String roomId, List<MatchmakingTicket> tickets, long entryFee) {
+        if (tickets.size() != 2 && tickets.size() != 4) {
+            throw new IllegalArgumentException("Online rooms require two or four players.");
+        }
+        playerCount = tickets.size();
+        List<String> availableColors = new ArrayList<>(List.of("red", "green", "yellow", "blue"));
+        List<String> assignedColors = new ArrayList<>();
+        for (MatchmakingTicket ticket : tickets) {
+            String color = ticket.getSelectedColor();
+            if (!availableColors.remove(color)) {
+                if (tickets.size() == 2) {
+                    color = switch (color) {
+                        case "red" -> "yellow";
+                        case "yellow" -> "red";
+                        case "green" -> "blue";
+                        default -> "green";
+                    };
+                    availableColors.remove(color);
+                } else {
+                    color = availableColors.removeFirst();
+                }
+            }
+            assignedColors.add(color);
+        }
+        MatchmakingTicket playerA = tickets.get(0);
+        MatchmakingTicket playerB = tickets.get(1);
         this.roomId = roomId;
         this.playerAId = playerA.getPlayerId();
         this.playerAName = playerA.getDisplayName();
@@ -94,7 +157,24 @@ public class OnlineMatchRoom {
         this.playerBAvatar = playerB.getAvatarUrl();
         this.playerBCountry = playerB.getCountry();
         this.playerBFlag = playerB.getCountryFlag();
+        playerAColor = assignedColors.get(0);
+        playerBColor = assignedColors.get(1);
+        if (tickets.size() == 4) {
+            MatchmakingTicket playerC = tickets.get(2);
+            MatchmakingTicket playerD = tickets.get(3);
+            playerCId = playerC.getPlayerId(); playerCName = playerC.getDisplayName();
+            playerCAvatar = playerC.getAvatarUrl(); playerCCountry = playerC.getCountry();
+            playerCFlag = playerC.getCountryFlag(); playerCColor = assignedColors.get(2);
+            playerDId = playerD.getPlayerId(); playerDName = playerD.getDisplayName();
+            playerDAvatar = playerD.getAvatarUrl(); playerDCountry = playerD.getCountry();
+            playerDFlag = playerD.getCountryFlag(); playerDColor = assignedColors.get(3);
+        }
         this.entryFee = entryFee;
+    }
+
+    public OnlineMatchRoom(String roomId, MatchmakingTicket playerA,
+                           MatchmakingTicket playerB, long entryFee) {
+        this(roomId, List.of(playerA, playerB), entryFee);
     }
 
     public String getRoomId() { return roomId; }
@@ -108,6 +188,23 @@ public class OnlineMatchRoom {
     public String getPlayerBAvatar() { return playerBAvatar; }
     public String getPlayerBCountry() { return playerBCountry; }
     public String getPlayerBFlag() { return playerBFlag; }
+    public int getPlayerCount() { return playerCount; }
+    public List<UUID> getPlayerIds() {
+        List<UUID> ids = new ArrayList<>(List.of(playerAId, playerBId));
+        if (playerCId != null) ids.add(playerCId);
+        if (playerDId != null) ids.add(playerDId);
+        return ids;
+    }
+    public List<MatchPlayer> getPlayers() {
+        List<MatchPlayer> players = new ArrayList<>();
+        players.add(new MatchPlayer(playerAId, playerAName, playerAAvatar, playerACountry, playerAFlag, playerAColor));
+        players.add(new MatchPlayer(playerBId, playerBName, playerBAvatar, playerBCountry, playerBFlag, playerBColor));
+        if (playerCId != null) players.add(new MatchPlayer(playerCId, playerCName, playerCAvatar, playerCCountry, playerCFlag, playerCColor));
+        if (playerDId != null) players.add(new MatchPlayer(playerDId, playerDName, playerDAvatar, playerDCountry, playerDFlag, playerDColor));
+        return players;
+    }
+    public record MatchPlayer(UUID id, String name, String avatarUrl, String country, String countryFlag, String color) {}
+    public UUID playerForColor(String color) { return getPlayers().stream().filter(p -> p.color().equals(color)).map(MatchPlayer::id).findFirst().orElse(null); }
     public long getEntryFee() { return entryFee; }
     public Status getStatus() { return status; }
     public boolean isPlayerAConnected() { return playerAConnected; }
@@ -120,45 +217,45 @@ public class OnlineMatchRoom {
     public UUID getLatestStateSenderId() { return latestStateSenderId; }
     public long getStateRevision() { return stateRevision; }
 
-    public boolean contains(UUID playerId) {
-        return playerAId.equals(playerId) || playerBId.equals(playerId);
-    }
+    public boolean contains(UUID playerId) { return getPlayerIds().contains(playerId); }
 
     public UUID opponentOf(UUID playerId) {
-        if (playerAId.equals(playerId)) return playerBId;
-        if (playerBId.equals(playerId)) return playerAId;
-        return null;
+        List<UUID> ids = getPlayerIds(); int i = ids.indexOf(playerId);
+        return i < 0 ? null : ids.get((i + 1) % ids.size());
     }
 
     public String nameOf(UUID playerId) {
-        return playerAId.equals(playerId) ? playerAName : playerBName;
+        return getPlayers().stream().filter(p -> p.id().equals(playerId)).map(MatchPlayer::name).findFirst().orElse(null);
     }
 
     public String avatarOf(UUID playerId) {
-        return playerAId.equals(playerId) ? playerAAvatar : playerBAvatar;
+        return getPlayers().stream().filter(p -> p.id().equals(playerId)).map(MatchPlayer::avatarUrl).findFirst().orElse(null);
     }
 
     public String countryOf(UUID playerId) {
-        return playerAId.equals(playerId) ? playerACountry : playerBCountry;
+        return getPlayers().stream().filter(p -> p.id().equals(playerId)).map(MatchPlayer::country).findFirst().orElse(null);
     }
 
     public String flagOf(UUID playerId) {
-        return playerAId.equals(playerId) ? playerAFlag : playerBFlag;
+        return getPlayers().stream().filter(p -> p.id().equals(playerId)).map(MatchPlayer::countryFlag).findFirst().orElse(null);
     }
 
     public boolean isConnected(UUID playerId) {
-        return playerAId.equals(playerId) ? playerAConnected
-                : playerBId.equals(playerId) && playerBConnected;
+        if (playerAId.equals(playerId)) return playerAConnected;
+        if (playerBId.equals(playerId)) return playerBConnected;
+        if (playerCId != null && playerCId.equals(playerId)) return playerCConnected;
+        return playerDId != null && playerDId.equals(playerId) && playerDConnected;
     }
 
     public void connect(UUID playerId) {
         if (playerAId.equals(playerId)) playerAConnected = true;
         else if (playerBId.equals(playerId)) playerBConnected = true;
-        if (playerAConnected && playerBConnected) {
+        else if (playerCId != null && playerCId.equals(playerId)) playerCConnected = true;
+        else if (playerDId != null && playerDId.equals(playerId)) playerDConnected = true;
+        if (getPlayerIds().stream().allMatch(this::isConnected)) {
             status = Status.READY;
             if (turnOwnerId == null) {
-                turnOwnerId = playerAId.toString().compareTo(playerBId.toString()) < 0
-                        ? playerAId : playerBId;
+                turnOwnerId = getPlayerIds().stream().min((a,b) -> a.toString().compareTo(b.toString())).orElse(playerAId);
             }
         }
         touch();
@@ -167,6 +264,8 @@ public class OnlineMatchRoom {
     public void disconnect(UUID playerId) {
         if (playerAId.equals(playerId)) playerAConnected = false;
         else if (playerBId.equals(playerId)) playerBConnected = false;
+        else if (playerCId != null && playerCId.equals(playerId)) playerCConnected = false;
+        else if (playerDId != null && playerDId.equals(playerId)) playerDConnected = false;
         touch();
     }
 

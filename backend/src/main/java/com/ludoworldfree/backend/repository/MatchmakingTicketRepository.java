@@ -14,9 +14,10 @@ import java.util.UUID;
 
 public interface MatchmakingTicketRepository extends JpaRepository<MatchmakingTicket, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select t from MatchmakingTicket t where t.entryFee = :entryFee and t.playerId <> :playerId order by t.queuedAt asc")
+    @Query("select t from MatchmakingTicket t where t.entryFee = :entryFee and t.playerCount = :playerCount and t.playerId <> :playerId order by t.queuedAt asc")
     List<MatchmakingTicket> findWaitingCandidateForUpdate(
             @Param("entryFee") long entryFee,
+            @Param("playerCount") int playerCount,
             @Param("playerId") UUID playerId,
             Pageable pageable);
 

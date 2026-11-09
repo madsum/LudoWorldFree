@@ -871,25 +871,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 playerCount: '218,675',
                                 cardType: LobbyCardType.online,
                                 onTap: () {
-                                  OnlineMatchmakingDialog.show(
+                                  final user =
+                                      ref.read(authControllerProvider).user;
+                                  ModeConfigDialog.show(
                                     context,
-                                    onMatchFound: (players, roomId) {
-                                      final playerId = ref
-                                          .read(authControllerProvider)
-                                          .user
-                                          ?.id;
-                                      if (playerId == null) return;
-                                      final gameController = ref
-                                          .read(gameControllerProvider.notifier);
-                                      gameController.configureOnlineMatch(
-                                        roomId: roomId,
-                                        playerId: playerId,
-                                        requestDiceRoll: ref
-                                            .read(webSocketServiceProvider)
-                                            .requestDiceRoll,
+                                    title: 'Online Multiplayer',
+                                    isVsComputer: false,
+                                    isOnline: true,
+                                    playerName: user?.name ?? 'Player 1',
+                                    avatarUrl: user?.avatarUrl,
+                                    country: user?.country ?? 'World',
+                                    countryFlag: user?.countryFlag ?? '🌐',
+                                    coins: user?.coins ?? 0,
+                                    diamonds: user?.diamonds ?? 0,
+                                    onStartGame: (_) {},
+                                    onStartOnlineMatch: (playerCount, color) {
+                                      OnlineMatchmakingDialog.show(
+                                        context,
+                                        playerCount: playerCount,
+                                        selectedColor: color,
+                                        onMatchFound: (players, roomId) {
+                                          final playerId = ref
+                                              .read(authControllerProvider)
+                                              .user
+                                              ?.id;
+                                          if (playerId == null) return;
+                                          final gameController = ref.read(
+                                              gameControllerProvider.notifier);
+                                          gameController.configureOnlineMatch(
+                                            roomId: roomId,
+                                            playerId: playerId,
+                                            requestDiceRoll: ref
+                                                .read(webSocketServiceProvider)
+                                                .requestDiceRoll,
+                                          );
+                                          gameController.startNewGame(
+                                              players: players);
+                                          context.push('/game');
+                                        },
                                       );
-                                      gameController.startNewGame(players: players);
-                                      context.push('/game');
                                     },
                                   );
                                 },
