@@ -738,11 +738,11 @@ class AuthRepositoryImpl implements AuthRepository {
       data: form,
       options: Options(headers: {'X-Player-ID': playerId}),
     );
-    final avatarUrl = response.data is Map
-        ? response.data['avatarUrl']?.toString()
-        : null;
+    final avatarUrl =
+        response.data is Map ? response.data['avatarUrl']?.toString() : null;
     if (avatarUrl == null || avatarUrl.isEmpty) {
-      throw const FormatException('The server did not return the uploaded image URL.');
+      throw const FormatException(
+          'The server did not return the uploaded image URL.');
     }
     return avatarUrl;
   }

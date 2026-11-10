@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -178,10 +177,26 @@ class AuthController extends StateNotifier<AuthState> {
       state = AuthState(user: updated, isLoading: false);
       return true;
     } catch (_) {
-      state = state.copyWith(
-        isLoading: false,
-        errorMessage: 'Image upload failed. Your default avatar is unchanged.',
-      );
+      try {
+        final fallback = await _repository.updateUserProfile(
+          name: current.name,
+          avatarUrl: current.avatarUrl ?? 'assets/images/black-mask.webp',
+          country: current.country,
+          countryFlag: current.countryFlag,
+        );
+        state = AuthState(
+          user: fallback,
+          isLoading: false,
+          errorMessage:
+              'Image upload failed. Your default avatar is unchanged.',
+        );
+      } catch (_) {
+        state = state.copyWith(
+          isLoading: false,
+          errorMessage:
+              'Image upload failed. Your default avatar is unchanged.',
+        );
+      }
       return false;
     }
   }

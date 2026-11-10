@@ -1,3 +1,7 @@
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -77,6 +81,15 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
   late TextEditingController _nameController;
   late CountryItem _selectedCountry;
   late String _selectedAvatarId;
+  Uint8List? _customAvatarBytes;
+  String? _customAvatarName;
+  String? _existingCustomAvatarUrl;
+  String? _avatarError;
+  bool _isPickingAvatar = false;
+
+  static const int _maxAvatarBytes = 5 * 1024 * 1024;
+  static const int _maxAvatarDimension = 4096;
+  static const int _maxAvatarPixels = 16 * 1024 * 1024;
 
   static const List<CountryItem> _allCountries = [
     CountryItem('World', 'assets/images/world.png'),
@@ -277,16 +290,46 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
   ];
 
   static const List<AvatarItem> _avatars = [
-    AvatarItem(id: 'mask_black_1', title: 'Black Mask 1', imagePath: 'assets/images/black-mask.webp'),
-    AvatarItem(id: 'mask_black_2', title: 'Black Mask 2', imagePath: 'assets/images/black-mask2.webp'),
-    AvatarItem(id: 'mask_black_4', title: 'Black Mask 4', imagePath: 'assets/images/black-mask4.webp'),
-    AvatarItem(id: 'mask_blue_1', title: 'Blue Mask 1', imagePath: 'assets/images/blue-mask.webp'),
-    AvatarItem(id: 'mask_blue_2', title: 'Blue Mask 2', imagePath: 'assets/images/blue-mask (1).webp'),
-    AvatarItem(id: 'mask_blue_7', title: 'Blue Mask 7', imagePath: 'assets/images/blue-mask7.webp'),
-    AvatarItem(id: 'mask_blue_8', title: 'Blue Mask 8', imagePath: 'assets/images/blue-mask8.webp'),
-    AvatarItem(id: 'mask_green', title: 'Green Mask', imagePath: 'assets/images/green-mask.webp'),
-    AvatarItem(id: 'mask_pest', title: 'Pest Mask', imagePath: 'assets/images/pest-mask.webp'),
-    AvatarItem(id: 'mask_red', title: 'Red Mask', imagePath: 'assets/images/red-mask.webp'),
+    AvatarItem(
+        id: 'mask_black_1',
+        title: 'Black Mask 1',
+        imagePath: 'assets/images/black-mask.webp'),
+    AvatarItem(
+        id: 'mask_black_2',
+        title: 'Black Mask 2',
+        imagePath: 'assets/images/black-mask2.webp'),
+    AvatarItem(
+        id: 'mask_black_4',
+        title: 'Black Mask 4',
+        imagePath: 'assets/images/black-mask4.webp'),
+    AvatarItem(
+        id: 'mask_blue_1',
+        title: 'Blue Mask 1',
+        imagePath: 'assets/images/blue-mask.webp'),
+    AvatarItem(
+        id: 'mask_blue_2',
+        title: 'Blue Mask 2',
+        imagePath: 'assets/images/blue-mask (1).webp'),
+    AvatarItem(
+        id: 'mask_blue_7',
+        title: 'Blue Mask 7',
+        imagePath: 'assets/images/blue-mask7.webp'),
+    AvatarItem(
+        id: 'mask_blue_8',
+        title: 'Blue Mask 8',
+        imagePath: 'assets/images/blue-mask8.webp'),
+    AvatarItem(
+        id: 'mask_green',
+        title: 'Green Mask',
+        imagePath: 'assets/images/green-mask.webp'),
+    AvatarItem(
+        id: 'mask_pest',
+        title: 'Pest Mask',
+        imagePath: 'assets/images/pest-mask.webp'),
+    AvatarItem(
+        id: 'mask_red',
+        title: 'Red Mask',
+        imagePath: 'assets/images/red-mask.webp'),
   ];
 
   @override
@@ -301,7 +344,17 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
       orElse: () => _allCountries.first,
     );
 
-    _selectedAvatarId = widget.initialAvatarUrl ?? _avatars.first.imagePath;
+    final initialAvatar = widget.initialAvatarUrl;
+    final isDefaultAvatar =
+        _avatars.any((avatar) => avatar.imagePath == initialAvatar);
+    _selectedAvatarId = isDefaultAvatar || initialAvatar == null
+        ? initialAvatar ?? _avatars.first.imagePath
+        : _avatars.first.imagePath;
+    if (!isDefaultAvatar &&
+        initialAvatar != null &&
+        initialAvatar.startsWith('http')) {
+      _existingCustomAvatarUrl = initialAvatar;
+    }
   }
 
   @override
@@ -311,13 +364,16 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
   }
 
   Widget _buildFlagWidget(String flag, {double size = 22}) {
-    if (flag == '🌐' || flag == 'assets/images/world.png' || flag.contains('world')) {
+    if (flag == '🌐' ||
+        flag == 'assets/images/world.png' ||
+        flag.contains('world')) {
       return Image.asset(
         'assets/images/world.png',
         width: size,
         height: size,
         fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => Text('🌐', style: TextStyle(fontSize: size)),
+        errorBuilder: (context, error, stackTrace) =>
+            Text('🌐', style: TextStyle(fontSize: size)),
       );
     }
     return Text(flag, style: TextStyle(fontSize: size));
@@ -339,30 +395,199 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
     );
   }
 
+  Future<void> _pickAvatarImage() async {
+    if (_isPickingAvatar || ref.read(authControllerProvider).isLoading) return;
+    setState(() {
+      _isPickingAvatar = true;
+      _avatarError = null;
+    });
+
+    try {
+      final result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
+        allowMultiple: false,
+        withReadStream: true,
+      );
+      final file =
+          result == null || result.files.isEmpty ? null : result.files.first;
+      if (file == null) return;
+
+      final extension = file.extension?.toLowerCase();
+      if (!const {'png', 'jpg', 'jpeg', 'webp'}.contains(extension)) {
+        _setAvatarError('Choose a PNG, JPG, JPEG, or WebP image.');
+        return;
+      }
+
+      final reportedLength = file.size;
+      if (reportedLength == 0) {
+        _setAvatarError('The selected file could not be read.');
+        return;
+      }
+      if (reportedLength > _maxAvatarBytes) {
+        _setAvatarError('Image must be 5 MB or smaller.');
+        return;
+      }
+
+      Uint8List? bytes = file.bytes;
+      if (bytes == null && file.readStream != null) {
+        final buffer = BytesBuilder(copy: false);
+        await for (final chunk in file.readStream!) {
+          if (buffer.length + chunk.length > _maxAvatarBytes) {
+            _setAvatarError('Image must be 5 MB or smaller.');
+            return;
+          }
+          buffer.add(chunk);
+        }
+        bytes = buffer.takeBytes();
+      }
+      bytes ??= await file.xFile.readAsBytes();
+      if (bytes.isEmpty || bytes.length > _maxAvatarBytes) {
+        _setAvatarError(bytes.length > _maxAvatarBytes
+            ? 'Image must be 5 MB or smaller.'
+            : 'The selected file could not be read.');
+        return;
+      }
+
+      // Decode the actual bytes rather than parsing format-specific headers.
+      // Header parsing can reject valid JPEG/WebP files produced by device
+      // photo providers even though Flutter can render them.
+      final codec = await ui.instantiateImageCodec(bytes);
+      late final int width;
+      late final int height;
+      try {
+        final frame = await codec.getNextFrame();
+        width = frame.image.width;
+        height = frame.image.height;
+        frame.image.dispose();
+      } finally {
+        codec.dispose();
+      }
+      if (width < 32 ||
+          height < 32 ||
+          width > _maxAvatarDimension ||
+          height > _maxAvatarDimension ||
+          width * height > _maxAvatarPixels) {
+        _setAvatarError(
+            'Image dimensions must be at least 32×32 and no larger than 4096×4096.');
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _customAvatarBytes = bytes;
+        _customAvatarName = file.name;
+        _existingCustomAvatarUrl = null;
+        _avatarError = null;
+      });
+    } on Object {
+      _setAvatarError(
+          'This image could not be opened. Choose a valid PNG, JPG, JPEG, or WebP file.');
+    } finally {
+      if (mounted) setState(() => _isPickingAvatar = false);
+    }
+  }
+
+  void _setAvatarError(String message) {
+    if (!mounted) return;
+    setState(() => _avatarError = message);
+  }
+
+  void _selectDefaultAvatar(AvatarItem avatar) {
+    setState(() {
+      _selectedAvatarId = avatar.imagePath;
+      _customAvatarBytes = null;
+      _customAvatarName = null;
+      _existingCustomAvatarUrl = null;
+      _avatarError = null;
+    });
+  }
+
+  void _clearCustomAvatar() {
+    setState(() {
+      _customAvatarBytes = null;
+      _customAvatarName = null;
+      _existingCustomAvatarUrl = null;
+      _avatarError = null;
+    });
+  }
+
+  Widget _buildAvatarPreview() {
+    final bytes = _customAvatarBytes;
+    if (bytes != null) {
+      return Image.memory(
+        bytes,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded),
+      );
+    }
+    final url = _existingCustomAvatarUrl;
+    if (url != null) {
+      return Image.network(
+        url,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Image.asset(
+          _selectedAvatarId,
+          fit: BoxFit.cover,
+        ),
+      );
+    }
+    return Image.asset(
+      _selectedAvatarId,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded),
+    );
+  }
+
   void _handleSaveAndPlay() async {
-    final name = _nameController.text.trim().isEmpty ? 'Guest Player' : _nameController.text.trim();
-    
+    if (ref.read(authControllerProvider).isLoading || _isPickingAvatar) return;
+    final name = _nameController.text.trim().isEmpty
+        ? 'Guest Player'
+        : _nameController.text.trim();
+    final customAvatarBytes = _customAvatarBytes;
+    final defaultAvatarUrl = _selectedAvatarId;
+    final profileAvatarUrl = customAvatarBytes == null
+        ? _existingCustomAvatarUrl ?? defaultAvatarUrl
+        : defaultAvatarUrl;
+
     bool success;
     if (widget.isEditMode) {
-      success = await ref.read(authControllerProvider.notifier).updateUserProfile(
-            name: name,
-            avatarUrl: _selectedAvatarId,
-            country: _selectedCountry.name,
-            countryFlag: _selectedCountry.flag,
-          );
+      success =
+          await ref.read(authControllerProvider.notifier).updateUserProfile(
+                name: name,
+                avatarUrl: profileAvatarUrl,
+                country: _selectedCountry.name,
+                countryFlag: _selectedCountry.flag,
+              );
     } else {
       success = await ref.read(authControllerProvider.notifier).signInAsGuest(
             name: name,
-            avatarUrl: _selectedAvatarId,
+            avatarUrl: profileAvatarUrl,
             country: _selectedCountry.name,
             countryFlag: _selectedCountry.flag,
           );
     }
 
+    var uploadFailed = false;
+    if (success && customAvatarBytes != null) {
+      uploadFailed =
+          !await ref.read(authControllerProvider.notifier).uploadProfileAvatar(
+                bytes: customAvatarBytes,
+                fileName: _customAvatarName ?? 'profile-image.png',
+              );
+    }
+
     if (success && mounted) {
+      final messenger = ScaffoldMessenger.maybeOf(context);
       Navigator.of(context).pop();
       if (!widget.isEditMode) {
         context.go('/home');
+      }
+      if (uploadFailed) {
+        messenger?.showSnackBar(const SnackBar(
+          content: Text(
+              'Image upload failed. Your selected default avatar was saved.'),
+        ));
       }
     }
   }
@@ -386,7 +611,9 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
             children: [
               // Header Title
               Text(
-                widget.isEditMode ? 'EDIT PLAYER PROFILE' : 'GUEST PROFILE SETUP',
+                widget.isEditMode
+                    ? 'EDIT PLAYER PROFILE'
+                    : 'GUEST PROFILE SETUP',
                 style: GoogleFonts.poppins(
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
@@ -397,8 +624,8 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
               const SizedBox(height: 4),
               Text(
                 widget.isEditMode
-                    ? 'Update your name, country & mask avatar below!'
-                    : 'Choose your mask avatar & country to enter the game!',
+                    ? 'Update your name, country & profile image below!'
+                    : 'Choose a default avatar or upload your own image!',
                 style: GoogleFonts.poppins(fontSize: 12, color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
@@ -410,27 +637,34 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   'YOUR PLAYER NAME',
-                  style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white60),
+                  style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white60),
                 ),
               ),
               const SizedBox(height: 6),
               TextField(
                 controller: _nameController,
-                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+                style: GoogleFonts.poppins(
+                    color: Colors.white, fontWeight: FontWeight.bold),
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: Colors.black38,
-                  prefixIcon: const Icon(Icons.person_rounded, color: AppColors.gold),
+                  prefixIcon:
+                      const Icon(Icons.person_rounded, color: AppColors.gold),
                   hintText: 'Enter name',
                   hintStyle: const TextStyle(color: Colors.white38),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: const BorderSide(color: AppColors.glassBorder),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.gold, width: 1.5),
+                    borderSide:
+                        const BorderSide(color: AppColors.gold, width: 1.5),
                   ),
                 ),
               ),
@@ -445,11 +679,15 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                   children: [
                     Text(
                       'CHOOSE MASK AVATAR',
-                      style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white60),
+                      style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white60),
                     ),
                     Text(
                       '${_avatars.length} Masks',
-                      style: GoogleFonts.poppins(fontSize: 10, color: AppColors.gold),
+                      style: GoogleFonts.poppins(
+                          fontSize: 10, color: AppColors.gold),
                     ),
                   ],
                 ),
@@ -469,37 +707,49 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                   itemCount: _avatars.length,
                   itemBuilder: (context, index) {
                     final avatar = _avatars[index];
-                    final isSelected = avatar.imagePath == _selectedAvatarId;
-                    return GestureDetector(
-                      onTap: () => setState(() => _selectedAvatarId = avatar.imagePath),
+                    final isSelected = _customAvatarBytes == null &&
+                        _existingCustomAvatarUrl == null &&
+                        avatar.imagePath == _selectedAvatarId;
+                    return Semantics(
+                      button: true,
+                      selected: isSelected,
+                      label: 'Select ${avatar.title} avatar',
                       child: Tooltip(
                         message: avatar.title,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: isSelected ? AppColors.gold : Colors.white24,
-                              width: isSelected ? 3 : 1,
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => _selectDefaultAvatar(avatar),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isSelected
+                                    ? AppColors.gold
+                                    : Colors.white24,
+                                width: isSelected ? 3 : 1,
+                              ),
+                              boxShadow: isSelected
+                                  ? [
+                                      BoxShadow(
+                                        color: AppColors.gold
+                                            .withValues(alpha: 0.5),
+                                        blurRadius: 10,
+                                        spreadRadius: 1,
+                                      ),
+                                    ]
+                                  : null,
                             ),
-                            boxShadow: isSelected
-                                ? [
-                                    BoxShadow(
-                                      color: AppColors.gold.withValues(alpha: 0.5),
-                                      blurRadius: 10,
-                                      spreadRadius: 1,
-                                    ),
-                                  ]
-                                : null,
-                          ),
-                          child: ClipOval(
-                            child: Image.asset(
-                              avatar.imagePath,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => const Icon(
-                                Icons.person_rounded,
-                                color: Colors.white,
-                                size: 24,
+                            child: ClipOval(
+                              child: Image.asset(
+                                avatar.imagePath,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const Icon(
+                                  Icons.person_rounded,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
                               ),
                             ),
                           ),
@@ -510,6 +760,93 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                 ),
               ),
 
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Semantics(
+                    label: 'Selected profile image preview',
+                    image: true,
+                    child: Container(
+                      width: 54,
+                      height: 54,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.gold, width: 2),
+                      ),
+                      child: _buildAvatarPreview(),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Semantics(
+                      button: true,
+                      label: 'Browse and upload a profile image',
+                      child: OutlinedButton.icon(
+                        onPressed: _isPickingAvatar || authState.isLoading
+                            ? null
+                            : _pickAvatarImage,
+                        icon: _isPickingAvatar
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.upload_file_rounded),
+                        label: Text(
+                          _customAvatarName ?? 'Browse / Upload Image',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.gold,
+                          side: const BorderSide(color: AppColors.gold),
+                          minimumSize: const Size.fromHeight(46),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (_customAvatarBytes != null ||
+                      _existingCustomAvatarUrl != null)
+                    IconButton(
+                      tooltip:
+                          'Clear custom image and use selected default avatar',
+                      onPressed: _clearCustomAvatar,
+                      icon: const Icon(Icons.close_rounded,
+                          color: Colors.white70),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'PNG, JPG, JPEG, or WebP • max 5 MB',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white54,
+                    fontSize: 10,
+                  ),
+                ),
+              ),
+              if (_avatarError != null) ...[
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      _avatarError!,
+                      style: GoogleFonts.poppins(
+                        color: const Color(0xFFFF8A80),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 16),
 
               // Searchable Country Selector Button
@@ -517,7 +854,10 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   'SELECT YOUR COUNTRY (TYPE TO SEARCH)',
-                  style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white60),
+                  style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white60),
                 ),
               ),
               const SizedBox(height: 6),
@@ -525,11 +865,14 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
               GestureDetector(
                 onTap: _openCountrySearchPicker,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
                     color: Colors.black38,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.gold.withValues(alpha: 0.6), width: 1.2),
+                    border: Border.all(
+                        color: AppColors.gold.withValues(alpha: 0.6),
+                        width: 1.2),
                   ),
                   child: Row(
                     children: [
@@ -538,10 +881,14 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                       Expanded(
                         child: Text(
                           _selectedCountry.name,
-                          style: GoogleFonts.poppins(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                          style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600),
                         ),
                       ),
-                      const Icon(Icons.search_rounded, color: AppColors.gold, size: 20),
+                      const Icon(Icons.search_rounded,
+                          color: AppColors.gold, size: 20),
                     ],
                   ),
                 ),
@@ -557,7 +904,8 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                       onPressed: () => Navigator.of(context).pop(),
                       child: Text(
                         'Cancel',
-                        style: GoogleFonts.poppins(color: Colors.white54, fontWeight: FontWeight.w600),
+                        style: GoogleFonts.poppins(
+                            color: Colors.white54, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ),
@@ -566,7 +914,9 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
                     flex: 2,
                     child: CustomGameButton(
                       text: widget.isEditMode ? 'SAVE' : 'SAVE & PLAY',
-                      icon: widget.isEditMode ? Icons.save_rounded : Icons.play_arrow_rounded,
+                      icon: widget.isEditMode
+                          ? Icons.save_rounded
+                          : Icons.play_arrow_rounded,
                       isLoading: authState.isLoading,
                       onPressed: _handleSaveAndPlay,
                     ),
@@ -615,13 +965,16 @@ class _CountrySearchSheetState extends State<_CountrySearchSheet> {
   }
 
   Widget _buildFlagWidget(String flag, {double size = 22}) {
-    if (flag == '🌐' || flag == 'assets/images/world.png' || flag.contains('world')) {
+    if (flag == '🌐' ||
+        flag == 'assets/images/world.png' ||
+        flag.contains('world')) {
       return Image.asset(
         'assets/images/world.png',
         width: size,
         height: size,
         fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => Text('🌐', style: TextStyle(fontSize: size)),
+        errorBuilder: (context, error, stackTrace) =>
+            Text('🌐', style: TextStyle(fontSize: size)),
       );
     }
     return Text(flag, style: TextStyle(fontSize: size));
@@ -686,10 +1039,12 @@ class _CountrySearchSheetState extends State<_CountrySearchSheet> {
             decoration: InputDecoration(
               hintText: 'Type country name (e.g. World, Zim, Ned)...',
               hintStyle: const TextStyle(color: Colors.white38),
-              prefixIcon: const Icon(Icons.search_rounded, color: AppColors.gold),
+              prefixIcon:
+                  const Icon(Icons.search_rounded, color: AppColors.gold),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
-                      icon: const Icon(Icons.clear_rounded, color: Colors.white54),
+                      icon: const Icon(Icons.clear_rounded,
+                          color: Colors.white54),
                       onPressed: () {
                         _searchController.clear();
                         _onSearchChanged('');
@@ -698,7 +1053,8 @@ class _CountrySearchSheetState extends State<_CountrySearchSheet> {
                   : null,
               filled: true,
               fillColor: Colors.black38,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
                 borderSide: const BorderSide(color: Colors.white24),
@@ -723,10 +1079,12 @@ class _CountrySearchSheetState extends State<_CountrySearchSheet> {
                   )
                 : ListView.separated(
                     itemCount: _filteredList.length,
-                    separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
+                    separatorBuilder: (_, __) =>
+                        const Divider(color: Colors.white10, height: 1),
                     itemBuilder: (context, index) {
                       final country = _filteredList[index];
-                      final isSelected = country.name == widget.selectedCountry.name;
+                      final isSelected =
+                          country.name == widget.selectedCountry.name;
 
                       return ListTile(
                         onTap: () => widget.onSelected(country),
@@ -735,11 +1093,14 @@ class _CountrySearchSheetState extends State<_CountrySearchSheet> {
                           country.name,
                           style: GoogleFonts.poppins(
                             color: isSelected ? AppColors.gold : Colors.white,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
                           ),
                         ),
                         trailing: isSelected
-                            ? const Icon(Icons.check_circle_rounded, color: AppColors.gold, size: 20)
+                            ? const Icon(Icons.check_circle_rounded,
+                                color: AppColors.gold, size: 20)
                             : null,
                       );
                     },

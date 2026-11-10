@@ -19,7 +19,7 @@ public class PlayerAvatarImage {
     @Column(name = "content_type", nullable = false, length = 32)
     private String contentType;
 
-    @Column(name = "image_data", nullable = false, columnDefinition = "BYTEA")
+    @Column(name = "image_data", nullable = false)
     private byte[] imageData;
 
     @Column(name = "updated_at", nullable = false)

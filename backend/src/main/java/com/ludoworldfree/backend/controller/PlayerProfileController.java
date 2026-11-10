@@ -11,7 +11,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.CacheControl;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.multipart.MultipartFile;
@@ -101,7 +100,7 @@ public class PlayerProfileController {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(avatar.getContentType()))
                 .cacheControl(CacheControl.maxAge(1, TimeUnit.DAYS).cachePublic())
-                .header(HttpHeaders.X_CONTENT_TYPE_OPTIONS, "nosniff")
+                .header("X-Content-Type-Options", "nosniff")
                 .body(avatar.getImageData());
     }
 
@@ -129,20 +128,65 @@ public class PlayerProfileController {
                     "The file extension does not match the image format.");
         }
 
+        int[] dimensions = imageDimensions(contentType, bytes);
+        if (dimensions == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The image file is damaged.");
+        }
+        validateDimensions(dimensions[0], dimensions[1]);
         if (!contentType.equals("image/webp")) {
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
-            if (image == null) {
+            if (image == null || image.getWidth() != dimensions[0]
+                    || image.getHeight() != dimensions[1]) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The image file is damaged.");
             }
-            validateDimensions(image.getWidth(), image.getHeight());
-        } else {
-            int[] dimensions = webpDimensions(bytes);
-            if (dimensions == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The WebP image is damaged.");
-            }
-            validateDimensions(dimensions[0], dimensions[1]);
         }
         return contentType;
+    }
+
+    private static int[] imageDimensions(String contentType, byte[] bytes) {
+        if (contentType.equals("image/png")) {
+            if (bytes.length < 24) return null;
+            long width = unsignedIntBigEndian(bytes, 16);
+            long height = unsignedIntBigEndian(bytes, 20);
+            if (width > Integer.MAX_VALUE || height > Integer.MAX_VALUE) return null;
+            return new int[]{(int) width, (int) height};
+        }
+        if (contentType.equals("image/jpeg")) return jpegDimensions(bytes);
+        return webpDimensions(bytes);
+    }
+
+    private static int[] jpegDimensions(byte[] bytes) {
+        int offset = 2;
+        while (offset + 8 < bytes.length) {
+            if ((bytes[offset] & 0xff) != 0xff) { offset++; continue; }
+            while (offset < bytes.length && (bytes[offset] & 0xff) == 0xff) offset++;
+            if (offset >= bytes.length) return null;
+            int marker = bytes[offset++] & 0xff;
+            if (marker == 0xd8 || marker == 0xd9 || marker == 0x01
+                    || (marker >= 0xd0 && marker <= 0xd7)) continue;
+            if (offset + 1 >= bytes.length) return null;
+            int segmentLength = ((bytes[offset] & 0xff) << 8) | (bytes[offset + 1] & 0xff);
+            if (segmentLength < 2 || offset + segmentLength > bytes.length) return null;
+            boolean startOfFrame = (marker >= 0xc0 && marker <= 0xc3)
+                    || (marker >= 0xc5 && marker <= 0xc7)
+                    || (marker >= 0xc9 && marker <= 0xcb)
+                    || (marker >= 0xcd && marker <= 0xcf);
+            if (startOfFrame && segmentLength >= 8) {
+                int height = ((bytes[offset + 3] & 0xff) << 8) | (bytes[offset + 4] & 0xff);
+                int width = ((bytes[offset + 5] & 0xff) << 8) | (bytes[offset + 6] & 0xff);
+                return new int[]{width, height};
+            }
+            if (marker == 0xda) return null;
+            offset += segmentLength;
+        }
+        return null;
+    }
+
+    private static long unsignedIntBigEndian(byte[] bytes, int offset) {
+        return ((long) (bytes[offset] & 0xff) << 24)
+                | ((long) (bytes[offset + 1] & 0xff) << 16)
+                | ((long) (bytes[offset + 2] & 0xff) << 8)
+                | (bytes[offset + 3] & 0xffL);
     }
 
     private static void validateDimensions(int width, int height) {
@@ -244,6 +288,10 @@ public class PlayerProfileController {
 
         setString(payload, "displayName", profile::setDisplayName);
         setString(payload, "avatarUrl", profile::setAvatarUrl);
+        Object requestedAvatar = payload.get("avatarUrl");
+        if (requestedAvatar instanceof String avatarUrl && avatarUrl.startsWith("assets/")) {
+            avatarImageRepository.deleteById(userId);
+        }
         setString(payload, "country", profile::setCountry);
         setString(payload, "countryFlag", profile::setCountryFlag);
         setString(payload, "authProvider", profile::setAuthProvider);
