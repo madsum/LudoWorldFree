@@ -407,7 +407,6 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
         type: FileType.custom,
         allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp'],
         allowMultiple: false,
-        withReadStream: true,
       );
       final file =
           result == null || result.files.isEmpty ? null : result.files.first;
@@ -419,33 +418,14 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
         return;
       }
 
-      final reportedLength = file.size;
-      if (reportedLength == 0) {
+      // file.bytes is populated directly by file_picker (no withReadStream).
+      final bytes = file.bytes ?? await file.xFile.readAsBytes();
+      if (bytes.isEmpty) {
         _setAvatarError('The selected file could not be read.');
         return;
       }
-      if (reportedLength > _maxAvatarBytes) {
+      if (bytes.length > _maxAvatarBytes) {
         _setAvatarError('Image must be 5 MB or smaller.');
-        return;
-      }
-
-      Uint8List? bytes = file.bytes;
-      if (bytes == null && file.readStream != null) {
-        final buffer = BytesBuilder(copy: false);
-        await for (final chunk in file.readStream!) {
-          if (buffer.length + chunk.length > _maxAvatarBytes) {
-            _setAvatarError('Image must be 5 MB or smaller.');
-            return;
-          }
-          buffer.add(chunk);
-        }
-        bytes = buffer.takeBytes();
-      }
-      bytes ??= await file.xFile.readAsBytes();
-      if (bytes.isEmpty || bytes.length > _maxAvatarBytes) {
-        _setAvatarError(bytes.length > _maxAvatarBytes
-            ? 'Image must be 5 MB or smaller.'
-            : 'The selected file could not be read.');
         return;
       }
 
