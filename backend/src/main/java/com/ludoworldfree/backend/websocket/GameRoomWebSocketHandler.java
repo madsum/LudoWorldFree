@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ludoworldfree.backend.service.MatchmakingService;
 import com.ludoworldfree.backend.service.MatchmakingService.RoomSnapshot;
 import com.ludoworldfree.backend.model.OnlineMatchStateEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -24,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class GameRoomWebSocketHandler extends TextWebSocketHandler {
+    private static final Logger log = LoggerFactory.getLogger(GameRoomWebSocketHandler.class);
     private static final int MAX_MESSAGE_CHARS = 64_000;
     private static final String ROOM_ATTRIBUTE = "gameRoomId";
     private static final String PLAYER_ATTRIBUTE = "gamePlayerId";
@@ -176,6 +179,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
 
     @Scheduled(fixedDelayString = "${game.rooms.poll-interval-ms:250}")
     public void relaySharedRoomState() {
+        log.debug("relaySharedRoomState running, active rooms: {}", localRooms.size());
         for (Map.Entry<String, LocalRoom> entry : new ArrayList<>(localRooms.entrySet())) {
             String roomId = entry.getKey();
             LocalRoom localRoom = entry.getValue();
