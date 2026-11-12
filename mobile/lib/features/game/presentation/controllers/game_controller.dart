@@ -575,13 +575,15 @@ class GameNotifier extends StateNotifier<GameState> {
         state.currentPlayer.isEliminated) {
       return;
     }
-    if (isOnlineMode && state.currentPlayer.id != _onlineLocalPlayerId) return;
 
     state = state.copyWith(
       rollOpportunityId: state.rollOpportunityId + 1,
       turnTimerPaused: _turnTimerPaused,
       turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
     );
+
+    if (isOnlineMode && state.currentPlayer.id != _onlineLocalPlayerId) return;
+
     if (_turnTimerPaused) return;
     if (state.isCurrentPlayerBot) {
       _checkBotTurn();

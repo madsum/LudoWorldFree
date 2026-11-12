@@ -105,26 +105,28 @@ public class MatchmakingService {
         if (activeRoom != null) return responseFor(activeRoom, playerId);
 
         var existingTicket = ticketRepository.findByPlayerId(playerId);
-        if (existingTicket.isPresent()) {
-            MatchmakingTicket ticket = existingTicket.get();
-            if (ticket.getEntryFee() == request.getEntryFee()
-                    && ticket.getPlayerCount() == request.getPlayerCount()
-                    && ticket.getSelectedColor().equals(selectedColor)) {
-                return searchingResponse();
-            }
-            ticketRepository.delete(ticket);
+        MatchmakingTicket currentTicket;
+        if (existingTicket.isPresent()
+                && existingTicket.get().getEntryFee() == request.getEntryFee()
+                && existingTicket.get().getPlayerCount() == request.getPlayerCount()
+                && existingTicket.get().getSelectedColor().equals(selectedColor)) {
+            // A repeated join is also a matchmaking retry. This lets queued players
+            // recover when concurrent first joins both observed an empty queue.
+            currentTicket = existingTicket.get();
+        } else {
+            existingTicket.ifPresent(ticketRepository::delete);
+            currentTicket = new MatchmakingTicket(
+                    playerId,
+                    nonBlank(request.getDisplayName(), "Player"),
+                    request.getAvatarUrl(),
+                    nonBlank(request.getCountry(), "World"),
+                    nonBlank(request.getCountryFlag(), "🌐"),
+                    request.getEntryFee(), request.getPlayerCount(), selectedColor);
         }
 
-        MatchmakingTicket currentTicket = new MatchmakingTicket(
-                playerId,
-                nonBlank(request.getDisplayName(), "Player"),
-                request.getAvatarUrl(),
-                nonBlank(request.getCountry(), "World"),
-                nonBlank(request.getCountryFlag(), "🌐"),
-                request.getEntryFee(), request.getPlayerCount(), selectedColor);
-
         List<MatchmakingTicket> candidates = ticketRepository.findWaitingCandidateForUpdate(
-                request.getEntryFee(), request.getPlayerCount(), playerId, PageRequest.of(0, 50));
+                request.getEntryFee(), request.getPlayerCount(), playerId,
+                PageRequest.of(0, request.getPlayerCount() - 1));
         List<MatchmakingTicket> matchedTickets = selectCompatibleTickets(
                 currentTicket, candidates);
         if (matchedTickets.isEmpty()) {
@@ -178,10 +180,19 @@ public class MatchmakingService {
         return List.of();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public MatchmakingResponseDto checkStatus(UUID playerId) {
         OnlineMatchRoom activeRoom = findActiveRoom(playerId);
         if (activeRoom != null) return responseFor(activeRoom, playerId);
+        MatchmakingTicket ticket = ticketRepository.findByPlayerId(playerId).orElse(null);
+        if (ticket != null) {
+            MatchmakingRequestDto retry = new MatchmakingRequestDto(
+                    playerId, ticket.getDisplayName(), ticket.getAvatarUrl(),
+                    ticket.getCountry(), ticket.getCountryFlag(), ticket.getEntryFee());
+            retry.setPlayerCount(ticket.getPlayerCount());
+            retry.setSelectedColor(ticket.getSelectedColor());
+            return joinQueue(retry);
+        }
         return searchingResponse();
     }
 

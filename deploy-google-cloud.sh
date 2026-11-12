@@ -7,7 +7,7 @@ BACKEND_SERVICE="${BACKEND_SERVICE:-ludo-websocket-backend}"
 WEB_SERVICE="${WEB_SERVICE:-ludo-world-web}"
 ARTIFACT_REPOSITORY="${ARTIFACT_REPOSITORY:-cloud-run-source-deploy}"
 SQL_INSTANCE="${SQL_INSTANCE:-ludo-world-free3:us-central1:lodu-postgres-instance}"
-DATABASE_NAME="${DATABASE_NAME:-ludoworldfreedb}"
+DATABASE_NAME="${DATABASE_NAME:-ludo}"
 DATABASE_USER_SECRET="${DATABASE_USER_SECRET:-db-user}"
 DATABASE_PASSWORD_SECRET="${DATABASE_PASSWORD_SECRET:-db-password}"
 

@@ -66,6 +66,7 @@ class _OnlineMatchmakingDialogState
 
   bool _isMatchFound = false;
   bool _searchFailed = false;
+  bool _isQueueRequestRunning = false;
   String? _roomId;
   String? _opponentId;
   String? _opponentName;
@@ -95,19 +96,20 @@ class _OnlineMatchmakingDialogState
   void _startMatchmakingQueue() async {
     final user = ref.read(authControllerProvider).user;
     final dio = ref.read(apiClientProvider);
+    final joinRequest = {
+      'displayName': user?.name ?? 'Player 1',
+      'avatarUrl': user?.avatarUrl ?? 'assets/images/black-mask.webp',
+      'country': user?.country ?? 'World',
+      'countryFlag': user?.countryFlag ?? '🌐',
+      'entryFee': 500,
+      'playerCount': widget.playerCount,
+      'selectedColor': widget.selectedColor.name,
+    };
 
     try {
       final response = await dio.post(
         '/matchmaking/join',
-        data: {
-          'displayName': user?.name ?? 'Player 1',
-          'avatarUrl': user?.avatarUrl ?? 'assets/images/black-mask.webp',
-          'country': user?.country ?? 'World',
-          'countryFlag': user?.countryFlag ?? '🌐',
-          'entryFee': 500,
-          'playerCount': widget.playerCount,
-          'selectedColor': widget.selectedColor.name,
-        },
+        data: joinRequest,
         options: Options(
           headers: {'X-Player-ID': user?.id},
         ),
@@ -119,12 +121,15 @@ class _OnlineMatchmakingDialogState
       }
     } catch (_) {}
 
-    // Poll status every 2 seconds
+    // Retry matchmaking every 2 seconds. Rejoining with the same ticket is
+    // idempotent and allows concurrent queue entries to pair on a later pass.
     _pollingTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
-      if (!mounted || _isMatchFound) return;
+      if (!mounted || _isMatchFound || _isQueueRequestRunning) return;
+      _isQueueRequestRunning = true;
       try {
-        final statusResponse = await dio.get(
-          '/matchmaking/status',
+        final statusResponse = await dio.post(
+          '/matchmaking/join',
+          data: joinRequest,
           options: Options(
             headers: {'X-Player-ID': user?.id},
           ),
@@ -133,7 +138,10 @@ class _OnlineMatchmakingDialogState
             statusResponse.data['matchFound'] == true) {
           _handleMatchFoundResponse(statusResponse.data);
         }
-      } catch (_) {}
+      } catch (_) {
+      } finally {
+        _isQueueRequestRunning = false;
+      }
     });
   }
 
