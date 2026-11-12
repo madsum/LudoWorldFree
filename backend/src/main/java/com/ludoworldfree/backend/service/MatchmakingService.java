@@ -352,9 +352,11 @@ public class MatchmakingService {
                         && "animating".equals(previous.path("turnPhase").asText())
                         && previous.path("lastMoveEvent").isObject()
                         && previous.path("diceValue").asInt(Integer.MIN_VALUE) == transitionDice
-                        && transitionDice != 6
                         && !previous.path("lastCaptureEvent").isObject()
-                        && previous.path("lastMoveEvent").path("toStep").asInt(-1) != 56;
+                        && ((transitionDice != 6
+                                && previous.path("lastMoveEvent").path("toStep").asInt(-1) != 56)
+                            || (previous.path("lastMoveEvent").path("toStep").asInt(-1) == 56
+                                && hasPlayerFinishedPawns(previous, senderId)));
                 if (!noMoveTurnEnd && !completedMoveTurnEnd) throw invalidState();
                 return;
             }
@@ -387,7 +389,9 @@ public class MatchmakingService {
             } else if (from >= 0 && to <= 50 && hasCapturablePawn(previous, senderId, to)) {
                 throw invalidState();
             }
-            boolean earnsExtraTurn = diceValue == 6 || !captured.isEmpty() || to == 56;
+            boolean playerFinished = hasPlayerFinishedPawns(next, senderId);
+            boolean earnsExtraTurn = diceValue == 6 || !captured.isEmpty()
+                    || (to == 56 && !playerFinished);
             UUID expectedTurnOwner = "animating".equals(next.path("turnPhase").asText())
                     || next.path("isGameOver").asBoolean() || earnsExtraTurn
                     ? senderId : nextActivePlayer(next, senderId);
@@ -431,7 +435,9 @@ public class MatchmakingService {
             JsonNode player = players.get((currentIndex + offset) % players.size());
             try {
                 UUID id = UUID.fromString(player.path("id").asText());
-                if (!id.equals(currentPlayerId) && !player.path("isEliminated").asBoolean()) return id;
+                if (!id.equals(currentPlayerId)
+                        && !player.path("isEliminated").asBoolean()
+                        && !hasPlayerFinishedPawns(player)) return id;
             } catch (RuntimeException ignored) { return null; }
         }
         return currentPlayerId;
@@ -467,15 +473,27 @@ public class MatchmakingService {
 
     private boolean hasFinishedPlayer(JsonNode state) {
         for (JsonNode player : state.path("players")) {
-            if (player.path("pawns").isArray() && player.path("pawns").size() == 4) {
-                boolean allFinished = true;
-                for (JsonNode pawn : player.path("pawns")) {
-                    if (pawn.path("stepCount").asInt(-1) != 56) allFinished = false;
-                }
-                if (allFinished) return true;
+            if (hasPlayerFinishedPawns(player)) return true;
+        }
+        return false;
+    }
+
+    private boolean hasPlayerFinishedPawns(JsonNode state, UUID playerId) {
+        for (JsonNode player : state.path("players")) {
+            if (playerId.toString().equals(player.path("id").asText())) {
+                return hasPlayerFinishedPawns(player);
             }
         }
         return false;
+    }
+
+    private boolean hasPlayerFinishedPawns(JsonNode player) {
+        JsonNode pawns = player.path("pawns");
+        if (!pawns.isArray() || pawns.size() != 4) return false;
+        for (JsonNode pawn : pawns) {
+            if (pawn.path("stepCount").asInt(-1) != 56) return false;
+        }
+        return true;
     }
 
     private boolean hasLegalMove(JsonNode state, UUID playerId, int diceValue) {
@@ -668,6 +686,7 @@ public class MatchmakingService {
                 true, room.getRoomId(), opponentId,
                 room.nameOf(opponentId), room.avatarOf(opponentId),
                 room.countryOf(opponentId), room.flagOf(opponentId), "Match Found!");
+        response.setPlayerId(playerId);
         response.setPlayerCount(room.getPlayerCount());
         response.setPlayers(room.getPlayers().stream().map(player ->
                 new MatchmakingResponseDto.MatchPlayerDto(player.id(), player.name(),

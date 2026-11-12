@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ludoworldfree.backend.service.MatchmakingService;
 import com.ludoworldfree.backend.service.MatchmakingService.RoomSnapshot;
 import com.ludoworldfree.backend.model.OnlineMatchStateEvent;
+import com.ludoworldfree.backend.util.PlayerIdResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -45,7 +46,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionEstablished(WebSocketSession session) throws IOException {
         URI uri = session.getUri();
         String roomId = queryParameter(uri, "roomId");
-        UUID playerId = parsePlayerId(queryParameter(uri, "playerId"));
+        UUID playerId = resolvePlayerId(queryParameter(uri, "playerId"));
         if (roomId == null || playerId == null
                 || !matchmakingService.isPlayerInRoom(playerId, roomId)) {
             sendError(session, "MATCH_NOT_FOUND", "This player is not part of that match.");
@@ -287,6 +288,11 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
     private static String queryParameter(URI uri, String name) {
         if (uri == null) return null;
         return UriComponentsBuilder.fromUri(uri).build().getQueryParams().getFirst(name);
+    }
+
+    private static UUID resolvePlayerId(String value) {
+        if (value == null || value.isBlank()) return null;
+        return PlayerIdResolver.resolve(value);
     }
 
     private static UUID parsePlayerId(String value) {

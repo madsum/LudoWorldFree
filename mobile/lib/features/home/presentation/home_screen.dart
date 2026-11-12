@@ -890,12 +890,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         context,
                                         playerCount: playerCount,
                                         selectedColor: color,
-                                        onMatchFound: (players, roomId) {
-                                          final playerId = ref
-                                              .read(authControllerProvider)
-                                              .user
-                                              ?.id;
-                                          if (playerId == null) return;
+                                        onMatchFound:
+                                            (players, roomId, playerId) {
                                           final gameController = ref.read(
                                               gameControllerProvider.notifier);
                                           gameController.configureOnlineMatch(

@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,7 +17,11 @@ import '../../../game/domain/models/player_model.dart';
 class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
   final int playerCount;
   final LudoColor selectedColor;
-  final void Function(List<PlayerModel> players, String roomId) onMatchFound;
+  final void Function(
+    List<PlayerModel> players,
+    String roomId,
+    String localPlayerId,
+  ) onMatchFound;
 
   const OnlineMatchmakingDialog({
     super.key,
@@ -28,8 +34,11 @@ class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
     BuildContext context, {
     required int playerCount,
     required LudoColor selectedColor,
-    required void Function(List<PlayerModel> players, String roomId)
-        onMatchFound,
+    required void Function(
+      List<PlayerModel> players,
+      String roomId,
+      String localPlayerId,
+    ) onMatchFound,
   }) {
     showDialog(
       context: context,
@@ -68,6 +77,7 @@ class _OnlineMatchmakingDialogState
   bool _searchFailed = false;
   bool _isQueueRequestRunning = false;
   String? _roomId;
+  String? _localPlayerId;
   String? _opponentId;
   String? _opponentName;
   String? _opponentAvatar;
@@ -153,6 +163,7 @@ class _OnlineMatchmakingDialogState
     setState(() {
       _isMatchFound = true;
       _roomId = data['roomId']?.toString();
+      _localPlayerId = data['playerId']?.toString();
       _opponentId = data['opponentId']?.toString();
       _opponentName = data['opponentName'] ?? 'Opponent';
       _opponentAvatar =
@@ -176,10 +187,13 @@ class _OnlineMatchmakingDialogState
   Future<void> _launchGameWithOpponent() async {
     final user = ref.read(authControllerProvider).user;
     final roomId = _roomId;
+    final localPlayerId = _localPlayerId ??
+        (user == null ? null : _resolveBackendPlayerId(user.id));
     final opponentId = _opponentId;
     if (user == null ||
         user.id.isEmpty ||
         roomId == null ||
+        localPlayerId == null ||
         opponentId == null) {
       _failMatchedRoom(
           'The match details were incomplete. Please search again.');
@@ -187,7 +201,7 @@ class _OnlineMatchmakingDialogState
     }
     final connected = await ref.read(webSocketServiceProvider).connectToRoom(
           roomId: roomId,
-          playerId: user.id,
+          playerId: localPlayerId,
         );
     if (!connected || !mounted) {
       _failMatchedRoom(
@@ -206,7 +220,7 @@ class _OnlineMatchmakingDialogState
     Future.delayed(const Duration(milliseconds: 1400), () {
       if (!mounted || _roomId == null) return;
       Navigator.of(context).pop();
-      widget.onMatchFound(roomPlayers, roomId);
+      widget.onMatchFound(roomPlayers, roomId, localPlayerId);
     });
   }
 
@@ -242,7 +256,7 @@ class _OnlineMatchmakingDialogState
     // Compatibility with the existing two-player matchmaking response.
     if (widget.playerCount != 2 || _opponentId == null) return null;
     final human = PlayerModel.initial(
-      id: user.id,
+      id: _localPlayerId ?? _resolveBackendPlayerId(user.id),
       name: user.name,
       avatarUrl: user.avatarUrl ?? 'assets/images/black-mask.webp',
       country: user.country,
@@ -262,6 +276,23 @@ class _OnlineMatchmakingDialogState
       isBot: false,
     );
     return [human, opponent];
+  }
+
+  String _resolveBackendPlayerId(String playerId) {
+    final uuidPattern = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    );
+    if (uuidPattern.hasMatch(playerId)) return playerId.toLowerCase();
+
+    // Java PlayerIdResolver uses nameUUIDFromBytes for non-UUID user IDs.
+    final bytes = md5.convert(utf8.encode(playerId)).bytes;
+    bytes[6] = (bytes[6] & 0x0f) | 0x30;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex =
+        bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
   }
 
   void _failMatchedRoom(String message) {
