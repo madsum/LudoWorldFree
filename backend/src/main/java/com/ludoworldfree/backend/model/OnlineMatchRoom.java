@@ -17,6 +17,7 @@ import java.util.UUID;
 @Table(name = "online_match_rooms")
 public class OnlineMatchRoom {
     public enum Status { MATCHED, READY, FINISHED, CANCELLED }
+    public enum RematchStatus { NONE, REQUESTED, DECLINED, ACCEPTED }
 
     @Id
     @Column(name = "room_id", length = 64)
@@ -109,6 +110,19 @@ public class OnlineMatchRoom {
     private UUID latestStateSenderId;
     @Column(name = "state_revision", nullable = false)
     private long stateRevision;
+
+    // Nullable for compatibility with rooms created before rematch support.
+    @Column(name = "rematch_revision")
+    private Long rematchRevision = 0L;
+    @Column(name = "rematch_round_id")
+    private UUID rematchRoundId;
+    @Column(name = "rematch_requester_id")
+    private UUID rematchRequesterId;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "rematch_status", length = 16)
+    private RematchStatus rematchStatus = RematchStatus.NONE;
+    @Column(name = "rematch_accepted_player_ids", columnDefinition = "TEXT")
+    private String rematchAcceptedPlayerIds = "";
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
@@ -216,6 +230,15 @@ public class OnlineMatchRoom {
     public String getLatestStateJson() { return latestStateJson; }
     public UUID getLatestStateSenderId() { return latestStateSenderId; }
     public long getStateRevision() { return stateRevision; }
+    public long getRematchRevision() { return rematchRevision == null ? 0L : rematchRevision; }
+    public UUID getRematchRoundId() { return rematchRoundId; }
+    public UUID getRematchRequesterId() { return rematchRequesterId; }
+    public RematchStatus getRematchStatus() {
+        return rematchStatus == null ? RematchStatus.NONE : rematchStatus;
+    }
+    public String getRematchAcceptedPlayerIds() {
+        return rematchAcceptedPlayerIds == null ? "" : rematchAcceptedPlayerIds;
+    }
 
     public boolean contains(UUID playerId) { return getPlayerIds().contains(playerId); }
 
@@ -276,6 +299,39 @@ public class OnlineMatchRoom {
         latestStateSenderId = senderId;
         stateRevision++;
         turnOwnerId = nextTurnOwnerId;
+        touch();
+    }
+
+    public void requestRematch(UUID requesterId) {
+        rematchRoundId = UUID.randomUUID();
+        rematchRequesterId = requesterId;
+        rematchAcceptedPlayerIds = requesterId.toString();
+        rematchStatus = RematchStatus.REQUESTED;
+        rematchRevision = getRematchRevision() + 1;
+        touch();
+    }
+
+    public void recordRematchDeclined() {
+        rematchStatus = RematchStatus.DECLINED;
+        rematchRevision = getRematchRevision() + 1;
+        touch();
+    }
+
+    public void recordRematchAccepted(String acceptedPlayerIds) {
+        rematchAcceptedPlayerIds = acceptedPlayerIds;
+        rematchRevision = getRematchRevision() + 1;
+        touch();
+    }
+
+    public void startAcceptedRematch(UUID firstPlayerId) {
+        rematchStatus = RematchStatus.ACCEPTED;
+        rematchRevision = getRematchRevision() + 1;
+        latestStateJson = null;
+        latestStateSenderId = null;
+        turnOwnerId = firstPlayerId;
+        authoritativeRollOpportunityId = 0;
+        authoritativeRollPlayerId = null;
+        authoritativeDiceValue = null;
         touch();
     }
 

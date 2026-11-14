@@ -13,12 +13,16 @@ class VictoryDialog extends StatelessWidget {
   final GameState gameState;
   final VoidCallback onPlayAgain;
   final VoidCallback onExitToLobby;
+  final bool replayPending;
+  final String replayPendingLabel;
 
   const VictoryDialog({
     super.key,
     required this.gameState,
     required this.onPlayAgain,
     required this.onExitToLobby,
+    this.replayPending = false,
+    this.replayPendingLabel = 'WAITING FOR PLAYERS',
   });
 
   @override
@@ -34,7 +38,8 @@ class VictoryDialog extends StatelessWidget {
         final bGroup = b.isEliminated ? 2 : (b.rank > 0 ? 0 : 1);
         if (aGroup != bGroup) return aGroup.compareTo(bGroup);
         if (aGroup == 2) {
-          final eliminationOrder = b.eliminationOrder.compareTo(a.eliminationOrder);
+          final eliminationOrder =
+              b.eliminationOrder.compareTo(a.eliminationOrder);
           if (eliminationOrder != 0) return eliminationOrder;
         }
         final rankOrder = a.rank.compareTo(b.rank);
@@ -105,7 +110,10 @@ class VictoryDialog extends StatelessWidget {
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 1,
-                shadows: const [Shadow(color: Colors.black, blurRadius: 6, offset: Offset(0, 2))],
+                shadows: const [
+                  Shadow(
+                      color: Colors.black, blurRadius: 6, offset: Offset(0, 2))
+                ],
               ),
             ),
           ],
@@ -173,7 +181,8 @@ class VictoryDialog extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: AppColors.gold, width: 2),
             boxShadow: const [
-              BoxShadow(color: Colors.black87, blurRadius: 14, offset: Offset(0, 6)),
+              BoxShadow(
+                  color: Colors.black87, blurRadius: 14, offset: Offset(0, 6)),
             ],
           ),
           child: Column(
@@ -187,12 +196,16 @@ class VictoryDialog extends StatelessWidget {
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: isWinner ? const Color(0xFFFFC107) : const Color(0xFF132B5C),
+                    color: isWinner
+                        ? const Color(0xFFFFC107)
+                        : const Color(0xFF132B5C),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: isWinner ? const Color(0xFFFFF176) : Colors.white24,
+                      color:
+                          isWinner ? const Color(0xFFFFF176) : Colors.white24,
                       width: isWinner ? 2 : 1,
                     ),
                   ),
@@ -203,16 +216,23 @@ class VictoryDialog extends StatelessWidget {
                         children: [
                           // Rank Badge
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: isWinner ? const Color(0xFF8D5300) : Colors.black38,
+                              color: isWinner
+                                  ? const Color(0xFF8D5300)
+                                  : Colors.black38,
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Row(
                               children: [
                                 Icon(
-                                  isWinner ? Icons.workspace_premium_rounded : Icons.star_rounded,
-                                  color: isWinner ? AppColors.gold : Colors.white70,
+                                  isWinner
+                                      ? Icons.workspace_premium_rounded
+                                      : Icons.star_rounded,
+                                  color: isWinner
+                                      ? AppColors.gold
+                                      : Colors.white70,
                                   size: 14,
                                 ),
                                 const SizedBox(width: 2),
@@ -221,7 +241,9 @@ class VictoryDialog extends StatelessWidget {
                                   style: GoogleFonts.poppins(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
-                                    color: isWinner ? AppColors.gold : Colors.white,
+                                    color: isWinner
+                                        ? AppColors.gold
+                                        : Colors.white,
                                   ),
                                 ),
                               ],
@@ -236,7 +258,8 @@ class VictoryDialog extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: player.color.color,
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 1.2),
+                              border:
+                                  Border.all(color: Colors.white, width: 1.2),
                             ),
                             child: Center(
                               child: Text(
@@ -265,7 +288,8 @@ class VictoryDialog extends StatelessWidget {
                           if (isWinner)
                             Row(
                               children: [
-                                const Icon(Icons.monetization_on_rounded, color: Color(0xFF5D4037), size: 14),
+                                const Icon(Icons.monetization_on_rounded,
+                                    color: Color(0xFF5D4037), size: 14),
                                 const SizedBox(width: 2),
                                 Text(
                                   '+1,900',
@@ -299,7 +323,9 @@ class VictoryDialog extends StatelessWidget {
                             style: GoogleFonts.poppins(
                               fontSize: 9.5,
                               fontWeight: FontWeight.w600,
-                              color: isWinner ? const Color(0xFF5D4037) : Colors.white70,
+                              color: isWinner
+                                  ? const Color(0xFF5D4037)
+                                  : Colors.white70,
                             ),
                           ),
                           _buildPawnKillsRow(player, isWinner: isWinner),
@@ -318,11 +344,26 @@ class VictoryDialog extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _StatBadge(icon: Icons.emoji_events_rounded, iconColor: AppColors.gold, label: '+10'),
-                  _StatBadge(icon: Icons.star_rounded, iconColor: Colors.amberAccent, label: '+60 XP'),
-                  _StatBadge(icon: Icons.gavel_rounded, iconColor: Colors.redAccent, label: '+${_totalKills(winner)} Kills'),
-                  _StatBadge(icon: Icons.thumb_up_rounded, iconColor: Colors.lightBlueAccent, label: '9'),
-                  _StatBadge(icon: Icons.thumb_down_rounded, iconColor: Colors.orangeAccent, label: '0'),
+                  _StatBadge(
+                      icon: Icons.emoji_events_rounded,
+                      iconColor: AppColors.gold,
+                      label: '+10'),
+                  _StatBadge(
+                      icon: Icons.star_rounded,
+                      iconColor: Colors.amberAccent,
+                      label: '+60 XP'),
+                  _StatBadge(
+                      icon: Icons.gavel_rounded,
+                      iconColor: Colors.redAccent,
+                      label: '+${_totalKills(winner)} Kills'),
+                  _StatBadge(
+                      icon: Icons.thumb_up_rounded,
+                      iconColor: Colors.lightBlueAccent,
+                      label: '9'),
+                  _StatBadge(
+                      icon: Icons.thumb_down_rounded,
+                      iconColor: Colors.orangeAccent,
+                      label: '0'),
                 ],
               ),
 
@@ -347,16 +388,19 @@ class VictoryDialog extends StatelessWidget {
                     color: const Color(0xFFD97706),
                     onTap: () {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Match results copied to clipboard!')),
+                        const SnackBar(
+                            content:
+                                Text('Match results copied to clipboard!')),
                       );
                     },
                   ),
 
                   // Replay / Play Again Button
                   GestureDetector(
-                    onTap: onPlayAgain,
+                    onTap: replayPending ? null : onPlayAgain,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
                           colors: [Color(0xFF00E676), Color(0xFF2E7D32)],
@@ -364,15 +408,23 @@ class VictoryDialog extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: Colors.white, width: 1.8),
                         boxShadow: const [
-                          BoxShadow(color: Color(0xFF00E676), blurRadius: 8, offset: Offset(0, 2)),
+                          BoxShadow(
+                              color: Color(0xFF00E676),
+                              blurRadius: 8,
+                              offset: Offset(0, 2)),
                         ],
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.refresh_rounded, color: Colors.white, size: 20),
+                          Icon(
+                              replayPending
+                                  ? Icons.hourglass_top_rounded
+                                  : Icons.refresh_rounded,
+                              color: Colors.white,
+                              size: 20),
                           const SizedBox(width: 4),
                           Text(
-                            'REPLAY',
+                            replayPending ? replayPendingLabel : 'REPLAY',
                             style: GoogleFonts.poppins(
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
@@ -483,7 +535,8 @@ class _CircleActionButton extends StatelessWidget {
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white, width: 1.8),
           boxShadow: const [
-            BoxShadow(color: Colors.black45, blurRadius: 5, offset: Offset(0, 2)),
+            BoxShadow(
+                color: Colors.black45, blurRadius: 5, offset: Offset(0, 2)),
           ],
         ),
         child: Icon(icon, color: Colors.white, size: 18),

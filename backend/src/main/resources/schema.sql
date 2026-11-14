@@ -200,6 +200,11 @@ CREATE TABLE IF NOT EXISTS online_match_rooms (
     latest_state_json TEXT,
     latest_state_sender_id UUID,
     state_revision BIGINT NOT NULL DEFAULT 0,
+    rematch_revision BIGINT NOT NULL DEFAULT 0,
+    rematch_round_id UUID,
+    rematch_requester_id UUID,
+    rematch_status VARCHAR(16) NOT NULL DEFAULT 'NONE',
+    rematch_accepted_player_ids TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     version BIGINT NOT NULL DEFAULT 0

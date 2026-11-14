@@ -45,7 +45,12 @@ public class MatchmakingService {
             UUID turnOwnerId,
             long stateRevision,
             UUID latestStateSenderId,
-            String latestStateJson) {
+            String latestStateJson,
+            long rematchRevision,
+            UUID rematchRoundId,
+            UUID rematchRequesterId,
+            OnlineMatchRoom.RematchStatus rematchStatus,
+            List<UUID> rematchAcceptedPlayerIds) {
         public boolean isConnected(UUID playerId) {
             return connectedPlayerIds.contains(playerId);
         }
@@ -102,7 +107,10 @@ public class MatchmakingService {
         }
 
         OnlineMatchRoom activeRoom = findActiveRoom(playerId);
-        if (activeRoom != null) return responseFor(activeRoom, playerId);
+        if (activeRoom != null) {
+            ticketRepository.deleteById(playerId);
+            return responseFor(activeRoom, playerId);
+        }
 
         var existingTicket = ticketRepository.findByPlayerId(playerId);
         MatchmakingTicket currentTicket;
@@ -125,7 +133,7 @@ public class MatchmakingService {
         }
 
         List<MatchmakingTicket> candidates = ticketRepository.findWaitingCandidateForUpdate(
-                request.getEntryFee(), request.getPlayerCount(), playerId,
+                request.getEntryFee(), request.getPlayerCount(), playerId, ACTIVE_STATUSES,
                 PageRequest.of(0, request.getPlayerCount() - 1));
         List<MatchmakingTicket> matchedTickets = selectCompatibleTickets(
                 currentTicket, candidates);
@@ -159,6 +167,7 @@ public class MatchmakingService {
 
         OnlineMatchRoom room = new OnlineMatchRoom(roomId, allTickets, request.getEntryFee());
         roomRepository.saveAndFlush(room);
+        ticketRepository.deleteById(playerId);
         ticketRepository.deleteAll(matchedTickets);
         log.info("Online match {} created for {} players", roomId, allTickets.size());
         return responseFor(room, playerId);
@@ -183,7 +192,10 @@ public class MatchmakingService {
     @Transactional
     public MatchmakingResponseDto checkStatus(UUID playerId) {
         OnlineMatchRoom activeRoom = findActiveRoom(playerId);
-        if (activeRoom != null) return responseFor(activeRoom, playerId);
+        if (activeRoom != null) {
+            ticketRepository.deleteById(playerId);
+            return responseFor(activeRoom, playerId);
+        }
         MatchmakingTicket ticket = ticketRepository.findByPlayerId(playerId).orElse(null);
         if (ticket != null) {
             MatchmakingRequestDto retry = new MatchmakingRequestDto(
@@ -286,6 +298,60 @@ public class MatchmakingService {
         stateEventRepository.save(new OnlineMatchStateEvent(
                 roomId, room.getStateRevision(), senderId, stateJson));
         return snapshot(room);
+    }
+
+    @Transactional
+    public RoomSnapshot requestRematch(String roomId, UUID requesterId) {
+        OnlineMatchRoom room = roomRepository.findForUpdate(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Match room not found."));
+        if (room.getStatus() != OnlineMatchRoom.Status.READY || !room.contains(requesterId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This player cannot request a replay.");
+        }
+        try {
+            if (room.getLatestStateJson() == null
+                    || !objectMapper.readTree(room.getLatestStateJson()).path("isGameOver").asBoolean()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "The game is not over yet.");
+            }
+        } catch (java.io.IOException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "The finished game state is invalid.");
+        }
+        if (room.getRematchStatus() == OnlineMatchRoom.RematchStatus.REQUESTED) {
+            if (!requesterId.equals(room.getRematchRequesterId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "A replay request is already pending.");
+            }
+            return snapshot(room);
+        }
+        room.requestRematch(requesterId);
+        return snapshot(roomRepository.save(room));
+    }
+
+    @Transactional
+    public RoomSnapshot respondToRematch(String roomId, UUID playerId, UUID roundId, boolean accept) {
+        OnlineMatchRoom room = roomRepository.findForUpdate(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Match room not found."));
+        if (room.getStatus() != OnlineMatchRoom.Status.READY || !room.contains(playerId)
+                || room.getRematchStatus() != OnlineMatchRoom.RematchStatus.REQUESTED
+                || !room.getRematchRoundId().equals(roundId)
+                || playerId.equals(room.getRematchRequesterId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "This replay request is no longer active.");
+        }
+        if (!accept) {
+            room.recordRematchDeclined();
+            return snapshot(roomRepository.save(room));
+        }
+        List<UUID> accepted = new ArrayList<>(snapshot(room).rematchAcceptedPlayerIds());
+        if (!accepted.contains(playerId)) accepted.add(playerId);
+        if (accepted.size() == room.getPlayerCount()) {
+            UUID firstPlayer = room.getPlayerIds().stream()
+                    .min(Comparator.comparing(UUID::toString)).orElseThrow();
+            room.recordRematchAccepted(accepted.stream().map(UUID::toString)
+                    .collect(java.util.stream.Collectors.joining(",")));
+            room.startAcceptedRematch(firstPlayer);
+        } else {
+            room.recordRematchAccepted(accepted.stream().map(UUID::toString)
+                    .collect(java.util.stream.Collectors.joining(",")));
+        }
+        return snapshot(roomRepository.save(room));
     }
 
     private void validatePawnTransition(OnlineMatchRoom room, UUID senderId,
@@ -696,10 +762,15 @@ public class MatchmakingService {
     }
 
     private static RoomSnapshot snapshot(OnlineMatchRoom room) {
+        List<UUID> acceptedPlayers = java.util.Arrays.stream(
+                        room.getRematchAcceptedPlayerIds().split(","))
+                .filter(value -> !value.isBlank()).map(UUID::fromString).toList();
         return new RoomSnapshot(room.getRoomId(), room.getStatus(),
                 room.getPlayerIds(), room.getPlayerIds().stream().filter(room::isConnected).toList(),
                 room.getTurnOwnerId(), room.getStateRevision(),
-                room.getLatestStateSenderId(), room.getLatestStateJson());
+                room.getLatestStateSenderId(), room.getLatestStateJson(),
+                room.getRematchRevision(), room.getRematchRoundId(), room.getRematchRequesterId(),
+                room.getRematchStatus(), acceptedPlayers);
     }
 
     private static MatchmakingResponseDto searchingResponse() {

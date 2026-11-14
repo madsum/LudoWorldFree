@@ -18,6 +18,7 @@ import '../domain/models/player_model.dart';
 import 'controllers/game_controller.dart';
 import 'widgets/exit_game_dialog.dart';
 import 'widgets/ludo_board_widget.dart';
+import 'widgets/online_chat_panel.dart';
 import 'widgets/player_info_card.dart';
 import 'widgets/victory_dialog.dart';
 
@@ -39,6 +40,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
   String? _lastOnlineTurnPlayerId;
   GameNotifier? _onlineGameNotifier;
   final Set<String> _reportedDailyGoalGameIds = {};
+  final ValueNotifier<List<OnlineChatMessage>> _chatMessages =
+      ValueNotifier<List<OnlineChatMessage>>(<OnlineChatMessage>[]);
+  OnlineChatMessage? _latestChatMessage;
+  Timer? _chatBubbleTimer;
+  bool _rematchPending = false;
+  int _rematchAcceptedCount = 0;
+  int _rematchPlayerCount = 0;
+  final Set<String> _shownRematchDialogs = <String>{};
+  final Set<String> _startedRematchRounds = <String>{};
 
   @override
   void initState() {
@@ -53,6 +63,38 @@ class _GameScreenState extends ConsumerState<GameScreen>
           gameNotifier.applyRemoteGameState(
             Map<String, dynamic>.from(message['state'] as Map),
           );
+        } else if (message['type'] == 'chat' &&
+            message['playerId'] is String &&
+            message['text'] is String) {
+          final sentAt = message['sentAt'];
+          final chat = OnlineChatMessage(
+            playerId: message['playerId'] as String,
+            text: message['text'] as String,
+            sentAt: sentAt is num
+                ? DateTime.fromMillisecondsSinceEpoch(sentAt.toInt())
+                : DateTime.now(),
+          );
+          final updated = [..._chatMessages.value, chat];
+          if (updated.length > 80) updated.removeRange(0, updated.length - 80);
+          _chatMessages.value = updated;
+          _latestChatMessage = chat;
+          _chatBubbleTimer?.cancel();
+          _chatBubbleTimer = Timer(const Duration(seconds: 6), () {
+            if (!mounted) return;
+            setState(() {
+              _latestChatMessage = null;
+            });
+          });
+          if (mounted) setState(() {});
+        } else if (message['type'] == 'rematch_update') {
+          unawaited(_handleRematchUpdate(message));
+        } else if (message['type'] == 'error' &&
+            message['code'] == 'REMATCH_REJECTED' &&
+            mounted) {
+          setState(() => _rematchPending = false);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('The replay request could not be completed.'),
+          ));
         } else if (message['type'] == 'player_disconnected' ||
             message['type'] == 'connection_lost') {
           gameNotifier.pauseTurnTimer();
@@ -165,6 +207,80 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
+  Future<void> _handleRematchUpdate(Map<String, dynamic> message) async {
+    if (!mounted) return;
+    final status = message['status'] as String?;
+    final roundId = message['roundId'] as String?;
+    final requesterId = message['requesterId'] as String?;
+    final gameNotifier = ref.read(gameControllerProvider.notifier);
+    final localPlayerId = gameNotifier.onlineLocalPlayerId;
+    if (roundId == null || roundId.isEmpty || requesterId == null) return;
+    final acceptedIds = (message['acceptedPlayerIds'] as List<dynamic>? ?? [])
+        .whereType<String>()
+        .toSet();
+    final gameState = ref.read(gameControllerProvider);
+
+    if (status == 'REQUESTED') {
+      setState(() {
+        _rematchPending = true;
+        _rematchAcceptedCount = acceptedIds.length;
+        _rematchPlayerCount = gameState.players.length;
+      });
+      if (requesterId == localPlayerId) {
+        return;
+      }
+      if (!_shownRematchDialogs.add(roundId)) return;
+      final requester = gameState.players
+              .where((player) => player.id == requesterId)
+              .map((player) => player.name)
+              .firstOrNull ??
+          'Another player';
+      final accept = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Replay request'),
+          content: Text('$requester wants to play another game. Join replay?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('No'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Yes'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return;
+      ref.read(webSocketServiceProvider).sendRematchResponse(
+            roundId,
+            accept == true,
+          );
+      return;
+    }
+
+    if (status == 'DECLINED') {
+      setState(() => _rematchPending = false);
+      if (requesterId == localPlayerId) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('A player declined the replay.'),
+        ));
+      }
+      return;
+    }
+
+    if (status == 'ACCEPTED' && _startedRematchRounds.add(roundId)) {
+      setState(() {
+        _rematchPending = false;
+        _hasTriggeredGameOverAd = false;
+        _readyToShowVictoryDialog = false;
+      });
+      gameNotifier.startNewGame(players: gameState.players);
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
     final gameNotifier = ref.read(gameControllerProvider.notifier);
@@ -178,6 +294,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _chatBubbleTimer?.cancel();
+    _chatMessages.dispose();
     _onlineSubscription?.cancel();
     _removeOnlineStateListener?.call();
     final gameNotifier = _onlineGameNotifier;
@@ -485,6 +603,30 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 ),
               ),
 
+              if (gameNotifier.isOnlineMode && !gameState.isGameOver)
+                Positioned(
+                  left: 8,
+                  bottom: 72,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      OnlineChatButton(
+                        onPressed: () => _openOnlineChat(context),
+                      ),
+                      if (_latestChatMessage != null)
+                        Positioned(
+                          left: 0,
+                          bottom: 0,
+                          child: IgnorePointer(
+                            child: OnlineChatMessageBubble(
+                              text: _latestChatMessage!.text,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+
               // Victory Dialog (Shows ONLY after the Fullscreen Interstitial Ad completes and is dismissed)
               if (gameState.isGameOver && _readyToShowVictoryDialog)
                 Positioned.fill(
@@ -496,7 +638,21 @@ class _GameScreenState extends ConsumerState<GameScreen>
                       ),
                       VictoryDialog(
                         gameState: gameState,
+                        replayPending: _rematchPending,
+                        replayPendingLabel: _rematchPlayerCount > 0
+                            ? 'WAITING ($_rematchAcceptedCount/$_rematchPlayerCount)'
+                            : 'WAITING FOR PLAYERS',
                         onPlayAgain: () {
+                          if (gameNotifier.isOnlineMode) {
+                            if (_rematchPending) return;
+                            setState(() {
+                              _rematchPending = true;
+                              _rematchAcceptedCount = 1;
+                              _rematchPlayerCount = gameState.players.length;
+                            });
+                            ref.read(webSocketServiceProvider).requestRematch();
+                            return;
+                          }
                           setState(() {
                             _hasTriggeredGameOverAd = false;
                             _readyToShowVictoryDialog = false;
@@ -539,6 +695,22 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ),
         ),
       );
+
+  void _openOnlineChat(BuildContext context) {
+    final gameState = ref.read(gameControllerProvider);
+    final gameNotifier = ref.read(gameControllerProvider.notifier);
+    final playerId = gameNotifier.onlineLocalPlayerId;
+    if (playerId == null || !gameNotifier.isOnlineMode) return;
+    OnlineChatSheet.show(
+      context,
+      messages: _chatMessages,
+      localPlayerId: playerId,
+      playerNames: {
+        for (final player in gameState.players) player.id: player.name
+      },
+      onSend: ref.read(webSocketServiceProvider).sendChatMessage,
+    );
+  }
 
   void _confirmExitDialog(BuildContext context) {
     ExitGameDialog.show(

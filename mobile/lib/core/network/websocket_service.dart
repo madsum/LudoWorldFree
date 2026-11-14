@@ -71,7 +71,8 @@ class WebSocketService {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (!identical(_channel, channel) || !_shouldReconnect) return;
-      if (DateTime.now().difference(_lastPongAt) > const Duration(seconds: 45)) {
+      if (DateTime.now().difference(_lastPongAt) >
+          const Duration(seconds: 45)) {
         channel.sink.close();
         _handleSocketClosed(channel);
         return;
@@ -80,62 +81,64 @@ class WebSocketService {
     });
     debugPrint('[WebSocket] Connecting to game room: $wsUrl');
     _subscription = channel.stream.listen(
-        (data) {
-          try {
-            final decoded = jsonDecode(data.toString());
-            if (decoded is! Map) return;
-            final message = Map<String, dynamic>.from(decoded);
-            if (message['type'] == 'pong') _lastPongAt = DateTime.now();
-            if (message['type'] == 'dice_roll' &&
-                message['rollOpportunityId'] == _pendingDiceRollOpportunityId) {
-              final completer = _diceRollCompleter;
-              final value = message['value'];
-              if (completer != null && !completer.isCompleted && value is num) {
-                completer.complete(value.toInt());
-              }
+      (data) {
+        try {
+          final decoded = jsonDecode(data.toString());
+          if (decoded is! Map) return;
+          final message = Map<String, dynamic>.from(decoded);
+          if (message['type'] == 'pong') _lastPongAt = DateTime.now();
+          if (message['type'] == 'dice_roll' &&
+              message['rollOpportunityId'] == _pendingDiceRollOpportunityId) {
+            final completer = _diceRollCompleter;
+            final value = message['value'];
+            if (completer != null && !completer.isCompleted && value is num) {
+              completer.complete(value.toInt());
             }
-            if (message['type'] == 'error' &&
-                message['code'] == 'ROLL_REJECTED') {
-              final completer = _diceRollCompleter;
-              if (completer != null && !completer.isCompleted) {
-                completer.completeError(StateError('Server rejected the dice roll.'));
-              }
+          }
+          if (message['type'] == 'error' &&
+              message['code'] == 'ROLL_REJECTED') {
+            final completer = _diceRollCompleter;
+            if (completer != null && !completer.isCompleted) {
+              completer
+                  .completeError(StateError('Server rejected the dice roll.'));
             }
-            final readyCompleter = _roomReadyCompleter;
-            if (message['type'] == 'room_ready') {
-              _reconnectAttempts = 0;
-              final wasConnectedBefore = _hasConnectedToRoom;
-              if (!_hasConnectedToRoom && readyCompleter != null &&
-                  !readyCompleter.isCompleted) {
-                readyCompleter.complete(true);
-              }
-              _hasConnectedToRoom = true;
-              if (wasConnectedBefore && !_messageStreamController.isClosed) {
-                _messageStreamController.add({'type': 'connection_restored'});
-              }
-            } else if (message['type'] == 'error' &&
+          }
+          final readyCompleter = _roomReadyCompleter;
+          if (message['type'] == 'room_ready') {
+            _reconnectAttempts = 0;
+            final wasConnectedBefore = _hasConnectedToRoom;
+            if (!_hasConnectedToRoom &&
                 readyCompleter != null &&
                 !readyCompleter.isCompleted) {
-              readyCompleter.complete(false);
+              readyCompleter.complete(true);
             }
-            if (message['type'] == 'match_finished') {
-              _shouldReconnect = false;
-              _reconnectTimer?.cancel();
-              _reconnectTimer = null;
+            _hasConnectedToRoom = true;
+            if (wasConnectedBefore && !_messageStreamController.isClosed) {
+              _messageStreamController.add({'type': 'connection_restored'});
             }
-            _messageStreamController.add(message);
-          } catch (error) {
-            debugPrint('[WebSocket] Ignored malformed server message: $error');
+          } else if (message['type'] == 'error' &&
+              readyCompleter != null &&
+              !readyCompleter.isCompleted) {
+            readyCompleter.complete(false);
           }
-        },
-        onError: (error) {
-          debugPrint('[WebSocket] Connection error: $error');
-          if (identical(_channel, channel)) _handleSocketClosed(channel);
-        },
-        onDone: () {
-          if (identical(_channel, channel)) _handleSocketClosed(channel);
-        },
-      );
+          if (message['type'] == 'match_finished') {
+            _shouldReconnect = false;
+            _reconnectTimer?.cancel();
+            _reconnectTimer = null;
+          }
+          _messageStreamController.add(message);
+        } catch (error) {
+          debugPrint('[WebSocket] Ignored malformed server message: $error');
+        }
+      },
+      onError: (error) {
+        debugPrint('[WebSocket] Connection error: $error');
+        if (identical(_channel, channel)) _handleSocketClosed(channel);
+      },
+      onDone: () {
+        if (identical(_channel, channel)) _handleSocketClosed(channel);
+      },
+    );
     await channel.ready;
   }
 
@@ -185,12 +188,31 @@ class WebSocketService {
     _send({'type': 'game_state', 'state': state});
   }
 
+  void sendChatMessage(String text) {
+    final message = text.trim();
+    if (message.isEmpty || message.length > 200) return;
+    _send({'type': 'chat', 'text': message});
+  }
+
+  void requestRematch() {
+    _send({'type': 'rematch_request'});
+  }
+
+  void sendRematchResponse(String roundId, bool accept) {
+    _send({
+      'type': 'rematch_response',
+      'roundId': roundId,
+      'accept': accept,
+    });
+  }
+
   Future<int> requestDiceRoll(int rollOpportunityId) {
     if (!isConnected) {
       return Future<int>.error(StateError('The game server is disconnected.'));
     }
     final pending = _diceRollCompleter;
-    if (pending != null && !pending.isCompleted &&
+    if (pending != null &&
+        !pending.isCompleted &&
         _pendingDiceRollOpportunityId == rollOpportunityId) {
       return pending.future;
     }

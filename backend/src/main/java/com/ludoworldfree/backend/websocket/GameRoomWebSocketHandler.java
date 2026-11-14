@@ -115,6 +115,10 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         switch (type) {
             case "game_state" -> recordGameState(session, localRoom, roomId, playerId, payload.get("state"));
             case "roll_request" -> issueDiceRoll(session, roomId, playerId, payload);
+            case "chat" -> relayChatMessage(session, localRoom, playerId, payload);
+            case "rematch_request" -> requestRematch(session, localRoom, roomId, playerId);
+            case "rematch_response" -> respondToRematch(
+                    session, localRoom, roomId, playerId, payload);
             case "ping" -> {
                 matchmakingService.touchPlayer(roomId, playerId);
                 send(session, Map.of("type", "pong"));
@@ -130,6 +134,28 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    private void relayChatMessage(WebSocketSession session, LocalRoom localRoom,
+                                  UUID playerId, JsonNode payload) {
+        String text = payload.path("text").asText("").strip();
+        if (text.isEmpty() || text.length() > 200) {
+            sendError(session, "INVALID_CHAT", "Chat messages must be between 1 and 200 characters.");
+            return;
+        }
+
+        synchronized (localRoom) {
+            LocalConnection sender = localRoom.sessions.get(playerId);
+            if (sender == null || sender.session != session) return;
+            Map<String, Object> chat = Map.of(
+                    "type", "chat",
+                    "playerId", playerId.toString(),
+                    "text", text,
+                    "sentAt", System.currentTimeMillis());
+            for (LocalConnection connection : localRoom.sessions.values()) {
+                send(connection.session, chat);
+            }
+        }
+    }
+
     private void issueDiceRoll(WebSocketSession session, String roomId, UUID playerId,
                                JsonNode payload) {
         int opportunityId = payload.path("rollOpportunityId").asInt(-1);
@@ -139,6 +165,38 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                     "rollOpportunityId", opportunityId, "value", diceValue));
         } catch (RuntimeException exception) {
             sendError(session, "ROLL_REJECTED", "The server rejected this dice roll request.");
+        }
+    }
+
+    private void requestRematch(WebSocketSession session, LocalRoom localRoom,
+                                String roomId, UUID playerId) {
+        synchronized (localRoom) {
+            LocalConnection connection = localRoom.sessions.get(playerId);
+            if (connection == null || connection.session != session) return;
+        }
+        try {
+            matchmakingService.requestRematch(roomId, playerId);
+        } catch (RuntimeException exception) {
+            sendError(session, "REMATCH_REJECTED", "The replay request could not be started.");
+        }
+    }
+
+    private void respondToRematch(WebSocketSession session, LocalRoom localRoom, String roomId,
+                                  UUID playerId, JsonNode payload) {
+        synchronized (localRoom) {
+            LocalConnection connection = localRoom.sessions.get(playerId);
+            if (connection == null || connection.session != session) return;
+        }
+        UUID roundId = parsePlayerId(payload.path("roundId").asText(null));
+        if (roundId == null || !payload.path("accept").isBoolean()) {
+            sendError(session, "INVALID_REMATCH_RESPONSE", "A replay response is required.");
+            return;
+        }
+        try {
+            matchmakingService.respondToRematch(
+                    roomId, playerId, roundId, payload.path("accept").asBoolean());
+        } catch (RuntimeException exception) {
+            sendError(session, "REMATCH_REJECTED", "This replay request is no longer active.");
         }
     }
 
@@ -203,6 +261,20 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                         connection.opponentConnected = opponentsConnected;
                         send(connection.session, Map.of("type", opponentsConnected
                                 ? "connection_restored" : "player_disconnected"));
+                    }
+
+                    if (snapshot.rematchRevision() > connection.lastRematchRevision) {
+                        connection.lastRematchRevision = snapshot.rematchRevision();
+                        send(connection.session, Map.of(
+                                "type", "rematch_update",
+                                "revision", snapshot.rematchRevision(),
+                                "roundId", snapshot.rematchRoundId() == null
+                                        ? "" : snapshot.rematchRoundId().toString(),
+                                "requesterId", snapshot.rematchRequesterId() == null
+                                        ? "" : snapshot.rematchRequesterId().toString(),
+                                "status", snapshot.rematchStatus().name(),
+                                "acceptedPlayerIds", snapshot.rematchAcceptedPlayerIds().stream()
+                                        .map(UUID::toString).toList()));
                     }
 
                     if (snapshot.stateRevision() <= connection.lastRevision) continue;
@@ -331,6 +403,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         private final WebSocketSession session;
         private final UUID playerId;
         private long lastRevision;
+        private long lastRematchRevision;
         private boolean opponentConnected;
 
         private LocalConnection(WebSocketSession session, UUID playerId,

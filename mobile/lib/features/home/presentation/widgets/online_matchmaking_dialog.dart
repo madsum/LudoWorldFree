@@ -75,6 +75,7 @@ class _OnlineMatchmakingDialogState
 
   bool _isMatchFound = false;
   bool _searchFailed = false;
+  String? _searchFailureMessage;
   bool _isQueueRequestRunning = false;
   String? _roomId;
   String? _localPlayerId;
@@ -116,6 +117,7 @@ class _OnlineMatchmakingDialogState
       'selectedColor': widget.selectedColor.name,
     };
 
+    _isQueueRequestRunning = true;
     try {
       final response = await dio.post(
         '/matchmaking/join',
@@ -125,15 +127,23 @@ class _OnlineMatchmakingDialogState
         ),
       );
 
-      if (response.data != null && response.data['matchFound'] == true) {
-        _handleMatchFoundResponse(response.data);
+      if (response.data != null) {
+        _handleQueueResponse(response.data);
+      }
+      if (_isMatchFound || _searchFailed) {
         return;
       }
-    } catch (_) {}
+    } on DioException catch (error) {
+      _handleQueueRequestError(error);
+      if (_searchFailed) return;
+    } catch (_) {
+    } finally {
+      _isQueueRequestRunning = false;
+    }
 
-    // Retry matchmaking every 2 seconds. Rejoining with the same ticket is
-    // idempotent and allows concurrent queue entries to pair on a later pass.
-    _pollingTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+    // Retry every second so concurrent queue entries pair promptly, including
+    // when the first requests arrived before either ticket was committed.
+    _pollingTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
       if (!mounted || _isMatchFound || _isQueueRequestRunning) return;
       _isQueueRequestRunning = true;
       try {
@@ -144,14 +154,70 @@ class _OnlineMatchmakingDialogState
             headers: {'X-Player-ID': user?.id},
           ),
         );
-        if (statusResponse.data != null &&
-            statusResponse.data['matchFound'] == true) {
-          _handleMatchFoundResponse(statusResponse.data);
+        if (statusResponse.data != null) {
+          _handleQueueResponse(statusResponse.data);
         }
+      } on DioException catch (error) {
+        _handleQueueRequestError(error);
       } catch (_) {
       } finally {
         _isQueueRequestRunning = false;
       }
+    });
+  }
+
+  bool _isConnectionFailure(DioException error) =>
+      error.type == DioExceptionType.connectionError ||
+      error.type == DioExceptionType.connectionTimeout;
+
+  void _handleQueueRequestError(DioException error) {
+    if (_isConnectionFailure(error)) {
+      _stopSearchForConnectionFailure();
+      return;
+    }
+    final statusCode = error.response?.statusCode;
+    if (statusCode == null || statusCode < 500) return;
+    _pollingTimer?.cancel();
+    _countdownTimer?.cancel();
+    unawaited(_cancelServerQueue());
+    if (!mounted) return;
+    setState(() {
+      _searchFailed = true;
+      _searchFailureMessage =
+          'MATCHMAKING SERVER ERROR ($statusCode). PLEASE TRY AGAIN.';
+    });
+  }
+
+  void _stopSearchForConnectionFailure() {
+    _pollingTimer?.cancel();
+    _countdownTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _searchFailed = true;
+      _searchFailureMessage = 'NO INTERNET CONNECTION. CHECK WIFI OR DATA.';
+    });
+  }
+
+  void _handleQueueResponse(dynamic data) {
+    if (data is! Map) return;
+    if (data['matchFound'] == true) {
+      _handleMatchFoundResponse(data);
+      return;
+    }
+    final message = data['message']?.toString().trim();
+    if (message == null ||
+        message.isEmpty ||
+        message == 'Searching for online players...') {
+      return;
+    }
+
+    _pollingTimer?.cancel();
+    _countdownTimer?.cancel();
+    unawaited(_cancelServerQueue());
+    if (!mounted) return;
+    setState(() {
+      _searchFailed = true;
+      _searchFailureMessage = message;
     });
   }
 
@@ -177,11 +243,18 @@ class _OnlineMatchmakingDialogState
   }
 
   void _timerExpiredWithoutMatch() {
-    if (_isMatchFound) return;
+    // Let an in-flight response finish; cancelling here can tear down a room
+    // that was just matched while the request was returning.
+    if (_isMatchFound || _isQueueRequestRunning) return;
     _pollingTimer?.cancel();
     _countdownTimer?.cancel();
     _cancelServerQueue();
-    if (mounted) setState(() => _searchFailed = true);
+    if (mounted) {
+      setState(() {
+        _searchFailed = true;
+        _searchFailureMessage = 'No opponent found. Please try again.';
+      });
+    }
   }
 
   Future<void> _launchGameWithOpponent() async {
@@ -304,6 +377,7 @@ class _OnlineMatchmakingDialogState
     setState(() {
       _isMatchFound = false;
       _searchFailed = true;
+      _searchFailureMessage = message;
     });
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       backgroundColor: const Color(0xFF142547),
@@ -623,21 +697,27 @@ class _OnlineMatchmakingDialogState
                                 const Icon(Icons.search_rounded,
                                     color: AppColors.gold, size: 22),
                                 const SizedBox(width: 6),
-                                Text(
-                                  _isMatchFound
-                                      ? 'PLAYERS CONNECTED! STARTING...'
-                                      : _searchFailed
-                                          ? 'NO LIVE MATCH AVAILABLE. TRY AGAIN.'
-                                          : 'SEARCHING FOR ${widget.playerCount} HUMAN PLAYERS...',
-                                  style: GoogleFonts.poppins(
-                                    color: _isMatchFound
-                                        ? const Color(0xFF00E676)
+                                Flexible(
+                                  child: Text(
+                                    _isMatchFound
+                                        ? 'PLAYERS CONNECTED! STARTING...'
                                         : _searchFailed
-                                            ? Colors.white70
-                                            : AppColors.gold,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 1,
+                                            ? (_searchFailureMessage ??
+                                                'NO LIVE MATCH AVAILABLE. TRY AGAIN.')
+                                            : 'SEARCHING FOR ${widget.playerCount} HUMAN PLAYERS...',
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.poppins(
+                                      color: _isMatchFound
+                                          ? const Color(0xFF00E676)
+                                          : _searchFailed
+                                              ? Colors.white70
+                                              : AppColors.gold,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1,
+                                    ),
                                   ),
                                 ),
                               ],
