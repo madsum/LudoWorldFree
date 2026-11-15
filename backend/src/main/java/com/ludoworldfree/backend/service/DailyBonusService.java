@@ -34,8 +34,11 @@ public class DailyBonusService {
         int streak = streakForToday(wallet, today);
         int nextStreak = claimedToday ? streak : streak + 1;
         int rewardDay = ((nextStreak - 1) % REWARDS.length) + 1;
+        boolean doubledToday = today.equals(wallet.getDailyBonusDoubleDate());
         return Map.of(
                 "claimedToday", claimedToday,
+                "doubledToday", doubledToday,
+                "doubleRewardAmount", doubledToday ? rewardForDay(rewardDay) : 0,
                 "streak", streak,
                 "rewardDay", Math.min(rewardDay, REWARDS.length),
                 "rewardAmount", claimedToday ? 0 : rewardForDay(rewardDay),
@@ -50,6 +53,7 @@ public class DailyBonusService {
         if (today.equals(wallet.getDailyBonusClaimDate())) {
             int rewardDay = ((wallet.getDailyBonusStreak() - 1) % REWARDS.length) + 1;
             return Map.of("success", false, "claimedToday", true,
+                    "doubledToday", today.equals(wallet.getDailyBonusDoubleDate()),
                     "streak", wallet.getDailyBonusStreak(), "rewardAmount", 0,
                     "rewardDay", rewardDay, "balance", wallet.getBalance());
         }
@@ -67,7 +71,43 @@ public class DailyBonusService {
                 playerId, GoldTransaction.TransactionType.DAILY_BONUS,
                 reward, before, after, today.toString(), "DAILY_CHECK_IN"));
         return Map.of("success", true, "claimedToday", true, "streak", streak,
-                "rewardDay", rewardDay, "rewardAmount", reward, "balance", after);
+                "doubledToday", false, "rewardDay", rewardDay,
+                "rewardAmount", reward, "balance", after);
+    }
+
+    @Transactional
+    public Map<String, Object> doubleClaim(UUID playerId, String providerRewardId) {
+        PlayerWallet wallet = walletRepository.findByPlayerIdForUpdate(playerId).orElse(null);
+        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+        if (wallet == null || !today.equals(wallet.getDailyBonusClaimDate())) {
+            return Map.of("success", false, "claimedToday", false,
+                    "doubledToday", false, "doubleRewardAmount", 0,
+                    "streak", 0, "rewardAmount", 0,
+                    "rewardDay", 1, "balance", wallet == null ? 0 : wallet.getBalance());
+        }
+
+        int streak = wallet.getDailyBonusStreak();
+        int rewardDay = ((streak - 1) % REWARDS.length) + 1;
+        if (today.equals(wallet.getDailyBonusDoubleDate())) {
+            return Map.of("success", false, "claimedToday", true,
+                    "doubledToday", true, "doubleRewardAmount", rewardForDay(rewardDay),
+                    "streak", streak, "rewardAmount", 0,
+                    "rewardDay", rewardDay, "balance", wallet.getBalance());
+        }
+
+        long reward = rewardForDay(rewardDay);
+        long before = wallet.getBalance();
+        long after = before + reward;
+        wallet.setBalance(after);
+        wallet.setDailyBonusDoubleDate(today);
+        walletRepository.save(wallet);
+        transactionRepository.save(new GoldTransaction(
+                playerId, GoldTransaction.TransactionType.DAILY_BONUS,
+                reward, before, after, providerRewardId, "DAILY_BONUS_DOUBLE_AD"));
+        return Map.of("success", true, "claimedToday", true,
+                "doubledToday", true, "doubleRewardAmount", reward,
+                "streak", streak, "rewardDay", rewardDay,
+                "rewardAmount", reward, "balance", after);
     }
 
     private static int streakForToday(PlayerWallet wallet, LocalDate today) {

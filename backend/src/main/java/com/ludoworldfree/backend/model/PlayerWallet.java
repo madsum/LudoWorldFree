@@ -24,6 +24,9 @@ public class PlayerWallet {
 
     private LocalDate dailyBonusClaimDate;
 
+    @Column(name = "daily_bonus_double_date")
+    private LocalDate dailyBonusDoubleDate;
+
     @Column(nullable = false)
     private int dailyBonusStreak = 0;
 
@@ -51,6 +54,8 @@ public class PlayerWallet {
     public void setDiamonds(long diamonds) { this.diamonds = diamonds; }
     public LocalDate getDailyBonusClaimDate() { return dailyBonusClaimDate; }
     public void setDailyBonusClaimDate(LocalDate dailyBonusClaimDate) { this.dailyBonusClaimDate = dailyBonusClaimDate; }
+    public LocalDate getDailyBonusDoubleDate() { return dailyBonusDoubleDate; }
+    public void setDailyBonusDoubleDate(LocalDate dailyBonusDoubleDate) { this.dailyBonusDoubleDate = dailyBonusDoubleDate; }
     public int getDailyBonusStreak() { return dailyBonusStreak; }
     public void setDailyBonusStreak(int dailyBonusStreak) { this.dailyBonusStreak = dailyBonusStreak; }
     public Long getVersion() { return version; }

@@ -8,7 +8,9 @@ class DailyBonusStatus {
   final int streak;
   final int rewardDay;
   final int rewardAmount;
+  final int doubleRewardAmount;
   final int balance;
+  final bool doubledToday;
 
   const DailyBonusStatus({
     required this.claimedToday,
@@ -16,7 +18,9 @@ class DailyBonusStatus {
     required this.streak,
     required this.rewardDay,
     required this.rewardAmount,
+    this.doubleRewardAmount = 0,
     required this.balance,
+    this.doubledToday = false,
   });
 
   factory DailyBonusStatus.fromJson(Map<String, dynamic> json) {
@@ -26,18 +30,26 @@ class DailyBonusStatus {
       streak: (json['streak'] as num?)?.toInt() ?? 0,
       rewardDay: (json['rewardDay'] as num?)?.toInt() ?? 1,
       rewardAmount: (json['rewardAmount'] as num?)?.toInt() ?? 0,
+      doubleRewardAmount: (json['doubleRewardAmount'] as num?)?.toInt() ?? 0,
       balance: (json['balance'] as num?)?.toInt() ?? 0,
+      doubledToday: json['doubledToday'] == true,
     );
   }
 
-  DailyBonusStatus copyWith({int? balance}) {
+  DailyBonusStatus copyWith({
+    bool? success,
+    int? rewardAmount,
+    int? balance,
+  }) {
     return DailyBonusStatus(
       claimedToday: claimedToday,
-      success: success,
+      success: success ?? this.success,
       streak: streak,
       rewardDay: rewardDay,
-      rewardAmount: rewardAmount,
+      rewardAmount: rewardAmount ?? this.rewardAmount,
+      doubleRewardAmount: doubleRewardAmount,
       balance: balance ?? this.balance,
+      doubledToday: doubledToday,
     );
   }
 }
@@ -80,6 +92,7 @@ abstract class AuthRepository {
 
   Future<DailyBonusStatus> getDailyBonusStatus();
   Future<DailyBonusStatus> claimDailyBonus();
+  Future<DailyBonusStatus> doubleDailyBonus({required String providerRewardId});
 
   Future<void> persistWalletBalance(UserModel user);
 

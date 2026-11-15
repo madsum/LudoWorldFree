@@ -298,6 +298,39 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
+  Future<DailyBonusStatus?> doubleDailyBonus({
+    required String providerRewardId,
+  }) async {
+    try {
+      final result = await _repository.doubleDailyBonus(
+        providerRewardId: providerRewardId,
+      );
+      final current = state.user;
+      if (current != null) {
+        applyUserUpdate(current.copyWith(coins: result.balance));
+      }
+      await refreshWalletFromBackend();
+      return result;
+    } catch (error) {
+      debugPrint('Daily bonus double reward failed: $error');
+      // The server may have credited the bonus even if its response was lost.
+      try {
+        final status = await _repository.getDailyBonusStatus();
+        await refreshWalletFromBackend();
+        if (status.doubledToday) {
+          return status.copyWith(
+            success: true,
+            rewardAmount: status.doubleRewardAmount,
+          );
+        }
+      } catch (statusError) {
+        debugPrint('Daily bonus double status recovery failed: $statusError');
+        await refreshWalletFromBackend();
+      }
+      return null;
+    }
+  }
+
   Future<void> refreshWalletFromBackend() async {
     try {
       final refreshed = await _repository.getCurrentUser();

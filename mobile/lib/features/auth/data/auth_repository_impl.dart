@@ -223,6 +223,39 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<DailyBonusStatus> doubleDailyBonus({
+    required String providerRewardId,
+  }) async {
+    final current = await getStoredCurrentUser() ?? UserModel.guest();
+    final response = await _dio.post(
+      '/rewards/daily-bonus/double',
+      data: {'providerRewardId': providerRewardId},
+      options: Options(headers: {'X-Player-ID': current.id}),
+    );
+    final result = DailyBonusStatus.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+    final updated = current.copyWith(coins: result.balance);
+    await _saveAuthSession(
+      token: await _storageService.getAccessToken() ?? 'user_token',
+      userId: updated.id,
+      authProvider: updated.authProvider,
+      userName: updated.name,
+      userEmail: updated.email ?? '',
+      avatarUrl: updated.avatarUrl,
+      country: updated.country,
+      countryFlag: updated.countryFlag,
+      coins: updated.coins,
+      diamonds: updated.diamonds,
+      isGuest: updated.isGuest,
+      preferredGameType: updated.preferredGameType,
+      mostPlayedGameType: updated.mostPlayedGameType,
+      syncBackendProfile: false,
+    );
+    return result;
+  }
+
+  @override
   Future<void> persistWalletBalance(UserModel user) async {
     await _saveAuthSession(
       token: await _storageService.getAccessToken() ?? 'user_token',

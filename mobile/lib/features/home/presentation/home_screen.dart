@@ -190,8 +190,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ).then((result) async {
       _dailyBonusDialogShowing = false;
       if (mounted && result?.success == true) {
+        final doubleReward = await _showDailyBonusDoubleOffer(result!);
+        final wasDoubled =
+            doubleReward?.success == true || doubleReward?.doubledToday == true;
+        final finalResult = wasDoubled
+            ? result.copyWith(
+                rewardAmount: result.rewardAmount * 2,
+                balance: doubleReward!.balance,
+              )
+            : result;
         await _flyCoinsFromBottomToWallet();
-        await _showDailyBonusCongratulations(result!);
+        await _showDailyBonusCongratulations(finalResult, doubled: wasDoubled);
       } else if (mounted && result?.claimedToday == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -246,7 +255,123 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return resultCompleter.future;
   }
 
-  Future<void> _showDailyBonusCongratulations(DailyBonusStatus result) async {
+  Future<DailyBonusStatus?> _showDailyBonusDoubleOffer(
+    DailyBonusStatus result,
+  ) async {
+    final shouldWatch = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF0D1B3E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+          side: const BorderSide(color: AppColors.gold, width: 2),
+        ),
+        title: Text(
+          'DOUBLE YOUR DAILY BONUS?',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.poppins(
+            color: AppColors.gold,
+            fontWeight: FontWeight.w900,
+            fontSize: 18,
+          ),
+        ),
+        content: Text(
+          'Your ${result.rewardAmount} coin bonus is claimed. Watch one more rewarded ad to earn ${result.rewardAmount} extra coins today.',
+          textAlign: TextAlign.center,
+          style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+        ),
+        actionsAlignment: MainAxisAlignment.spaceEvenly,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              'NO THANKS',
+              style: GoogleFonts.poppins(color: Colors.white70),
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            icon: const Icon(Icons.ondemand_video_rounded),
+            label: Text(
+              'DOUBLE IT',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w800),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.gold,
+              foregroundColor: const Color(0xFF07122E),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (shouldWatch != true || !mounted) return null;
+
+    final doubleReward = await _watchAdAndDoubleDailyBonus();
+    if (doubleReward?.success == true || doubleReward?.doubledToday == true) {
+      return doubleReward;
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: AppColors.bgNavy,
+          content: Text(
+            'The extra daily bonus was not credited. Your original bonus is safe.',
+            style: GoogleFonts.poppins(color: AppColors.gold),
+          ),
+        ),
+      );
+    }
+    return null;
+  }
+
+  Future<DailyBonusStatus?> _watchAdAndDoubleDailyBonus() async {
+    if (_isClaimingDailyBonus) return null;
+    setState(() => _isClaimingDailyBonus = true);
+    final resultCompleter = Completer<DailyBonusStatus?>();
+    String? earnedProviderRewardId;
+    var completed = false;
+    void complete(DailyBonusStatus? result) {
+      if (completed) return;
+      completed = true;
+      if (mounted) setState(() => _isClaimingDailyBonus = false);
+      resultCompleter.complete(result);
+    }
+
+    await ref.read(rewardedAdServiceProvider).showRewardedAd(
+      onRewardEarned: (amount, providerRewardId) {
+        if (amount > 0 && providerRewardId.isNotEmpty) {
+          earnedProviderRewardId = providerRewardId;
+        }
+      },
+      onAdClosed: () {
+        final rewardId = earnedProviderRewardId;
+        if (rewardId == null) {
+          complete(null);
+          return;
+        }
+        ref
+            .read(authControllerProvider.notifier)
+            .doubleDailyBonus(providerRewardId: rewardId)
+            .then(complete);
+      },
+      onError: (error) {
+        complete(null);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: AppColors.bgNavy,
+          content:
+              Text(error, style: GoogleFonts.poppins(color: AppColors.gold)),
+        ));
+      },
+    );
+    return resultCompleter.future;
+  }
+
+  Future<void> _showDailyBonusCongratulations(
+    DailyBonusStatus result, {
+    required bool doubled,
+  }) async {
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -295,6 +420,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   fontWeight: FontWeight.w600,
                 )),
             const SizedBox(height: 8),
+            if (doubled) ...[
+              Text(
+                'You watched another ad and doubled today’s reward!',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  color: AppColors.gold,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
             Text('+${result.rewardAmount} coins added to your wallet',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.poppins(
