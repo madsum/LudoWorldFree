@@ -141,22 +141,24 @@ public class OnlineMatchRoom {
         playerCount = tickets.size();
         List<String> availableColors = new ArrayList<>(List.of("red", "green", "yellow", "blue"));
         List<String> assignedColors = new ArrayList<>();
-        for (MatchmakingTicket ticket : tickets) {
-            String color = ticket.getSelectedColor();
-            if (!availableColors.remove(color)) {
-                if (tickets.size() == 2) {
-                    color = switch (color) {
-                        case "red" -> "yellow";
-                        case "yellow" -> "red";
-                        case "green" -> "blue";
-                        default -> "green";
-                    };
-                    availableColors.remove(color);
-                } else {
+        if (tickets.size() == 2) {
+            String firstColor = tickets.get(0).getSelectedColor();
+            String oppositeColor = switch (firstColor) {
+                case "red" -> "yellow";
+                case "green" -> "blue";
+                case "yellow" -> "red";
+                default -> "green";
+            };
+            assignedColors.add(firstColor);
+            assignedColors.add(oppositeColor);
+        } else {
+            for (MatchmakingTicket ticket : tickets) {
+                String color = ticket.getSelectedColor();
+                if (!availableColors.remove(color)) {
                     color = availableColors.removeFirst();
                 }
+                assignedColors.add(color);
             }
-            assignedColors.add(color);
         }
         MatchmakingTicket playerA = tickets.get(0);
         MatchmakingTicket playerB = tickets.get(1);

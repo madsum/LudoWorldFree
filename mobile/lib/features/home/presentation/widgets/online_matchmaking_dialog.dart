@@ -371,7 +371,7 @@ class _OnlineMatchmakingDialogState
   void _failMatchedRoom(String message) {
     _pollingTimer?.cancel();
     _countdownTimer?.cancel();
-    ref.read(webSocketServiceProvider).leaveRoom();
+    unawaited(ref.read(webSocketServiceProvider).leaveRoom());
     _cancelServerQueue();
     if (!mounted) return;
     setState(() {
@@ -399,7 +399,7 @@ class _OnlineMatchmakingDialogState
   void _cancelMatchmaking() async {
     _pollingTimer?.cancel();
     _countdownTimer?.cancel();
-    ref.read(webSocketServiceProvider).leaveRoom();
+    await ref.read(webSocketServiceProvider).leaveRoom();
     await _cancelServerQueue();
     if (mounted) Navigator.of(context).pop();
   }

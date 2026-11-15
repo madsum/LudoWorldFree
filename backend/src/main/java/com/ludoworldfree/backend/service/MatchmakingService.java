@@ -279,25 +279,77 @@ public class MatchmakingService {
         OnlineMatchRoom room = roomRepository.findForUpdate(roomId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Match room not found."));
         Set<UUID> roomPlayerIds = Set.copyOf(room.getPlayerIds());
+        boolean validForfeit = isValidOnlineForfeit(
+                room, senderId, nextTurnOwnerId, stateJson);
         if (room.getStatus() != OnlineMatchRoom.Status.READY
                 || !roomPlayerIds.equals(statePlayerIds)
-                || !senderId.equals(room.getTurnOwnerId())
+                || (!senderId.equals(room.getTurnOwnerId()) && !validForfeit)
                 || !roomPlayerIds.contains(nextTurnOwnerId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "This player cannot submit the current game state.");
         }
-        if (!isDiceRolling && diceValue != null
+        if (!validForfeit && !isDiceRolling && diceValue != null
                 && !room.matchesAuthoritativeRoll(senderId, rollOpportunityId, diceValue)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "The submitted dice result was not issued by the server.");
         }
-        validatePawnTransition(room, senderId, nextTurnOwnerId, diceValue,
-                rollOpportunityId, isDiceRolling, stateJson);
+        if (!validForfeit) {
+            validatePawnTransition(room, senderId, nextTurnOwnerId, diceValue,
+                    rollOpportunityId, isDiceRolling, stateJson);
+        }
         room.recordState(senderId, nextTurnOwnerId, stateJson);
         roomRepository.save(room);
         stateEventRepository.save(new OnlineMatchStateEvent(
                 roomId, room.getStateRevision(), senderId, stateJson));
         return snapshot(room);
+    }
+
+    private boolean isValidOnlineForfeit(OnlineMatchRoom room, UUID senderId,
+                                         UUID nextTurnOwnerId, String stateJson) {
+        try {
+            JsonNode next = objectMapper.readTree(stateJson);
+            UUID activePlayerId = activePlayerId(next);
+            if (!next.path("players").isArray()
+                    || next.path("players").size() != room.getPlayerCount()
+                    || senderId.equals(nextTurnOwnerId)
+                    || !nextTurnOwnerId.equals(activePlayerId)) return false;
+            JsonNode forfeitingPlayer = null;
+            JsonNode winner = null;
+            Set<UUID> stateIds = new java.util.HashSet<>();
+            for (JsonNode player : next.path("players")) {
+                UUID id = UUID.fromString(player.path("id").asText());
+                stateIds.add(id);
+                if (senderId.equals(id)) forfeitingPlayer = player;
+                if (nextTurnOwnerId.equals(id)) winner = player;
+            }
+            if (!stateIds.equals(Set.copyOf(room.getPlayerIds()))
+                    || forfeitingPlayer == null
+                    || !forfeitingPlayer.path("isEliminated").asBoolean()) {
+                return false;
+            }
+            if (next.path("isGameOver").asBoolean()) {
+                boolean winnerRecorded = false;
+                for (JsonNode winnerId : next.path("winnerIds")) {
+                    if (nextTurnOwnerId.toString().equals(winnerId.asText())) {
+                        winnerRecorded = true;
+                        break;
+                    }
+                }
+                if (winner == null || winner.path("rank").asInt(0) <= 0
+                        || !winnerRecorded) return false;
+            } else if (senderId.equals(nextTurnOwnerId)
+                    || !"rollDice".equals(next.path("turnPhase").asText())) {
+                return false;
+            }
+            if (room.getLatestStateJson() == null) return false;
+            JsonNode previous = objectMapper.readTree(room.getLatestStateJson());
+            Map<String, Integer> before = pawnPositions(previous);
+            Map<String, Integer> after = pawnPositions(next);
+            return before.size() == room.getPlayerCount() * 4
+                    && before.equals(after);
+        } catch (Exception exception) {
+            return false;
+        }
     }
 
     @Transactional
@@ -307,14 +359,9 @@ public class MatchmakingService {
         if (room.getStatus() != OnlineMatchRoom.Status.READY || !room.contains(requesterId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This player cannot request a replay.");
         }
-        try {
-            if (room.getLatestStateJson() == null
-                    || !objectMapper.readTree(room.getLatestStateJson()).path("isGameOver").asBoolean()) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "The game is not over yet.");
-            }
-        } catch (java.io.IOException exception) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "The finished game state is invalid.");
-        }
+        // The replay button is only exposed after the client reaches game over.
+        // Do not gate the request on the last persisted board: its final update
+        // can still be in flight when the player taps Replay.
         if (room.getRematchStatus() == OnlineMatchRoom.RematchStatus.REQUESTED) {
             if (!requesterId.equals(room.getRematchRequesterId())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "A replay request is already pending.");

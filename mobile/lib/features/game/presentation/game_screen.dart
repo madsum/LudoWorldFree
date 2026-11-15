@@ -45,6 +45,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   OnlineChatMessage? _latestChatMessage;
   Timer? _chatBubbleTimer;
   bool _rematchPending = false;
+  bool _restartingForRematch = false;
   int _rematchAcceptedCount = 0;
   int _rematchPlayerCount = 0;
   final Set<String> _shownRematchDialogs = <String>{};
@@ -92,9 +93,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
             message['code'] == 'REMATCH_REJECTED' &&
             mounted) {
           setState(() => _rematchPending = false);
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('The replay request could not be completed.'),
-          ));
+          final reason = message['message']?.toString().trim();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                reason == null || reason.isEmpty
+                    ? 'The replay request could not be completed.'
+                    : reason,
+              ),
+            ),
+          );
         } else if (message['type'] == 'player_disconnected' ||
             message['type'] == 'connection_lost') {
           gameNotifier.pauseTurnTimer();
@@ -117,7 +125,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 Text('Connection lost. Return to the lobby and search again.'),
           ));
         } else if (message['type'] == 'match_finished' && mounted) {
-          ref.read(webSocketServiceProvider).leaveRoom();
+          unawaited(ref.read(webSocketServiceProvider).leaveRoom());
           gameNotifier.clearOnlineMatch();
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Your opponent left the match.'),
@@ -135,12 +143,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _lastOnlineTurnPlayerId =
             next.players.isEmpty ? null : next.currentPlayer.id;
         if (gameNotifier.isApplyingRemoteState ||
+            _restartingForRematch ||
             !gameNotifier.isOnlineMode ||
             (next.players.length != 2 && next.players.length != 4)) {
           return;
         }
         final localPlayerId = gameNotifier.onlineLocalPlayerId;
-        if (previousTurnPlayerId == localPlayerId ||
+        final localPlayerForfeited = next.isGameOver &&
+            next.players.any(
+                (player) => player.id == localPlayerId && player.isEliminated);
+        if (localPlayerForfeited ||
+            previousTurnPlayerId == localPlayerId ||
             next.currentPlayer.id == localPlayerId) {
           webSocketService.sendGameState(next.toJson());
         }
@@ -170,12 +183,38 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 player.missedTurns > (previousMissedTurns[player.id] ?? 0),
           );
           if (hasMissedRoll) _showTimeoutNoticeOverlay();
+          final gameNotifier = ref.read(gameControllerProvider.notifier);
+          final localPlayerId = gameNotifier.onlineLocalPlayerId;
+          final newlyForfeitedOpponent = next.players.where((player) {
+            final wasEliminated = previous.players
+                .where((oldPlayer) => oldPlayer.id == player.id)
+                .any((oldPlayer) => oldPlayer.isEliminated);
+            return gameNotifier.isOnlineMode &&
+                !next.isGameOver &&
+                player.id != localPlayerId &&
+                player.isEliminated &&
+                !wasEliminated;
+          }).firstOrNull;
+          if (newlyForfeitedOpponent != null) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content:
+                  Text('${newlyForfeitedOpponent.name} forfeited the game.'),
+            ));
+          }
         }
 
         if (next.isGameOver && previous?.isGameOver != true) {
+          final gameNotifier = ref.read(gameControllerProvider.notifier);
+          if (gameNotifier.isOnlineMode &&
+              next.winnerIds.contains(gameNotifier.onlineLocalPlayerId) &&
+              next.statusMessage.toLowerCase().contains('forfeit')) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Your opponent forfeited. You win!'),
+            ));
+          }
           unawaited(_recordDailyGoalEvents(
             next,
-            ref.read(gameControllerProvider.notifier),
+            gameNotifier,
           ));
         }
 
@@ -277,7 +316,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _hasTriggeredGameOverAd = false;
         _readyToShowVictoryDialog = false;
       });
-      gameNotifier.startNewGame(players: gameState.players);
+      _restartingForRematch = true;
+      try {
+        gameNotifier.startNewGame(players: gameState.players);
+      } finally {
+        _restartingForRematch = false;
+      }
+      final freshState = ref.read(gameControllerProvider);
+      if (freshState.currentPlayer.id == localPlayerId) {
+        ref.read(webSocketServiceProvider).sendGameState(freshState.toJson());
+      }
     }
   }
 
@@ -302,7 +350,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _onlineGameNotifier = null;
     if (gameNotifier?.isOnlineMode == true) {
       final playerId = ref.read(authControllerProvider).user?.id;
-      ref.read(webSocketServiceProvider).leaveRoom();
+      unawaited(ref.read(webSocketServiceProvider).leaveRoom());
       gameNotifier!.clearOnlineMatch();
       if (playerId != null) unawaited(_cancelOnlineMatch(playerId));
     }
@@ -650,7 +698,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               _rematchAcceptedCount = 1;
                               _rematchPlayerCount = gameState.players.length;
                             });
-                            ref.read(webSocketServiceProvider).requestRematch();
+                            final sent = ref
+                                .read(webSocketServiceProvider)
+                                .requestRematch();
+                            if (!sent) {
+                              setState(() => _rematchPending = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'The game server is disconnected. Reconnect and try again.',
+                                  ),
+                                ),
+                              );
+                            }
                             return;
                           }
                           setState(() {
@@ -717,11 +777,25 @@ class _GameScreenState extends ConsumerState<GameScreen>
       context,
       onYes: () {
         final gameNotifier = ref.read(gameControllerProvider.notifier);
+        if (gameNotifier.isOnlineMode) {
+          if (gameNotifier.forfeitHumanPlayer()) return;
+          unawaited(_leaveOnlineGame());
+          return;
+        }
         final matchCompleted = gameNotifier.forfeitHumanPlayer();
         if (!matchCompleted) context.go('/home');
       },
       onNo: () {},
     );
+  }
+
+  Future<void> _leaveOnlineGame() async {
+    final gameNotifier = ref.read(gameControllerProvider.notifier);
+    await ref.read(webSocketServiceProvider).leaveRoom();
+    final playerId = ref.read(authControllerProvider).user?.id;
+    if (playerId != null) unawaited(_cancelOnlineMatch(playerId));
+    gameNotifier.clearOnlineMatch();
+    if (mounted) context.go('/home');
   }
 }
 

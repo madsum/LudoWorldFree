@@ -37,7 +37,7 @@ class WebSocketService {
     required String roomId,
     required String playerId,
   }) async {
-    leaveRoom();
+    await leaveRoom();
     _roomId = roomId;
     _playerId = playerId;
     _shouldReconnect = true;
@@ -52,7 +52,7 @@ class WebSocketService {
       );
     } catch (e) {
       debugPrint('[WebSocket] Could not join the game room: $e');
-      leaveRoom();
+      await leaveRoom();
       return false;
     }
   }
@@ -194,8 +194,10 @@ class WebSocketService {
     _send({'type': 'chat', 'text': message});
   }
 
-  void requestRematch() {
+  bool requestRematch() {
+    if (!isConnected) return false;
     _send({'type': 'rematch_request'});
+    return true;
   }
 
   void sendRematchResponse(String roundId, bool accept) {
@@ -230,13 +232,23 @@ class WebSocketService {
     });
   }
 
-  void leaveRoom() {
-    if (isConnected) _send({'type': 'leave'});
+  Future<void> leaveRoom() async {
+    final channel = _channel;
+    final wasConnected = channel != null && channel.closeCode == null;
+    if (wasConnected) _send({'type': 'leave'});
     _shouldReconnect = false;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    // Give the server time to persist the leave and deliver match_finished to
+    // players connected through another backend instance before closing TCP.
+    if (wasConnected) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    }
+    if (channel != null && _channel != null && !identical(_channel, channel)) {
+      return;
+    }
     _subscription?.cancel();
     _subscription = null;
     _channel?.sink.close();
@@ -268,7 +280,7 @@ class WebSocketService {
 
   /// Disconnects the active WebSocket channel
   void disconnect() {
-    leaveRoom();
+    unawaited(leaveRoom());
   }
 
   void dispose() {

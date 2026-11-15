@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/dice_randomizer.dart';
 import '../../domain/game_engine.dart';
 import '../../domain/models/game_state.dart';
 import '../../domain/models/ludo_color.dart';
@@ -18,6 +19,7 @@ class GameNotifier extends StateNotifier<GameState> {
   static const int maxMissedTurns = 5;
 
   final math.Random _random = math.Random();
+  final DiceRandomizer _diceRandomizer = DiceRandomizer();
   Timer? _botTimer;
   Timer? _turnTimer;
   Stopwatch? _turnStopwatch;
@@ -207,7 +209,7 @@ class GameNotifier extends StateNotifier<GameState> {
     int diceResult;
     try {
       diceResult = authoritativeDice == null
-          ? _random.nextInt(6) + 1
+          ? _diceRandomizer.roll()
           : await authoritativeDice;
     } catch (_) {
       if (_isDisposed || matchEpoch != _matchEpoch) return;
@@ -745,8 +747,16 @@ class GameNotifier extends StateNotifier<GameState> {
             !state.players[i].hasAllPawnsHome)
           i,
     ];
-    final forfeitingIndex =
-        humanIndices.length == 1 ? humanIndices.single : state.currentTurnIndex;
+    final onlineForfeitingIndex = isOnlineMode
+        ? state.players
+            .indexWhere((player) => player.id == _onlineLocalPlayerId)
+        : -1;
+    if (isOnlineMode && onlineForfeitingIndex < 0) return false;
+    final forfeitingIndex = isOnlineMode
+        ? onlineForfeitingIndex
+        : humanIndices.length == 1
+            ? humanIndices.single
+            : state.currentTurnIndex;
     final forfeitingPlayer = state.players[forfeitingIndex];
     final updatedPlayers = [...state.players];
     updatedPlayers[forfeitingIndex] = forfeitingPlayer.copyWith(
