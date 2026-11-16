@@ -71,12 +71,14 @@ class _OnlineMatchmakingDialogState
 
   Timer? _countdownTimer;
   Timer? _pollingTimer;
-  int _secondsRemaining = 45;
+  int _secondsWaiting = 0;
 
   bool _isMatchFound = false;
   bool _searchFailed = false;
   String? _searchFailureMessage;
   bool _isQueueRequestRunning = false;
+  String? _queueNotice;
+  int _queuePollCount = 0;
   String? _roomId;
   String? _localPlayerId;
   String? _opponentId;
@@ -96,11 +98,7 @@ class _OnlineMatchmakingDialogState
   void _startCountdown() {
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
-      if (_secondsRemaining > 0) {
-        setState(() => _secondsRemaining--);
-      } else {
-        _timerExpiredWithoutMatch();
-      }
+      setState(() => _secondsWaiting++);
     });
   }
 
@@ -141,19 +139,22 @@ class _OnlineMatchmakingDialogState
       _isQueueRequestRunning = false;
     }
 
-    // Retry every second so concurrent queue entries pair promptly, including
-    // when the first requests arrived before either ticket was committed.
+    // Recheck the persisted queue slot so players can join at different times.
     _pollingTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
       if (!mounted || _isMatchFound || _isQueueRequestRunning) return;
       _isQueueRequestRunning = true;
+      _queuePollCount++;
       try {
-        final statusResponse = await dio.post(
-          '/matchmaking/join',
-          data: joinRequest,
-          options: Options(
-            headers: {'X-Player-ID': user?.id},
-          ),
-        );
+        final statusResponse = _queuePollCount % 10 == 0
+            ? await dio.post(
+                '/matchmaking/join',
+                data: joinRequest,
+                options: Options(headers: {'X-Player-ID': user?.id}),
+              )
+            : await dio.get(
+                '/matchmaking/status',
+                options: Options(headers: {'X-Player-ID': user?.id}),
+              );
         if (statusResponse.data != null) {
           _handleQueueResponse(statusResponse.data);
         }
@@ -171,12 +172,16 @@ class _OnlineMatchmakingDialogState
       error.type == DioExceptionType.connectionTimeout;
 
   void _handleQueueRequestError(DioException error) {
-    if (_isConnectionFailure(error)) {
-      _stopSearchForConnectionFailure();
+    final statusCode = error.response?.statusCode;
+    if (_isConnectionFailure(error) ||
+        statusCode == null ||
+        statusCode >= 500) {
+      if (mounted) {
+        setState(() => _queueNotice =
+            'RECONNECTING TO MATCHMAKING... YOUR PLACE IS SAVED.');
+      }
       return;
     }
-    final statusCode = error.response?.statusCode;
-    if (statusCode == null || statusCode < 500) return;
     _pollingTimer?.cancel();
     _countdownTimer?.cancel();
     unawaited(_cancelServerQueue());
@@ -185,16 +190,6 @@ class _OnlineMatchmakingDialogState
       _searchFailed = true;
       _searchFailureMessage =
           'MATCHMAKING SERVER ERROR ($statusCode). PLEASE TRY AGAIN.';
-    });
-  }
-
-  void _stopSearchForConnectionFailure() {
-    _pollingTimer?.cancel();
-    _countdownTimer?.cancel();
-    if (!mounted) return;
-    setState(() {
-      _searchFailed = true;
-      _searchFailureMessage = 'NO INTERNET CONNECTION. CHECK WIFI OR DATA.';
     });
   }
 
@@ -208,6 +203,9 @@ class _OnlineMatchmakingDialogState
     if (message == null ||
         message.isEmpty ||
         message == 'Searching for online players...') {
+      if (_queueNotice != null && mounted) {
+        setState(() => _queueNotice = null);
+      }
       return;
     }
 
@@ -240,21 +238,6 @@ class _OnlineMatchmakingDialogState
     });
 
     _launchGameWithOpponent();
-  }
-
-  void _timerExpiredWithoutMatch() {
-    // Let an in-flight response finish; cancelling here can tear down a room
-    // that was just matched while the request was returning.
-    if (_isMatchFound || _isQueueRequestRunning) return;
-    _pollingTimer?.cancel();
-    _countdownTimer?.cancel();
-    _cancelServerQueue();
-    if (mounted) {
-      setState(() {
-        _searchFailed = true;
-        _searchFailureMessage = 'No opponent found. Please try again.';
-      });
-    }
   }
 
   Future<void> _launchGameWithOpponent() async {
@@ -419,8 +402,8 @@ class _OnlineMatchmakingDialogState
     final myName = user?.name ?? 'madsum1984';
     final myAvatar = user?.avatarUrl ?? 'assets/images/black-mask.webp';
 
-    final minutes = (_secondsRemaining ~/ 60).toString().padLeft(2, '0');
-    final seconds = (_secondsRemaining % 60).toString().padLeft(2, '0');
+    final minutes = (_secondsWaiting ~/ 60).toString().padLeft(2, '0');
+    final seconds = (_secondsWaiting % 60).toString().padLeft(2, '0');
 
     return Scaffold(
       backgroundColor: const Color(0xEB8B0000), // Dark Red Ludo King Background
@@ -704,7 +687,8 @@ class _OnlineMatchmakingDialogState
                                         : _searchFailed
                                             ? (_searchFailureMessage ??
                                                 'NO LIVE MATCH AVAILABLE. TRY AGAIN.')
-                                            : 'SEARCHING FOR ${widget.playerCount} HUMAN PLAYERS...',
+                                            : (_queueNotice ??
+                                                'SEARCHING FOR ${widget.playerCount} HUMAN PLAYERS...'),
                                     textAlign: TextAlign.center,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,

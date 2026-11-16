@@ -12,19 +12,23 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
 
 public interface MatchmakingTicketRepository extends JpaRepository<MatchmakingTicket, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select t from MatchmakingTicket t where t.entryFee = :entryFee and t.playerCount = :playerCount and t.playerId <> :playerId "
+    @Query("select t from MatchmakingTicket t where t.entryFee = :entryFee and t.playerCount = :playerCount and t.lastSeenAt >= :activeAfter and t.playerId <> :playerId "
             + "and not exists (select r.roomId from OnlineMatchRoom r where "
             + "(r.playerAId = t.playerId or r.playerBId = t.playerId or r.playerCId = t.playerId or r.playerDId = t.playerId) "
             + "and r.status in :activeStatuses) order by t.queuedAt asc")
     List<MatchmakingTicket> findWaitingCandidateForUpdate(
             @Param("entryFee") long entryFee,
             @Param("playerCount") int playerCount,
+            @Param("activeAfter") Instant activeAfter,
             @Param("playerId") UUID playerId,
             @Param("activeStatuses") List<OnlineMatchRoom.Status> activeStatuses,
             Pageable pageable);
 
     Optional<MatchmakingTicket> findByPlayerId(UUID playerId);
+
+    int deleteByLastSeenAtBefore(Instant expiredBefore);
 }

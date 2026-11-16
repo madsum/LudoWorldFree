@@ -2,6 +2,8 @@ package com.ludoworldfree.backend.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ludoworldfree.backend.dto.MatchmakingRequestDto;
 import com.ludoworldfree.backend.dto.MatchmakingResponseDto;
 import com.ludoworldfree.backend.model.GoldTransaction;
@@ -30,12 +32,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.security.SecureRandom;
+import java.time.Instant;
 
 @Service
 public class MatchmakingService {
     private static final Logger log = LoggerFactory.getLogger(MatchmakingService.class);
     private static final List<OnlineMatchRoom.Status> ACTIVE_STATUSES =
             List.of(OnlineMatchRoom.Status.MATCHED, OnlineMatchRoom.Status.READY);
+    private static final long MATCHMAKING_TICKET_TTL_SECONDS = 120;
 
     public record RoomSnapshot(
             String roomId,
@@ -99,6 +103,8 @@ public class MatchmakingService {
         if (request.getPlayerCount() != 2 && request.getPlayerCount() != 4) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose two or four players.");
         }
+        Instant activeAfter = Instant.now().minusSeconds(MATCHMAKING_TICKET_TTL_SECONDS);
+        ticketRepository.deleteByLastSeenAtBefore(activeAfter);
         List<String> colors = List.of("red", "green", "yellow", "blue");
         String selectedColor = request.getSelectedColor() == null
                 ? "red" : request.getSelectedColor().toLowerCase();
@@ -118,9 +124,9 @@ public class MatchmakingService {
                 && existingTicket.get().getEntryFee() == request.getEntryFee()
                 && existingTicket.get().getPlayerCount() == request.getPlayerCount()
                 && existingTicket.get().getSelectedColor().equals(selectedColor)) {
-            // A repeated join is also a matchmaking retry. This lets queued players
-            // recover when concurrent first joins both observed an empty queue.
             currentTicket = existingTicket.get();
+            currentTicket.touch();
+            ticketRepository.save(currentTicket);
         } else {
             existingTicket.ifPresent(ticketRepository::delete);
             currentTicket = new MatchmakingTicket(
@@ -133,7 +139,8 @@ public class MatchmakingService {
         }
 
         List<MatchmakingTicket> candidates = ticketRepository.findWaitingCandidateForUpdate(
-                request.getEntryFee(), request.getPlayerCount(), playerId, ACTIVE_STATUSES,
+                request.getEntryFee(), request.getPlayerCount(), activeAfter,
+                playerId, ACTIVE_STATUSES,
                 PageRequest.of(0, request.getPlayerCount() - 1));
         List<MatchmakingTicket> matchedTickets = selectCompatibleTickets(
                 currentTicket, candidates);
@@ -257,6 +264,203 @@ public class MatchmakingService {
         return snapshot(roomRepository.save(room));
     }
 
+    @Transactional
+    public RoomSnapshot forfeitDisconnectedPlayer(String roomId, UUID requesterId,
+                                                   UUID disconnectedPlayerId) {
+        OnlineMatchRoom room = roomRepository.findForUpdate(roomId)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Match room not found."));
+        if (room.getStatus() != OnlineMatchRoom.Status.READY
+                || room.getPlayerCount() != 2
+                || requesterId.equals(disconnectedPlayerId)
+                || !room.isConnected(requesterId)
+                || room.isConnected(disconnectedPlayerId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This player cannot forfeit the disconnected opponent.");
+        }
+        if (room.getLatestStateJson() == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "The online game has not started yet.");
+        }
+
+        try {
+            JsonNode parsed = objectMapper.readTree(room.getLatestStateJson());
+            if (!(parsed instanceof ObjectNode next)) {
+                throw new IllegalStateException("Invalid stored game state.");
+            }
+            ArrayNode players = (ArrayNode) next.path("players");
+            int disconnectedIndex = -1;
+            int winnerIndex = -1;
+            int eliminationOrder = 1;
+            for (int index = 0; index < players.size(); index++) {
+                JsonNode player = players.get(index);
+                UUID id = UUID.fromString(player.path("id").asText());
+                if (player.path("isEliminated").asBoolean()) eliminationOrder++;
+                if (id.equals(disconnectedPlayerId)) disconnectedIndex = index;
+                if (id.equals(requesterId)) winnerIndex = index;
+            }
+            if (players.size() != 2 || disconnectedIndex < 0 || winnerIndex < 0) {
+                throw new IllegalStateException("Stored players do not match the room.");
+            }
+            if (next.path("isGameOver").asBoolean()) return snapshot(room);
+
+            ObjectNode disconnected = (ObjectNode) players.get(disconnectedIndex);
+            ObjectNode winner = (ObjectNode) players.get(winnerIndex);
+            disconnected.put("isEliminated", true);
+            disconnected.put("eliminationOrder", eliminationOrder);
+            disconnected.put("rank", 2);
+            winner.put("rank", 1);
+            next.put("currentTurnIndex", winnerIndex);
+            next.put("turnPhase", "turnEnded");
+            next.put("isDiceRolling", false);
+            next.put("turnTimerPaused", false);
+            next.put("turnTimerRemainingMilliseconds", 0);
+            next.put("isGameOver", true);
+            next.put("statusMessage", winner.path("name").asText("Opponent")
+                    + " wins by forfeit!");
+            ArrayNode winnerIds = next.withArray("winnerIds");
+            boolean winnerAlreadyRecorded = false;
+            for (JsonNode winnerId : winnerIds) {
+                if (requesterId.toString().equals(winnerId.asText())) {
+                    winnerAlreadyRecorded = true;
+                    break;
+                }
+            }
+            if (!winnerAlreadyRecorded) winnerIds.add(requesterId.toString());
+
+            String stateJson = objectMapper.writeValueAsString(next);
+            room.recordState(disconnectedPlayerId, requesterId, stateJson);
+            settleOnlineWinner(room, stateJson);
+            roomRepository.save(room);
+            stateEventRepository.save(new OnlineMatchStateEvent(
+                    roomId, room.getStateRevision(), disconnectedPlayerId, stateJson));
+            return snapshot(room);
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "The disconnected player could not be forfeited.", exception);
+        }
+    }
+
+    @Transactional
+    public RoomSnapshot forfeitPlayerLeaving(String roomId, UUID leavingPlayerId) {
+        OnlineMatchRoom room = roomRepository.findForUpdate(roomId).orElse(null);
+        if (room == null || !room.contains(leavingPlayerId)
+                || room.getStatus() == OnlineMatchRoom.Status.FINISHED
+                || room.getStatus() == OnlineMatchRoom.Status.CANCELLED) {
+            return room == null ? null : snapshot(room);
+        }
+        if (room.getStatus() == OnlineMatchRoom.Status.MATCHED) {
+            refundRoom(room);
+            room.cancel();
+            return snapshot(roomRepository.save(room));
+        }
+
+        if (room.getPlayerCount() == 2 && room.getLatestStateJson() != null) {
+            try {
+                JsonNode latest = objectMapper.readTree(room.getLatestStateJson());
+                String stateJson = room.getLatestStateJson();
+                if (!latest.path("isGameOver").asBoolean()) {
+                    UUID winnerId = room.getPlayerIds().stream()
+                            .filter(id -> !id.equals(leavingPlayerId))
+                            .findFirst().orElseThrow();
+                    stateJson = createForfeitState(
+                            latest, leavingPlayerId, winnerId);
+                    room.recordState(leavingPlayerId, winnerId, stateJson);
+                    stateEventRepository.save(new OnlineMatchStateEvent(
+                            roomId, room.getStateRevision(), leavingPlayerId, stateJson));
+                }
+                settleOnlineWinner(room, stateJson);
+            } catch (Exception exception) {
+                log.warn("Could not record forfeit for player {} in room {}: {}",
+                        leavingPlayerId, roomId, exception.getMessage());
+            }
+        }
+
+        room.finish();
+        return snapshot(roomRepository.save(room));
+    }
+
+    private String createForfeitState(JsonNode latest, UUID forfeitingPlayerId,
+                                      UUID winnerId) throws Exception {
+        if (!(latest.deepCopy() instanceof ObjectNode next)) {
+            throw new IllegalStateException("Invalid stored game state.");
+        }
+        ArrayNode players = (ArrayNode) next.path("players");
+        int forfeitingIndex = -1;
+        int winnerIndex = -1;
+        int eliminationOrder = 1;
+        for (int index = 0; index < players.size(); index++) {
+            JsonNode player = players.get(index);
+            UUID id = UUID.fromString(player.path("id").asText());
+            if (player.path("isEliminated").asBoolean()) eliminationOrder++;
+            if (id.equals(forfeitingPlayerId)) forfeitingIndex = index;
+            if (id.equals(winnerId)) winnerIndex = index;
+        }
+        if (players.size() != 2 || forfeitingIndex < 0 || winnerIndex < 0) {
+            throw new IllegalStateException("Stored players do not match the room.");
+        }
+
+        ObjectNode forfeitingPlayer = (ObjectNode) players.get(forfeitingIndex);
+        ObjectNode winner = (ObjectNode) players.get(winnerIndex);
+        forfeitingPlayer.put("isEliminated", true);
+        forfeitingPlayer.put("eliminationOrder", eliminationOrder);
+        forfeitingPlayer.put("rank", 2);
+        winner.put("rank", 1);
+        next.put("currentTurnIndex", winnerIndex);
+        next.put("turnPhase", "turnEnded");
+        next.put("isDiceRolling", false);
+        next.put("turnTimerPaused", false);
+        next.put("turnTimerRemainingMilliseconds", 0);
+        next.put("isGameOver", true);
+        next.put("statusMessage", winner.path("name").asText("Opponent")
+                + " wins by forfeit!");
+        ArrayNode winnerIds = next.withArray("winnerIds");
+        boolean winnerAlreadyRecorded = false;
+        for (JsonNode existingWinner : winnerIds) {
+            if (winnerId.toString().equals(existingWinner.asText())) {
+                winnerAlreadyRecorded = true;
+                break;
+            }
+        }
+        if (!winnerAlreadyRecorded) winnerIds.add(winnerId.toString());
+        return objectMapper.writeValueAsString(next);
+    }
+
+    private void settleOnlineWinner(OnlineMatchRoom room, String stateJson) {
+        if (room.getPlayerCount() != 2 || stateJson == null
+                || transactionRepository.existsByReferenceIdAndSource(
+                        room.getRoomId(), "ONLINE_MATCH_WIN")) {
+            return;
+        }
+        try {
+            JsonNode state = objectMapper.readTree(stateJson);
+            if (!state.path("isGameOver").asBoolean()
+                    || !state.path("winnerIds").isArray()
+                    || state.path("winnerIds").isEmpty()) {
+                return;
+            }
+            UUID winnerId = UUID.fromString(state.path("winnerIds").get(0).asText());
+            if (!room.contains(winnerId)) return;
+            long reward = Math.multiplyExact(room.getEntryFee(), 2L);
+            if (reward <= 0) return;
+            PlayerWallet winnerWallet = walletRepository.findByPlayerIdForUpdate(winnerId)
+                    .orElseGet(() -> walletRepository.saveAndFlush(
+                            new PlayerWallet(winnerId, 2000L)));
+            long before = winnerWallet.getBalance();
+            long after = Math.addExact(before, reward);
+            winnerWallet.setBalance(after);
+            walletRepository.save(winnerWallet);
+            transactionRepository.save(new GoldTransaction(
+                    winnerId, GoldTransaction.TransactionType.GAME_REWARD,
+                    reward, before, after, room.getRoomId(), "ONLINE_MATCH_WIN"));
+        } catch (Exception exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "The online match reward could not be credited.", exception);
+        }
+    }
+
     @Transactional(readOnly = true)
     public RoomSnapshot getRoomSnapshot(String roomId) {
         return roomRepository.findById(roomId).map(MatchmakingService::snapshot).orElse(null);
@@ -298,6 +502,7 @@ public class MatchmakingService {
                     rollOpportunityId, isDiceRolling, stateJson);
         }
         room.recordState(senderId, nextTurnOwnerId, stateJson);
+        settleOnlineWinner(room, stateJson);
         roomRepository.save(room);
         stateEventRepository.save(new OnlineMatchStateEvent(
                 roomId, room.getStateRevision(), senderId, stateJson));

@@ -43,7 +43,12 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
   Future<void> _loadFriends() async {
     final playerId = _playerId;
     if (playerId == null) {
-      if (mounted) setState(() { _loading = false; _error = 'Sign in to view friends.'; });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Sign in to view friends.';
+        });
+      }
       return;
     }
     try {
@@ -54,13 +59,23 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
       final data = response.data;
       final rawEntries = data is Map ? data['entries'] : null;
       final entries = rawEntries is List
-          ? rawEntries.whereType<Map>().map((entry) => Map<String, dynamic>.from(entry)).toList()
+          ? rawEntries
+              .whereType<Map>()
+              .map((entry) => Map<String, dynamic>.from(entry))
+              .toList()
           : <Map<String, dynamic>>[];
       if (!mounted) return;
-      setState(() { _friends = entries; _loading = false; _error = null; });
+      setState(() {
+        _friends = entries;
+        _loading = false;
+        _error = null;
+      });
     } catch (_) {
       if (!mounted) return;
-      setState(() { _loading = false; _error = 'Could not load your friends.'; });
+      setState(() {
+        _loading = false;
+        _error = 'Could not load your friends.';
+      });
     }
   }
 
@@ -120,7 +135,8 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
       await _loadFriends();
     } on DioException catch (error) {
       _showMessage(error.response?.data is Map
-          ? error.response?.data['message']?.toString() ?? 'Could not accept request.'
+          ? error.response?.data['message']?.toString() ??
+              'Could not accept request.'
           : 'Could not accept request.');
     }
   }
@@ -134,7 +150,8 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
       await _loadFriends();
     } on DioException catch (error) {
       _showMessage(error.response?.data is Map
-          ? error.response?.data['message']?.toString() ?? 'Could not remove friend.'
+          ? error.response?.data['message']?.toString() ??
+              'Could not remove friend.'
           : 'Could not remove friend.');
     }
   }
@@ -201,14 +218,19 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
         const Divider(height: 1, color: Colors.white24),
         Expanded(
           child: _loading
-              ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
+              ? const Center(
+                  child: CircularProgressIndicator(color: AppColors.gold))
               : _error != null
                   ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(_error!, style: GoogleFonts.poppins(color: Colors.white70)),
-                          TextButton(onPressed: _loadFriends, child: const Text('RETRY')),
+                          Text(_error!,
+                              style:
+                                  GoogleFonts.poppins(color: Colors.white70)),
+                          TextButton(
+                              onPressed: _loadFriends,
+                              child: const Text('RETRY')),
                         ],
                       ),
                     )
@@ -232,15 +254,19 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                               final status = friend['status']?.toString();
                               final incoming = status == 'PENDING' &&
                                   friend['direction'] == 'INCOMING';
-                              final friendshipId = friend['id']?.toString() ?? '';
+                              final friendshipId =
+                                  friend['id']?.toString() ?? '';
                               return ListTile(
                                 onTap: status == 'ACCEPTED'
                                     ? () async {
                                         await FriendChatDialog.show(
                                           context,
-                                          friendId: friend['playerId']?.toString() ?? '',
-                                          friendName:
-                                              friend['displayName']?.toString() ?? 'Player',
+                                          friendId:
+                                              friend['playerId']?.toString() ??
+                                                  '',
+                                          friendName: friend['displayName']
+                                                  ?.toString() ??
+                                              'Player',
                                         );
                                         await _loadFriends();
                                       }
@@ -255,7 +281,8 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                 title: Text(
                                   friend['displayName']?.toString() ?? 'Player',
                                   style: GoogleFonts.poppins(
-                                      color: Colors.white, fontWeight: FontWeight.w700),
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700),
                                 ),
                                 subtitle: Text(
                                   incoming
@@ -263,12 +290,24 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                       : status == 'ACCEPTED'
                                           ? 'Friend'
                                           : 'Request sent',
-                                  style: GoogleFonts.poppins(color: Colors.white54, fontSize: 11),
+                                  style: GoogleFonts.poppins(
+                                      color: Colors.white54, fontSize: 11),
                                 ),
                                 trailing: incoming
-                                    ? TextButton(
-                                        onPressed: () => _accept(friendshipId),
-                                        child: const Text('ACCEPT'),
+                                    ? Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                _remove(friendshipId),
+                                            child: const Text('DECLINE'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () =>
+                                                _accept(friendshipId),
+                                            child: const Text('ACCEPT'),
+                                          ),
+                                        ],
                                       )
                                     : status == 'ACCEPTED'
                                         ? Row(
@@ -276,39 +315,51 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                             children: [
                                               IconButton(
                                                 tooltip: 'Chat',
-                                                onPressed: () => FriendChatDialog.show(
+                                                onPressed: () =>
+                                                    FriendChatDialog.show(
                                                   context,
-                                                  friendId:
-                                                      friend['playerId']?.toString() ?? '',
-                                                  friendName: friend['displayName']
+                                                  friendId: friend['playerId']
                                                           ?.toString() ??
-                                                      'Player',
+                                                      '',
+                                                  friendName:
+                                                      friend['displayName']
+                                                              ?.toString() ??
+                                                          'Player',
                                                 ),
                                                 icon: const Icon(
-                                                  Icons.chat_bubble_outline_rounded,
+                                                  Icons
+                                                      .chat_bubble_outline_rounded,
                                                   color: AppColors.gold,
                                                 ),
                                               ),
                                               PopupMenuButton<String>(
                                                 tooltip: 'Friend options',
                                                 onSelected: (value) {
-                                                  if (value == 'remove') _remove(friendshipId);
+                                                  if (value == 'remove') {
+                                                    _remove(friendshipId);
+                                                  }
                                                 },
                                                 itemBuilder: (_) => const [
                                                   PopupMenuItem(
                                                     value: 'remove',
-                                                    child: Text('Remove friend'),
+                                                    child:
+                                                        Text('Remove friend'),
                                                   ),
                                                 ],
                                               ),
                                             ],
                                           )
-                                    : IconButton(
-                                        tooltip: status == 'ACCEPTED' ? 'Remove friend' : 'Cancel request',
-                                        onPressed: () => _remove(friendshipId),
-                                        icon: const Icon(Icons.person_remove_alt_1_rounded,
-                                            color: Colors.white54),
-                                      ),
+                                        : IconButton(
+                                            tooltip: status == 'ACCEPTED'
+                                                ? 'Remove friend'
+                                                : 'Cancel request',
+                                            onPressed: () =>
+                                                _remove(friendshipId),
+                                            icon: const Icon(
+                                                Icons
+                                                    .person_remove_alt_1_rounded,
+                                                color: Colors.white54),
+                                          ),
                               );
                             },
                           ),

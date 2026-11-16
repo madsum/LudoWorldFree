@@ -194,6 +194,19 @@ class WebSocketService {
     _send({'type': 'chat', 'text': message});
   }
 
+  void sendBellAlert(String targetPlayerId) {
+    if (!isConnected || targetPlayerId.isEmpty) return;
+    _send({'type': 'bell_alert', 'targetPlayerId': targetPlayerId});
+  }
+
+  void forfeitDisconnectedOpponent(String disconnectedPlayerId) {
+    if (!isConnected || disconnectedPlayerId.isEmpty) return;
+    _send({
+      'type': 'forfeit_disconnected',
+      'disconnectedPlayerId': disconnectedPlayerId,
+    });
+  }
+
   bool requestRematch() {
     if (!isConnected) return false;
     _send({'type': 'rematch_request'});

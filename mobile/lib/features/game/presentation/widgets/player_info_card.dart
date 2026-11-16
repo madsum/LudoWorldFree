@@ -18,7 +18,8 @@ class PlayerInfoCard extends StatefulWidget {
   final bool twoPlayerLayout;
   final bool compact;
   final bool showRollArrow;
-  final bool rollArrowPointsLeft;
+  final bool rollArrowPointsUp;
+  final VoidCallback? onProfilePressed;
 
   const PlayerInfoCard({
     super.key,
@@ -29,7 +30,8 @@ class PlayerInfoCard extends StatefulWidget {
     this.twoPlayerLayout = false,
     this.compact = false,
     this.showRollArrow = false,
-    this.rollArrowPointsLeft = false,
+    this.rollArrowPointsUp = false,
+    this.onProfilePressed,
   });
 
   @override
@@ -38,9 +40,11 @@ class PlayerInfoCard extends StatefulWidget {
 
 class _PlayerInfoCardState extends State<PlayerInfoCard>
     with TickerProviderStateMixin {
+  static const _turnHighlight = Color(0xFF00E5FF);
+
   late final AnimationController _turnPulse = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1000),
+    duration: const Duration(milliseconds: 500),
   );
   late final AnimationController _turnCountdown = AnimationController(
     vsync: this,
@@ -142,13 +146,16 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
   }
 
   Widget _buildFlagWidget(String flag, {double size = 12}) {
-    if (flag == '🌐' || flag == 'assets/images/world.png' || flag.contains('world')) {
+    if (flag == '🌐' ||
+        flag == 'assets/images/world.png' ||
+        flag.contains('world')) {
       return Image.asset(
         'assets/images/world.png',
         width: size * 1.2,
         height: size * 1.0,
         fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => Text('🌐', style: TextStyle(fontSize: size)),
+        errorBuilder: (context, error, stackTrace) =>
+            Text('🌐', style: TextStyle(fontSize: size)),
       );
     }
     return Text(flag, style: TextStyle(fontSize: size));
@@ -172,7 +179,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
       builder: (context, _) {
         final pulse = _turnPulse.value;
         final profileAccent = widget.isCurrentTurn
-            ? const Color(0xFFFFF066)
+            ? _turnHighlight
             : widget.player.isEliminated
                 ? Color.lerp(
                     widget.player.color.color,
@@ -182,8 +189,8 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                 : widget.player.color.color;
         final cardBorderColor = widget.isCurrentTurn
             ? Color.lerp(
-                const Color(0xFF8A7A00),
-                const Color(0xFFFFF066),
+                const Color(0xFF820152),
+                _turnHighlight,
                 pulse,
               )!
             : profileAccent;
@@ -196,203 +203,207 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                width: cardWidth,
-                padding: widget.twoPlayerLayout
-                    ? const EdgeInsets.symmetric(horizontal: 6, vertical: 5)
-                    : widget.compact
-                        ? const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 3,
-                          )
-                        : const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 5,
-                          ),
-                decoration: BoxDecoration(
-                  color: AppColors.bgNavy.withValues(alpha: 0.97),
-                  borderRadius: BorderRadius.circular(11),
-                  border: Border.all(
-                    color: cardBorderColor,
-                    width: widget.isCurrentTurn ? 2.5 + pulse * 1.2 : 1.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: profileAccent.withValues(
-                        alpha: widget.isCurrentTurn
-                            ? 0.32 + pulse * 0.12
-                            : widget.player.isEliminated
-                                ? 0.07
-                                : 0.16,
-                      ),
-                      blurRadius: widget.isCurrentTurn ? 9 + pulse * 3 : 5,
-                      spreadRadius: widget.isCurrentTurn ? 0.6 : 0,
+              GestureDetector(
+                onTap: widget.onProfilePressed,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 100),
+                  width: cardWidth,
+                  padding: widget.twoPlayerLayout
+                      ? const EdgeInsets.symmetric(horizontal: 6, vertical: 5)
+                      : widget.compact
+                          ? const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 3,
+                            )
+                          : const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 5,
+                            ),
+                  decoration: BoxDecoration(
+                    color: AppColors.bgNavy.withValues(alpha: 0.97),
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(
+                      color: cardBorderColor,
+                      width: widget.isCurrentTurn ? 2.5 + pulse * 1.2 : 1.5,
                     ),
-                  ],
-                ),
-                child: widget.twoPlayerLayout
-                    ? _buildTwoPlayerProfile(
-                        avatarBorderColor: avatarBorderColor,
-                        timerVisible: timerVisible,
-                      )
-                    : Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // Line 1: Country Flag, Country Name, Diamonds, Gold Coins
-                          Row(
-                            children: [
-                              _buildFlagWidget(widget.player.countryFlag, size: widget.compact ? 10 : 12),
-                              const SizedBox(width: 3),
-                              Expanded(
-                                child: Text(
-                                  _displayCountryName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                    boxShadow: [
+                      BoxShadow(
+                        color: profileAccent.withValues(
+                          alpha: widget.isCurrentTurn
+                              ? 0.32 + pulse * 0.12
+                              : widget.player.isEliminated
+                                  ? 0.07
+                                  : 0.16,
+                        ),
+                        blurRadius: widget.isCurrentTurn ? 9 + pulse * 3 : 5,
+                        spreadRadius: widget.isCurrentTurn ? 0.6 : 0,
+                      ),
+                    ],
+                  ),
+                  child: widget.twoPlayerLayout
+                      ? _buildTwoPlayerProfile(
+                          avatarBorderColor: avatarBorderColor,
+                          timerVisible: timerVisible,
+                        )
+                      : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // Line 1: Country Flag, Country Name, Diamonds, Gold Coins
+                            Row(
+                              children: [
+                                _buildFlagWidget(widget.player.countryFlag,
+                                    size: widget.compact ? 10 : 12),
+                                const SizedBox(width: 3),
+                                Expanded(
+                                  child: Text(
+                                    _displayCountryName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: widget.compact ? 8.5 : 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                Icon(
+                                  Icons.diamond_rounded,
+                                  color: AppColors.diamondBlue,
+                                  size: widget.compact ? 10 : 12,
+                                ),
+                                const SizedBox(width: 1),
+                                Text(
+                                  _formatBalance(widget.player.diamonds),
                                   style: GoogleFonts.poppins(
-                                    fontSize: widget.compact ? 8.5 : 10,
+                                    fontSize: widget.compact ? 7.5 : 8.5,
                                     fontWeight: FontWeight.w700,
                                     color: Colors.white,
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 2),
-                              Icon(
-                                Icons.diamond_rounded,
-                                color: AppColors.diamondBlue,
-                                size: widget.compact ? 10 : 12,
-                              ),
-                              const SizedBox(width: 1),
-                              Text(
-                                _formatBalance(widget.player.diamonds),
-                                style: GoogleFonts.poppins(
-                                  fontSize: widget.compact ? 7.5 : 8.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.monetization_on_rounded,
-                                color: AppColors.coinGold,
-                                size: widget.compact ? 10 : 12,
-                              ),
-                              const SizedBox(width: 1),
-                              Text(
-                                _formatBalance(widget.player.coins),
-                                maxLines: 1,
-                                style: GoogleFonts.poppins(
-                                  fontSize: widget.compact ? 7.5 : 8.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 3),
-
-                          // Line 2: Profile Avatar + Player Die + All Opponent Killed Pawns in Same Line
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              // Profile Avatar Box
-                              CustomPaint(
-                                foregroundPainter: timerVisible
-                                    ? _TurnTimerBorderPainter(
-                                        1 - _turnCountdown.value,
-                                      )
-                                    : null,
-                                child: Container(
-                                  width: widget.compact ? 32 : 38,
-                                  height: widget.compact ? 28 : 34,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.bgCard,
-                                    borderRadius: BorderRadius.circular(7),
-                                    border: Border.all(
-                                      color: avatarBorderColor,
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  clipBehavior: Clip.antiAlias,
-                                  child: _buildAvatar(),
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-
-                              // Player Die
-                              _PlayerDie(
-                                value: widget.gameState
-                                    .playerDiceValues[widget.player.id],
-                                isRolling: isRolling,
-                                isActive: widget.isCurrentTurn &&
-                                    widget.gameState.turnPhase ==
-                                        GameTurnPhase.rollDice &&
-                                    !widget.gameState.isGameOver,
-                                canRoll: canRoll,
-                                color: widget.player.color.color,
-                                size: widget.compact ? 26 : 32,
-                                onTap: widget.onRoll,
-                              ),
-
-                              // Opponent Killed Pawns Stats in the Same Line
-                              if (_opponentColors.isNotEmpty) ...[
                                 const SizedBox(width: 4),
-                                Expanded(
-                                  child: SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    physics: const BouncingScrollPhysics(),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        for (var index = 0;
-                                            index < _opponentColors.length;
-                                            index++) ...[
-                                          if (index > 0) const SizedBox(width: 3),
-                                          _OpponentKillStat(
-                                            color: _opponentColors[index],
-                                            count: widget.player.killCounts[
-                                                    _opponentColors[index]] ??
-                                                0,
-                                            compact: widget.compact,
-                                          ),
-                                        ],
-                                      ],
-                                    ),
+                                Icon(
+                                  Icons.monetization_on_rounded,
+                                  color: AppColors.coinGold,
+                                  size: widget.compact ? 10 : 12,
+                                ),
+                                const SizedBox(width: 1),
+                                Text(
+                                  _formatBalance(widget.player.coins),
+                                  maxLines: 1,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: widget.compact ? 7.5 : 8.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
                                   ),
                                 ),
                               ],
-                            ],
-                          ),
-                        ],
-                      ),
-              ),
-              if (widget.showRollArrow && timerVisible)
-                Positioned(
-                  left: widget.rollArrowPointsLeft ? null : -30,
-                  right: widget.rollArrowPointsLeft ? -30 : null,
-                  top: 0,
-                  bottom: 0,
-                  width: 36,
-                  child: Center(
-                    child: Opacity(
-                      opacity: 0.35 + pulse * 0.65,
-                      child: Transform.translate(
-                        offset: Offset(
-                          widget.rollArrowPointsLeft ? -pulse * 4 : pulse * 4,
-                          0,
-                        ),
-                        child: Icon(
-                          widget.rollArrowPointsLeft
-                              ? Icons.arrow_back_rounded
-                              : Icons.arrow_forward_rounded,
-                          color: widget.player.color.color,
-                          size: 34,
-                          shadows: [
-                            Shadow(
-                              color: widget.player.color.color,
-                              blurRadius: 12,
                             ),
+                            const SizedBox(height: 3),
+
+                            // Line 2: Profile Avatar + Player Die + All Opponent Killed Pawns in Same Line
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // Profile Avatar Box
+                                CustomPaint(
+                                  foregroundPainter: timerVisible
+                                      ? _TurnTimerBorderPainter(
+                                          1 - _turnCountdown.value,
+                                        )
+                                      : null,
+                                  child: Container(
+                                    width: widget.compact ? 32 : 38,
+                                    height: widget.compact ? 28 : 34,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.bgCard,
+                                      borderRadius: BorderRadius.circular(7),
+                                      border: Border.all(
+                                        color: avatarBorderColor,
+                                        width: 1.5,
+                                      ),
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: _buildAvatar(),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+
+                                // Player Die
+                                _PlayerDie(
+                                  value: widget.gameState
+                                      .playerDiceValues[widget.player.id],
+                                  isRolling: isRolling,
+                                  isActive: widget.isCurrentTurn &&
+                                      widget.gameState.turnPhase ==
+                                          GameTurnPhase.rollDice &&
+                                      !widget.player.isEliminated &&
+                                      !widget.gameState.isGameOver,
+                                  canRoll: canRoll,
+                                  color: widget.player.color.color,
+                                  size: widget.compact ? 26 : 32,
+                                  onTap: widget.onRoll,
+                                ),
+
+                                // Opponent Killed Pawns Stats in the Same Line
+                                if (_opponentColors.isNotEmpty) ...[
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: SingleChildScrollView(
+                                      scrollDirection: Axis.horizontal,
+                                      physics: const BouncingScrollPhysics(),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          for (var index = 0;
+                                              index < _opponentColors.length;
+                                              index++) ...[
+                                            if (index > 0)
+                                              const SizedBox(width: 3),
+                                            _OpponentKillStat(
+                                              color: _opponentColors[index],
+                                              count: widget.player.killCounts[
+                                                      _opponentColors[index]] ??
+                                                  0,
+                                              compact: widget.compact,
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+              if (widget.showRollArrow)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: widget.rollArrowPointsUp ? null : -42,
+                  bottom: widget.rollArrowPointsUp ? -42 : null,
+                  height: 42,
+                  child: Center(
+                    child: Transform.translate(
+                      offset: Offset(
+                        0,
+                        (widget.rollArrowPointsUp ? -1 : 1) * pulse * 4,
+                      ),
+                      child: Opacity(
+                        opacity: 0.15 + pulse * 0.85,
+                        child: Icon(
+                          widget.rollArrowPointsUp
+                              ? Icons.arrow_upward_rounded
+                              : Icons.arrow_downward_rounded,
+                          color: Colors.white,
+                          size: 38,
+                          shadows: const [
+                            Shadow(color: Colors.white, blurRadius: 12),
+                            Shadow(color: Colors.white70, blurRadius: 5),
                           ],
                         ),
                       ),
@@ -521,8 +532,8 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                             if (index > 0) const SizedBox(width: 4),
                             _OpponentKillStat(
                               color: _opponentColors[index],
-                              count: widget.player.killCounts[
-                                      _opponentColors[index]] ??
+                              count: widget.player
+                                      .killCounts[_opponentColors[index]] ??
                                   0,
                               compact: true,
                             ),
@@ -605,7 +616,6 @@ class SharedDiceButton extends StatelessWidget {
     final isActive = gameState.turnPhase == GameTurnPhase.rollDice &&
         !gameState.currentPlayer.isEliminated &&
         !gameState.isGameOver;
-
     return _PlayerDie(
       value: gameState.diceValue,
       isRolling: gameState.isDiceRolling,
@@ -689,13 +699,15 @@ class _PlayerDie extends StatefulWidget {
 }
 
 class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
+  static const _turnHighlight = Color(0xFFFA02A3);
+
   late final AnimationController _rollController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 650),
   );
   late final AnimationController _flashController = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 450),
+    duration: const Duration(milliseconds: 225),
   );
   late final Listenable _animations =
       Listenable.merge([_rollController, _flashController]);
@@ -806,7 +818,7 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
                     border: Border.all(
                       color: widget.isActive || widget.isRolling
                           ? Color.lerp(
-                              const Color(0xFFFFE28A),
+                              _turnHighlight,
                               Colors.white,
                               widget.canRoll ? flashPhase : 0,
                             )!
@@ -828,7 +840,7 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
                       ),
                       if (widget.isRolling || widget.isActive)
                         BoxShadow(
-                          color: AppColors.gold.withValues(
+                          color: _turnHighlight.withValues(
                             alpha: widget.isRolling
                                 ? 0.65
                                 : widget.canRoll

@@ -45,6 +45,7 @@ class GameNotifier extends StateNotifier<GameState> {
 
   String? get onlineRoomId => _onlineRoomId;
   String? get onlineLocalPlayerId => _onlineLocalPlayerId;
+  GameState get currentState => state;
   bool get isOnlineMode => _onlineRoomId != null;
   bool get isApplyingRemoteState => _applyingRemoteState;
   String get currentGameId => _currentGameId;
@@ -786,6 +787,58 @@ class GameNotifier extends StateNotifier<GameState> {
       turnTimerRemainingMilliseconds: 0,
       statusMessage: '${winner.name} wins by forfeit!',
     );
+    return true;
+  }
+
+  bool forfeitDisconnectedOpponent(String opponentId) {
+    if (_isDisposed ||
+        !isOnlineMode ||
+        state.isGameOver ||
+        state.players.length != 2) {
+      return false;
+    }
+    final opponentIndex = state.players.indexWhere(
+      (player) => player.id == opponentId && !player.isEliminated,
+    );
+    final winnerIndex = state.players.indexWhere(
+      (player) => player.id == _onlineLocalPlayerId && !player.isEliminated,
+    );
+    if (opponentIndex < 0 || winnerIndex < 0 || opponentIndex == winnerIndex) {
+      return false;
+    }
+
+    final players = [...state.players];
+    final eliminationOrder =
+        players.where((player) => player.isEliminated).length + 1;
+    players[opponentIndex] = players[opponentIndex].copyWith(
+      isEliminated: true,
+      eliminationOrder: eliminationOrder,
+      rank: 2,
+    );
+    players[winnerIndex] = players[winnerIndex].copyWith(rank: 1);
+    final winnerIds = [...state.winnerIds];
+    if (!winnerIds.contains(players[winnerIndex].id)) {
+      winnerIds.add(players[winnerIndex].id);
+    }
+
+    _cancelTurnTimer();
+    _cancelPawnSelectionTimer();
+    _botTimer?.cancel();
+    _isTurnProcessing = false;
+    _applyingRemoteState = true;
+    state = state.copyWith(
+      players: players,
+      currentTurnIndex: winnerIndex,
+      winnerIds: winnerIds,
+      isGameOver: true,
+      turnPhase: GameTurnPhase.turnEnded,
+      movablePawns: const [],
+      isDiceRolling: false,
+      turnTimerPaused: false,
+      turnTimerRemainingMilliseconds: 0,
+      statusMessage: '${players[winnerIndex].name} wins by forfeit!',
+    );
+    _applyingRemoteState = false;
     return true;
   }
 

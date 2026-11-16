@@ -124,7 +124,10 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         switch (type) {
             case "game_state" -> recordGameState(session, localRoom, roomId, playerId, payload.get("state"));
             case "roll_request" -> issueDiceRoll(session, roomId, playerId, payload);
+            case "forfeit_disconnected" -> forfeitDisconnectedPlayer(
+                    session, localRoom, roomId, playerId, payload);
             case "chat" -> relayChatMessage(session, localRoom, playerId, payload);
+            case "bell_alert" -> relayBellAlert(session, localRoom, playerId, payload);
             case "rematch_request" -> requestRematch(session, localRoom, roomId, playerId);
             case "rematch_response" -> respondToRematch(
                     session, localRoom, roomId, playerId, payload);
@@ -144,7 +147,11 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
             LocalConnection connection = localRoom.sessions.get(playerId);
             if (connection == null || connection.session != session) return;
         }
-        matchmakingService.finishRoom(roomId);
+        RoomSnapshot snapshot = matchmakingService.forfeitPlayerLeaving(roomId, playerId);
+        if (snapshot != null && snapshot.latestStateJson() != null) {
+            publishGameStateToLocal(localRoom, snapshot.latestStateSenderId(),
+                    snapshot.stateRevision(), snapshot.latestStateJson());
+        }
         closeLocalRoom(roomId, localRoom, Map.of(
                 "type", "match_finished",
                 "playerId", playerId.toString(),
@@ -173,6 +180,46 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    private void relayBellAlert(WebSocketSession session, LocalRoom localRoom,
+                                UUID playerId, JsonNode payload) {
+        UUID targetPlayerId = parsePlayerId(payload.path("targetPlayerId").asText(null));
+        if (targetPlayerId == null || targetPlayerId.equals(playerId)) return;
+
+        RoomSnapshot snapshot = matchmakingService.getRoomSnapshot(localRoom.id);
+        if (snapshot == null || snapshot.status() !=
+                com.ludoworldfree.backend.model.OnlineMatchRoom.Status.READY
+                || !isActiveBellTarget(snapshot.latestStateJson(), targetPlayerId)) {
+            return;
+        }
+
+        synchronized (localRoom) {
+            LocalConnection sender = localRoom.sessions.get(playerId);
+            LocalConnection recipient = localRoom.sessions.get(targetPlayerId);
+            if (sender == null || sender.session != session || recipient == null) return;
+            send(recipient.session, Map.of(
+                    "type", "bell_alert",
+                    "senderPlayerId", playerId.toString(),
+                    "targetPlayerId", targetPlayerId.toString(),
+                    "sentAt", System.currentTimeMillis()));
+        }
+    }
+
+    private boolean isActiveBellTarget(String stateJson, UUID targetPlayerId) {
+        if (stateJson == null) return false;
+        try {
+            JsonNode state = objectMapper.readTree(stateJson);
+            if (state.path("isGameOver").asBoolean()) return false;
+            for (JsonNode player : state.path("players")) {
+                if (targetPlayerId.toString().equals(player.path("id").asText())) {
+                    return !player.path("isEliminated").asBoolean();
+                }
+            }
+        } catch (Exception exception) {
+            return false;
+        }
+        return false;
+    }
+
     private void issueDiceRoll(WebSocketSession session, String roomId, UUID playerId,
                                JsonNode payload) {
         int opportunityId = payload.path("rollOpportunityId").asInt(-1);
@@ -182,6 +229,28 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                     "rollOpportunityId", opportunityId, "value", diceValue));
         } catch (RuntimeException exception) {
             sendError(session, "ROLL_REJECTED", "The server rejected this dice roll request.");
+        }
+    }
+
+    private void forfeitDisconnectedPlayer(WebSocketSession session, LocalRoom localRoom,
+                                           String roomId, UUID playerId, JsonNode payload) {
+        UUID disconnectedPlayerId = parsePlayerId(
+                payload.path("disconnectedPlayerId").asText(null));
+        if (disconnectedPlayerId == null || disconnectedPlayerId.equals(playerId)) return;
+        synchronized (localRoom) {
+            LocalConnection requester = localRoom.sessions.get(playerId);
+            if (requester == null || requester.session != session) return;
+        }
+        try {
+            RoomSnapshot snapshot = matchmakingService.forfeitDisconnectedPlayer(
+                    roomId, playerId, disconnectedPlayerId);
+            publishGameStateToLocal(localRoom, disconnectedPlayerId,
+                    snapshot.stateRevision(), snapshot.latestStateJson());
+        } catch (RuntimeException exception) {
+            log.warn("Could not forfeit disconnected player {} in room {}: {}",
+                    disconnectedPlayerId, roomId, exception.getMessage());
+            sendError(session, "FORFEIT_REJECTED",
+                    "The disconnected opponent could not be forfeited.");
         }
     }
 
@@ -279,8 +348,15 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
             String roomId = entry.getKey();
             LocalRoom localRoom = entry.getValue();
             RoomSnapshot snapshot = matchmakingService.getRoomSnapshot(roomId);
-            if (snapshot == null || snapshot.status() == com.ludoworldfree.backend.model.OnlineMatchRoom.Status.FINISHED
-                    || snapshot.status() == com.ludoworldfree.backend.model.OnlineMatchRoom.Status.CANCELLED) {
+            if (snapshot == null || snapshot.status() ==
+                    com.ludoworldfree.backend.model.OnlineMatchRoom.Status.CANCELLED) {
+                closeLocalRoom(roomId, localRoom, Map.of(
+                        "type", "match_finished", "reason", "room_closed"));
+                continue;
+            }
+
+            if (snapshot.status() == com.ludoworldfree.backend.model.OnlineMatchRoom.Status.FINISHED) {
+                relayStateEvents(localRoom, snapshot);
                 closeLocalRoom(roomId, localRoom, Map.of(
                         "type", "match_finished", "reason", "room_closed"));
                 continue;
@@ -297,8 +373,20 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                     boolean opponentsConnected = snapshot.allOtherPlayersConnected(connection.playerId);
                     if (opponentsConnected != connection.opponentConnected) {
                         connection.opponentConnected = opponentsConnected;
-                        send(connection.session, Map.of("type", opponentsConnected
-                                ? "connection_restored" : "player_disconnected"));
+                        if (opponentsConnected) {
+                            send(connection.session, Map.of(
+                                    "type", "connection_restored",
+                                    "playerId", String.valueOf(connection.disconnectedPlayerId)));
+                            connection.disconnectedPlayerId = null;
+                        } else {
+                            connection.disconnectedPlayerId = snapshot.playerIds().stream()
+                                    .filter(id -> !id.equals(connection.playerId))
+                                    .filter(id -> !snapshot.isConnected(id))
+                                    .findFirst().orElse(null);
+                            send(connection.session, Map.of(
+                                    "type", "player_disconnected",
+                                    "playerId", String.valueOf(connection.disconnectedPlayerId)));
+                        }
                     }
 
                     if (snapshot.stateRevision() <= connection.lastRevision) continue;
@@ -309,6 +397,21 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                         if (connection.playerId.equals(event.getSenderId())) continue;
                         sendState(connection.session, event.getSenderId(), event.getStateJson());
                     }
+                }
+            }
+        }
+    }
+
+    private void relayStateEvents(LocalRoom localRoom, RoomSnapshot snapshot) {
+        synchronized (localRoom) {
+            for (LocalConnection connection : localRoom.sessions.values()) {
+                if (snapshot.stateRevision() <= connection.lastRevision) continue;
+                List<OnlineMatchStateEvent> events = matchmakingService.getRoomEventsSince(
+                        snapshot.roomId(), connection.lastRevision);
+                for (OnlineMatchStateEvent event : events) {
+                    connection.lastRevision = event.getRevision();
+                    if (connection.playerId.equals(event.getSenderId())) continue;
+                    sendState(connection.session, event.getSenderId(), event.getStateJson());
                 }
             }
         }
@@ -455,6 +558,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         private long lastRevision;
         private long lastRematchRevision;
         private boolean opponentConnected;
+        private UUID disconnectedPlayerId;
 
         private LocalConnection(WebSocketSession session, UUID playerId,
                                 long lastRevision, boolean opponentConnected) {

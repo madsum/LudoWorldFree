@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../../core/constants/app_colors.dart';
 import '../../domain/models/game_state.dart';
 
 class DiceRollerWidget extends StatelessWidget {
+  static const _turnHighlight = Color(0xFFFA02A3);
+
   final GameState gameState;
   final VoidCallback onRoll;
 
@@ -33,7 +34,7 @@ class DiceRollerWidget extends StatelessWidget {
             decoration: BoxDecoration(
               color: gameState.currentPlayer.color.color,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.gold, width: 2),
+              border: Border.all(color: _turnHighlight, width: 2),
             ),
             child: Row(
               children: [
@@ -64,12 +65,14 @@ class DiceRollerWidget extends StatelessWidget {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isMyTurn ? AppColors.gold : Colors.grey.shade400,
+                  color: isMyTurn ? _turnHighlight : Colors.grey.shade400,
                   width: isMyTurn ? 3 : 2,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: isMyTurn ? AppColors.gold.withValues(alpha: 0.6) : Colors.black26,
+                    color: isMyTurn
+                        ? _turnHighlight.withValues(alpha: 0.7)
+                        : Colors.black26,
                     blurRadius: isMyTurn ? 12 : 4,
                     spreadRadius: isMyTurn ? 2 : 0,
                   ),
@@ -80,7 +83,7 @@ class DiceRollerWidget extends StatelessWidget {
                     ? Icon(
                         Icons.casino_rounded,
                         size: 38,
-                        color: isMyTurn ? AppColors.goldDark : Colors.grey,
+                        color: isMyTurn ? _turnHighlight : Colors.grey,
                       )
                     : _DiceFaceWidget(value: diceVal),
               ),

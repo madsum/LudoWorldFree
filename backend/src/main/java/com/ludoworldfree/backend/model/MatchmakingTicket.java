@@ -39,6 +39,9 @@ public class MatchmakingTicket {
     @Column(name = "queued_at", nullable = false)
     private Instant queuedAt = Instant.now();
 
+    @Column(name = "last_seen_at", nullable = false)
+    private Instant lastSeenAt = Instant.now();
+
     protected MatchmakingTicket() {}
 
     public MatchmakingTicket(UUID playerId, String displayName, String avatarUrl,
@@ -52,6 +55,8 @@ public class MatchmakingTicket {
         this.entryFee = entryFee;
         this.playerCount = playerCount;
         this.selectedColor = selectedColor;
+        this.queuedAt = Instant.now();
+        this.lastSeenAt = this.queuedAt;
     }
 
     public MatchmakingTicket(UUID playerId, String displayName, String avatarUrl,
@@ -68,4 +73,6 @@ public class MatchmakingTicket {
     public int getPlayerCount() { return playerCount; }
     public String getSelectedColor() { return selectedColor; }
     public Instant getQueuedAt() { return queuedAt; }
+    public Instant getLastSeenAt() { return lastSeenAt; }
+    public void touch() { lastSeenAt = Instant.now(); }
 }

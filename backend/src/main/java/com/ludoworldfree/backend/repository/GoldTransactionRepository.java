@@ -14,4 +14,5 @@ public interface GoldTransactionRepository extends JpaRepository<GoldTransaction
     List<GoldTransaction> findByPlayerIdOrderByCreatedAtDesc(UUID playerId);
     Page<GoldTransaction> findByPlayerId(UUID playerId, Pageable pageable);
     List<GoldTransaction> findByPlayerIdAndTransactionType(UUID playerId, GoldTransaction.TransactionType transactionType);
+    boolean existsByReferenceIdAndSource(String referenceId, String source);
 }
