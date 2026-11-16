@@ -45,33 +45,44 @@ const _presetMessages = <String>[
 ];
 
 class OnlineChatButton extends StatelessWidget {
-  const OnlineChatButton({super.key, required this.onPressed});
+  const OnlineChatButton({
+    super.key,
+    required this.onPressed,
+    this.compact = false,
+  });
 
   final VoidCallback onPressed;
+  final bool compact;
 
   @override
-  Widget build(BuildContext context) => Tooltip(
-        message: 'Open match chat',
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onPressed,
-            child: CustomPaint(
-              size: const Size(68, 54),
-              painter: _ChatBubbleButtonPainter(),
-              child: const SizedBox(
-                width: 68,
-                height: 54,
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: 9),
-                  child: Icon(Icons.more_horiz_rounded,
-                      size: 35, color: Colors.black),
+  Widget build(BuildContext context) {
+    final size = compact ? const Size(48, 38) : const Size(68, 54);
+    return Tooltip(
+      message: 'Open match chat',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          child: CustomPaint(
+            size: size,
+            painter: _ChatBubbleButtonPainter(),
+            child: SizedBox(
+              width: size.width,
+              height: size.height,
+              child: Padding(
+                padding: EdgeInsets.only(bottom: compact ? 6 : 9),
+                child: Icon(
+                  Icons.more_horiz_rounded,
+                  size: compact ? 26 : 35,
+                  color: Colors.black,
                 ),
               ),
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 class OnlineChatTypingIndicator extends StatelessWidget {

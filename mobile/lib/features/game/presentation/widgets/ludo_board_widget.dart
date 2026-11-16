@@ -302,62 +302,59 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
         .map((player) {
       final relationshipExists =
           widget.existingBuddyOrRequestPlayerIds.contains(player.id);
-      final anchor = switch (player.color) {
-        LudoColor.red => const Alignment(-0.93, -0.83),
-        LudoColor.green => const Alignment(0.93, -0.83),
-        LudoColor.yellow => const Alignment(0.93, 0.83),
-        LudoColor.blue => const Alignment(-0.93, 0.83),
+      final size = tileSize * 0.66;
+      const inset = 0.68;
+      final corner = switch (player.color) {
+        LudoColor.red => (x: inset, y: inset),
+        LudoColor.green => (x: 15 - inset, y: inset),
+        LudoColor.yellow => (x: 15 - inset, y: 15 - inset),
+        LudoColor.blue => (x: inset, y: 15 - inset),
       };
-      final size = tileSize * 0.8;
-      return Align(
-        alignment: anchor,
-        child: Padding(
-          padding: EdgeInsets.all(tileSize * 0.06),
-          child: SizedBox.square(
-            dimension: size,
-            child: Semantics(
-              button: !relationshipExists,
-              label: relationshipExists
-                  ? 'Buddy request already sent or player is already a buddy'
-                  : 'Add ${player.name} as a buddy',
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: relationshipExists ? null : () => onTap(player.id),
-                  customBorder: const CircleBorder(),
-                  child: Padding(
-                    padding: EdgeInsets.all(tileSize * 0.04),
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Positioned.fill(
-                          child: Image.asset(
-                            'assets/images/add_buddy.png',
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                        if (relationshipExists)
-                          Positioned(
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              width: size * 0.29,
-                              height: size * 0.29,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF00B967),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                Icons.check_rounded,
-                                color: Colors.white,
-                                size: size * 0.22,
-                              ),
-                            ),
-                          ),
-                      ],
+      return Positioned(
+        left: corner.x < 7.5 ? corner.x * tileSize : null,
+        right: corner.x >= 7.5 ? (15 - corner.x) * tileSize : null,
+        top: corner.y < 7.5 ? corner.y * tileSize : null,
+        bottom: corner.y >= 7.5 ? (15 - corner.y) * tileSize : null,
+        width: size,
+        height: size,
+        child: Semantics(
+          button: true,
+          label: relationshipExists
+              ? 'Buddy request already sent or player is already a buddy'
+              : 'Add ${player.name} as a buddy',
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => onTap(player.id),
+              customBorder: const CircleBorder(),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: Image.asset(
+                      'assets/images/add.jpeg',
+                      fit: BoxFit.contain,
                     ),
                   ),
-                ),
+                  if (relationshipExists)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: size * 0.29,
+                        height: size * 0.29,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF00B967),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.check_rounded,
+                          color: Colors.white,
+                          size: size * 0.22,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -462,8 +459,8 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
       LudoColor.yellow => const Offset(12, 10.45),
       LudoColor.blue => const Offset(3, 10.45),
     };
-    final textWidth = tileSize * 4.2;
-    final textHeight = tileSize * 0.9;
+    final textWidth = tileSize * 5.8;
+    final textHeight = tileSize * 1.55;
 
     return [
       Positioned(
@@ -490,7 +487,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                 maxLines: 1,
                 style: TextStyle(
                   color: Colors.black,
-                  fontSize: tileSize * 0.62,
+                  fontSize: tileSize * 1.12,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 0.3,
                 ),

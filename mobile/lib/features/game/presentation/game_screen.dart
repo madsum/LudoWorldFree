@@ -182,10 +182,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
             );
           }
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'Your opponent disconnected. Waiting briefly for them to reconnect.'),
-          ));
         } else if (message['type'] == 'connection_restored') {
           final restoredPlayerId = _resolveDisconnectedPlayerId(
             message['playerId']?.toString(),
@@ -197,33 +193,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 () => _disconnectedOnlinePlayerIds.remove(restoredPlayerId));
           }
           gameNotifier.resumeTurnTimer();
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Connection restored. Syncing the game.'),
-            ));
-          }
         } else if (message['type'] == 'connection_failed' && mounted) {
           gameNotifier.pauseTurnTimer();
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content:
-                Text('Connection lost. Return to the lobby and search again.'),
-          ));
         } else if (message['type'] == 'match_finished' && mounted) {
           final leavingPlayerId = message['playerId']?.toString();
           if (message['reason'] == 'opponent_left' &&
               leavingPlayerId != null &&
               leavingPlayerId != gameNotifier.onlineLocalPlayerId) {
             gameNotifier.forfeitDisconnectedOpponent(leavingPlayerId);
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Your opponent left. You win by forfeit.'),
-            ));
             return;
           }
           unawaited(ref.read(webSocketServiceProvider).leaveRoom());
           gameNotifier.clearOnlineMatch();
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Your opponent left the match.'),
-          ));
           Future<void>.delayed(const Duration(seconds: 2), () {
             if (mounted) context.go('/home');
           });
@@ -511,7 +492,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ref.read(gameControllerProvider.notifier).onlineLocalPlayerId,
     );
     if (localPlayer.isEmpty) return;
-    setState(() => _bellAlertedPlayerColor = localPlayer.first.color);
+    _showBellAlertText(localPlayer.first.color);
+  }
+
+  void _showBellAlertText(LudoColor playerColor) {
+    if (!mounted) return;
+    setState(() => _bellAlertedPlayerColor = playerColor);
     _bellAlertTimer?.cancel();
     _bellAlertTimer = Timer(const Duration(seconds: 6), () {
       if (mounted) setState(() => _bellAlertedPlayerColor = null);
@@ -530,7 +516,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void _playBellAlertSound() {
     unawaited(_bellAudioPlayer
         .stop()
-        .then((_) => _bellAudioPlayer.play(AssetSource('audio/ring.mp3')))
+        .then((_) => _bellAudioPlayer.play(AssetSource('audio/play-fast.mp3')))
         .catchError((error) {
       debugPrint('Could not play the bell alert: $error');
     }));
@@ -550,6 +536,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
     ref.read(webSocketServiceProvider).sendBellAlert(target.first.id);
     _playBellAlertSound();
+    _showBellAlertText(target.first.color);
   }
 
   String? _resolveDisconnectedPlayerId(
@@ -622,8 +609,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Future<void> _sendBuddyRequest(String targetPlayerId) async {
     final playerId = _onlineGameNotifier?.onlineLocalPlayerId;
-    if (playerId == null ||
-        _existingBuddyOrRequestPlayerIds.contains(targetPlayerId)) {
+    if (playerId == null) return;
+    if (_existingBuddyOrRequestPlayerIds.contains(targetPlayerId)) {
+      _showVoiceCallMessage(
+          'A buddy request is already pending, or you are buddies.');
       return;
     }
     try {
@@ -814,33 +803,33 @@ class _GameScreenState extends ConsumerState<GameScreen>
       },
       child: Scaffold(
         backgroundColor: AppColors.bgDark,
-        body: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: gameState.isGameOver ? null : () => gameNotifier.rollDice(),
-          child: SafeArea(
-            child: Stack(
-              children: [
-                Column(
-                  children: [
-                    if (!gameState.isGameOver)
-                      BannerAdWidget(
-                        consentService: ref.read(adMobConsentServiceProvider),
+        body: SafeArea(
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  if (!gameState.isGameOver)
+                    BannerAdWidget(
+                      consentService: ref.read(adMobConsentServiceProvider),
+                    ),
+
+                  if (!isTwoPlayerMode && !gameState.isGameOver)
+                    _buildBackButtonRow(context),
+
+                  if (!isTwoPlayerMode)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 3,
                       ),
-
-                    if (!isTwoPlayerMode && !gameState.isGameOver)
-                      _buildBackButtonRow(context),
-
-                    if (!isTwoPlayerMode)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 3,
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            if (gameState.players.isNotEmpty)
-                              PlayerInfoCard(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          if (gameState.players.isNotEmpty)
+                            _chatAttachedToPlayerCard(
+                              playerId: gameState.players[0].id,
+                              placeAboveCard: false,
+                              card: PlayerInfoCard(
                                 player: gameState.players[0],
                                 gameState: gameState,
                                 isCurrentTurn: gameState.currentTurnIndex == 0,
@@ -850,8 +839,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                     gameState.currentTurnIndex == 0,
                                 rollArrowPointsUp: true,
                               ),
-                            if (gameState.players.length > 1)
-                              PlayerInfoCard(
+                            ),
+                          if (gameState.players.length > 1)
+                            _chatAttachedToPlayerCard(
+                              playerId: gameState.players[1].id,
+                              placeAboveCard: false,
+                              card: PlayerInfoCard(
                                 player: gameState.players[1],
                                 gameState: gameState,
                                 isCurrentTurn: gameState.currentTurnIndex == 1,
@@ -861,88 +854,91 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                     gameState.currentTurnIndex == 1,
                                 rollArrowPointsUp: true,
                               ),
-                          ],
-                        ),
-                      ),
-
-                    if (isTwoPlayerMode && !gameState.isGameOver)
-                      _buildBackButtonRow(context),
-
-                    // Main Interactive Ludo Board
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final missedTurnIndicators = <Widget>[];
-                          for (final player in gameState.players) {
-                            final boardCorner =
-                                (player.color.index + boardQuarterTurns) % 4;
-                            final isLeftSide =
-                                boardCorner == 0 || boardCorner == 3;
-                            final isTopSide =
-                                boardCorner == 0 || boardCorner == 1;
-                            final indicatorTop = (constraints.maxHeight *
-                                        (isTopSide ? 0.25 : 0.75) -
-                                    25)
-                                .clamp(0.0, constraints.maxHeight - 50)
-                                .toDouble();
-
-                            missedTurnIndicators.add(
-                              Positioned(
-                                left: isLeftSide ? 7 : null,
-                                right: isLeftSide ? null : 7,
-                                top: indicatorTop,
-                                child:
-                                    _BoardMissedTurnIndicator(player: player),
-                              ),
-                            );
-                          }
-
-                          return Stack(
-                            children: [
-                              Center(
-                                child: RotatedBox(
-                                  quarterTurns: boardQuarterTurns,
-                                  child: LudoBoardWidget(
-                                    gameState: gameState,
-                                    onPawnTap: (pawn) =>
-                                        gameNotifier.movePawn(pawn),
-                                    orientationQuarterTurns: boardQuarterTurns,
-                                    compactFrame: !isTwoPlayerMode,
-                                    localPlayerId:
-                                        gameNotifier.onlineLocalPlayerId,
-                                    onBellTap: gameNotifier.isOnlineMode &&
-                                            !gameState.isGameOver
-                                        ? _ringPlayerBell
-                                        : null,
-                                    alertedPlayerColor: _bellAlertedPlayerColor,
-                                    unavailableBellPlayerIds:
-                                        _disconnectedOnlinePlayerIds,
-                                    existingBuddyOrRequestPlayerIds:
-                                        _existingBuddyOrRequestPlayerIds,
-                                    onBuddyRequestTap: gameNotifier.isOnlineMode
-                                        ? _sendBuddyRequest
-                                        : null,
-                                  ),
-                                ),
-                              ),
-                              ...missedTurnIndicators,
-                            ],
-                          );
-                        },
+                            ),
+                        ],
                       ),
                     ),
 
-                    // Bottom Player Info Cards Row
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 3,
-                      ),
-                      child: isTwoPlayerMode
-                          ? Row(
-                              children: [
-                                Expanded(
-                                  child: PlayerInfoCard(
+                  if (isTwoPlayerMode && !gameState.isGameOver)
+                    _buildBackButtonRow(context),
+
+                  // Main Interactive Ludo Board
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final missedTurnIndicators = <Widget>[];
+                        for (final player in gameState.players) {
+                          final boardCorner =
+                              (player.color.index + boardQuarterTurns) % 4;
+                          final isLeftSide =
+                              boardCorner == 0 || boardCorner == 3;
+                          final isTopSide =
+                              boardCorner == 0 || boardCorner == 1;
+                          final indicatorTop = (constraints.maxHeight *
+                                      (isTopSide ? 0.25 : 0.75) -
+                                  25)
+                              .clamp(0.0, constraints.maxHeight - 50)
+                              .toDouble();
+
+                          missedTurnIndicators.add(
+                            Positioned(
+                              left: isLeftSide ? 7 : null,
+                              right: isLeftSide ? null : 7,
+                              top: indicatorTop,
+                              child: _BoardMissedTurnIndicator(player: player),
+                            ),
+                          );
+                        }
+
+                        return Stack(
+                          children: [
+                            Center(
+                              child: RotatedBox(
+                                quarterTurns: boardQuarterTurns,
+                                child: LudoBoardWidget(
+                                  gameState: gameState,
+                                  onPawnTap: (pawn) =>
+                                      gameNotifier.movePawn(pawn),
+                                  orientationQuarterTurns: boardQuarterTurns,
+                                  compactFrame: !isTwoPlayerMode,
+                                  localPlayerId:
+                                      gameNotifier.onlineLocalPlayerId,
+                                  onBellTap: gameNotifier.isOnlineMode &&
+                                          !gameState.isGameOver
+                                      ? _ringPlayerBell
+                                      : null,
+                                  alertedPlayerColor: _bellAlertedPlayerColor,
+                                  unavailableBellPlayerIds:
+                                      _disconnectedOnlinePlayerIds,
+                                  existingBuddyOrRequestPlayerIds:
+                                      _existingBuddyOrRequestPlayerIds,
+                                  onBuddyRequestTap: gameNotifier.isOnlineMode
+                                      ? _sendBuddyRequest
+                                      : null,
+                                ),
+                              ),
+                            ),
+                            ...missedTurnIndicators,
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+
+                  // Bottom Player Info Cards Row
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 3,
+                    ),
+                    child: isTwoPlayerMode
+                        ? Row(
+                            children: [
+                              Expanded(
+                                child: _chatAttachedToPlayerCard(
+                                  playerId: twoPlayerDisplayOrder[0].id,
+                                  placeAboveCard: true,
+                                  card: PlayerInfoCard(
                                     player: twoPlayerDisplayOrder[0],
                                     gameState: gameState,
                                     isCurrentTurn: gameState.currentPlayer.id ==
@@ -955,17 +951,21 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                     rollArrowPointsUp: false,
                                   ),
                                 ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 7,
-                                  ),
-                                  child: SharedDiceButton(
-                                    gameState: gameState,
-                                    onRoll: () => gameNotifier.rollDice(),
-                                  ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
                                 ),
-                                Expanded(
-                                  child: PlayerInfoCard(
+                                child: SharedDiceButton(
+                                  gameState: gameState,
+                                  onRoll: () => gameNotifier.rollDice(),
+                                ),
+                              ),
+                              Expanded(
+                                child: _chatAttachedToPlayerCard(
+                                  playerId: twoPlayerDisplayOrder[1].id,
+                                  placeAboveCard: true,
+                                  card: PlayerInfoCard(
                                     player: twoPlayerDisplayOrder[1],
                                     gameState: gameState,
                                     isCurrentTurn: gameState.currentPlayer.id ==
@@ -977,13 +977,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                             twoPlayerDisplayOrder[1].id,
                                   ),
                                 ),
-                              ],
-                            )
-                          : Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                if (gameState.players.length > 3)
-                                  PlayerInfoCard(
+                              ),
+                            ],
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              if (gameState.players.length > 3)
+                                _chatAttachedToPlayerCard(
+                                  playerId: gameState.players[3].id,
+                                  placeAboveCard: true,
+                                  card: PlayerInfoCard(
                                     player: gameState.players[3],
                                     gameState: gameState,
                                     isCurrentTurn:
@@ -993,8 +997,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                     showRollArrow: isPlayerRollTurn &&
                                         gameState.currentTurnIndex == 3,
                                   ),
-                                if (gameState.players.length > 2)
-                                  PlayerInfoCard(
+                                ),
+                              if (gameState.players.length > 2)
+                                _chatAttachedToPlayerCard(
+                                  playerId: gameState.players[2].id,
+                                  placeAboveCard: true,
+                                  card: PlayerInfoCard(
                                     player: gameState.players[2],
                                     gameState: gameState,
                                     isCurrentTurn:
@@ -1004,50 +1012,50 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                     showRollArrow: isPlayerRollTurn &&
                                         gameState.currentTurnIndex == 2,
                                   ),
-                              ],
-                            ),
-                    ),
-
-                    const SizedBox(height: 4),
-                  ],
-                ),
-
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: AnimatedOpacity(
-                      duration: const Duration(milliseconds: 180),
-                      opacity: _showTimeoutNotice ? 1 : 0,
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 28,
-                              vertical: 14,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xE6000000),
-                              borderRadius: BorderRadius.circular(18),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.28),
-                                width: 1.2,
-                              ),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x99000000),
-                                  blurRadius: 18,
-                                  spreadRadius: 2,
                                 ),
-                              ],
+                            ],
+                          ),
+                  ),
+
+                  const SizedBox(height: 4),
+                ],
+              ),
+
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 180),
+                    opacity: _showTimeoutNotice ? 1 : 0,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 28,
+                            vertical: 14,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xE6000000),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.28),
+                              width: 1.2,
                             ),
-                            child: Text(
-                              'You ran out of time!',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.poppins(
-                                color: const Color(0xFFFFF3B0),
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700,
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x99000000),
+                                blurRadius: 18,
+                                spreadRadius: 2,
                               ),
+                            ],
+                          ),
+                          child: Text(
+                            'You ran out of time!',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.poppins(
+                              color: const Color(0xFFFFF3B0),
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
@@ -1055,152 +1063,121 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                   ),
                 ),
+              ),
 
-                if (gameNotifier.isOnlineMode && !gameState.isGameOver)
-                  Positioned(
-                    right: 8,
-                    bottom: isTwoPlayerMode ? 66 : 57,
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_typingPlayerId != null)
-                              const OnlineChatTypingIndicator(),
-                            OnlineChatButton(
-                              onPressed: () => _openOnlineChat(context),
-                            ),
-                          ],
-                        ),
-                        if (_latestChatMessage != null)
-                          Positioned(
-                            right: 0,
-                            bottom: 54,
-                            child: IgnorePointer(
-                              child: OnlineChatMessageBubble(
-                                text: _latestChatMessage!.text,
-                              ),
+              if (voiceCall != null)
+                Positioned(
+                  right: 10,
+                  bottom: 78,
+                  child: Material(
+                    color: const Color(0xF0122447),
+                    borderRadius: BorderRadius.circular(24),
+                    elevation: 8,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 13, right: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            voiceCall.phase == VoiceCallPhase.connected
+                                ? Icons.call_rounded
+                                : Icons.call_made_rounded,
+                            color: voiceCall.phase == VoiceCallPhase.connected
+                                ? Colors.greenAccent
+                                : AppColors.gold,
+                            size: 17,
+                          ),
+                          const SizedBox(width: 7),
+                          Text(
+                            '${voiceCall.phase == VoiceCallPhase.connected ? (voiceCall.muted ? 'MUTED' : 'VOICE') : voiceCall.phase.name.toUpperCase()} ${voiceCall.peerName.toUpperCase()}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-
-                if (voiceCall != null)
-                  Positioned(
-                    right: 10,
-                    bottom: 78,
-                    child: Material(
-                      color: const Color(0xF0122447),
-                      borderRadius: BorderRadius.circular(24),
-                      elevation: 8,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 13, right: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              voiceCall.phase == VoiceCallPhase.connected
-                                  ? Icons.call_rounded
-                                  : Icons.call_made_rounded,
-                              color: voiceCall.phase == VoiceCallPhase.connected
-                                  ? Colors.greenAccent
-                                  : AppColors.gold,
-                              size: 17,
+                          IconButton(
+                            tooltip: voiceCall.muted ? 'Unmute' : 'Mute',
+                            onPressed:
+                                voiceCall.phase == VoiceCallPhase.connected
+                                    ? voiceCallService.toggleMute
+                                    : null,
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              voiceCall.muted
+                                  ? Icons.mic_off_rounded
+                                  : Icons.mic_rounded,
+                              color: Colors.white,
+                              size: 18,
                             ),
-                            const SizedBox(width: 7),
-                            Text(
-                              '${voiceCall.phase == VoiceCallPhase.connected ? (voiceCall.muted ? 'MUTED' : 'VOICE') : voiceCall.phase.name.toUpperCase()} ${voiceCall.peerName.toUpperCase()}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.poppins(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: voiceCall.muted ? 'Unmute' : 'Mute',
-                              onPressed:
-                                  voiceCall.phase == VoiceCallPhase.connected
-                                      ? voiceCallService.toggleMute
-                                      : null,
-                              visualDensity: VisualDensity.compact,
-                              icon: Icon(
-                                voiceCall.muted
-                                    ? Icons.mic_off_rounded
-                                    : Icons.mic_rounded,
-                                color: Colors.white,
-                                size: 18,
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'End voice call',
-                              onPressed: voiceCallService.endCall,
-                              visualDensity: VisualDensity.compact,
-                              icon: const Icon(Icons.call_end_rounded,
-                                  color: Colors.redAccent, size: 19),
-                            ),
-                          ],
-                        ),
+                          ),
+                          IconButton(
+                            tooltip: 'End voice call',
+                            onPressed: voiceCallService.endCall,
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.call_end_rounded,
+                                color: Colors.redAccent, size: 19),
+                          ),
+                        ],
                       ),
                     ),
                   ),
+                ),
 
-                // Victory Dialog (Shows ONLY after the Fullscreen Interstitial Ad completes and is dismissed)
-                if (gameState.isGameOver && _readyToShowVictoryDialog)
-                  Positioned.fill(
-                    child: Stack(
-                      children: [
-                        const ModalBarrier(
-                          dismissible: false,
-                          color: Color(0x99000000),
-                        ),
-                        VictoryDialog(
-                          gameState: gameState,
-                          replayPending: _rematchPending,
-                          replayPendingLabel: _rematchPlayerCount > 0
-                              ? 'WAITING ($_rematchAcceptedCount/$_rematchPlayerCount)'
-                              : 'WAITING FOR PLAYERS',
-                          onPlayAgain: () {
-                            if (gameNotifier.isOnlineMode) {
-                              if (_rematchPending) return;
-                              setState(() {
-                                _rematchPending = true;
-                                _rematchAcceptedCount = 1;
-                                _rematchPlayerCount = gameState.players.length;
-                              });
-                              final sent = ref
-                                  .read(webSocketServiceProvider)
-                                  .requestRematch();
-                              if (!sent) {
-                                setState(() => _rematchPending = false);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'The game server is disconnected. Reconnect and try again.',
-                                    ),
-                                  ),
-                                );
-                              }
-                              return;
-                            }
+              // Victory Dialog (Shows ONLY after the Fullscreen Interstitial Ad completes and is dismissed)
+              if (gameState.isGameOver && _readyToShowVictoryDialog)
+                Positioned.fill(
+                  child: Stack(
+                    children: [
+                      const ModalBarrier(
+                        dismissible: false,
+                        color: Color(0x99000000),
+                      ),
+                      VictoryDialog(
+                        gameState: gameState,
+                        replayPending: _rematchPending,
+                        replayPendingLabel: _rematchPlayerCount > 0
+                            ? 'WAITING ($_rematchAcceptedCount/$_rematchPlayerCount)'
+                            : 'WAITING FOR PLAYERS',
+                        onPlayAgain: () {
+                          if (gameNotifier.isOnlineMode) {
+                            if (_rematchPending) return;
                             setState(() {
-                              _hasTriggeredGameOverAd = false;
-                              _readyToShowVictoryDialog = false;
+                              _rematchPending = true;
+                              _rematchAcceptedCount = 1;
+                              _rematchPlayerCount = gameState.players.length;
                             });
-                            gameNotifier.startNewGame(
-                              players: gameState.players,
-                            );
-                          },
-                          onExitToLobby: () => context.go('/home'),
-                        ),
-                      ],
-                    ),
+                            final sent = ref
+                                .read(webSocketServiceProvider)
+                                .requestRematch();
+                            if (!sent) {
+                              setState(() => _rematchPending = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'The game server is disconnected. Reconnect and try again.',
+                                  ),
+                                ),
+                              );
+                            }
+                            return;
+                          }
+                          setState(() {
+                            _hasTriggeredGameOverAd = false;
+                            _readyToShowVictoryDialog = false;
+                          });
+                          gameNotifier.startNewGame(
+                            players: gameState.players,
+                          );
+                        },
+                        onExitToLobby: () => context.go('/home'),
+                      ),
+                    ],
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       ),
@@ -1229,6 +1206,56 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ),
         ),
       );
+
+  Widget _chatAttachedToPlayerCard({
+    required Widget card,
+    required String playerId,
+    required bool placeAboveCard,
+  }) {
+    final gameNotifier = ref.read(gameControllerProvider.notifier);
+    if (!gameNotifier.isOnlineMode || gameNotifier.currentState.isGameOver) {
+      return card;
+    }
+
+    final controls = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Align(
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_typingPlayerId == playerId)
+                const OnlineChatTypingIndicator(),
+              OnlineChatButton(
+                compact: true,
+                onPressed: () => _openOnlineChat(context),
+              ),
+            ],
+          ),
+        ),
+        if (_latestChatMessage?.playerId == playerId)
+          Positioned(
+            right: 0,
+            top: placeAboveCard ? null : 38,
+            bottom: placeAboveCard ? 38 : null,
+            child: IgnorePointer(
+              child: OnlineChatMessageBubble(
+                text: _latestChatMessage!.text,
+              ),
+            ),
+          ),
+      ],
+    );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: placeAboveCard
+          ? [Align(alignment: Alignment.center, child: controls), card]
+          : [card, Align(alignment: Alignment.center, child: controls)],
+    );
+  }
 
   void _openOnlineChat(BuildContext context) {
     final gameState = ref.read(gameControllerProvider);
