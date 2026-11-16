@@ -143,15 +143,15 @@ public class OnlineMatchRoom {
         List<String> assignedColors = new ArrayList<>();
         if (tickets.size() == 2) {
             String firstColor = tickets.get(0).getSelectedColor();
-            String requestedSecondColor = tickets.get(1).getSelectedColor();
-            String secondColor = requestedSecondColor.equals(firstColor)
-                    ? switch (firstColor) {
-                        case "red" -> "yellow";
-                        case "green" -> "blue";
-                        case "yellow" -> "red";
-                        default -> "green";
-                    }
-                    : requestedSecondColor;
+            // Keep the authoritative seats opposite so two-player rules remain
+            // rotationally symmetric. Each client maps these canonical seats
+            // to its own selected color when presenting the match.
+            String secondColor = switch (firstColor) {
+                case "red" -> "yellow";
+                case "green" -> "blue";
+                case "yellow" -> "red";
+                default -> "green";
+            };
             assignedColors.add(firstColor);
             assignedColors.add(secondColor);
         } else {

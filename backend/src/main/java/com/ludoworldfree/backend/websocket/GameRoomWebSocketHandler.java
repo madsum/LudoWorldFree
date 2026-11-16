@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ludoworldfree.backend.service.MatchmakingService;
 import com.ludoworldfree.backend.service.MatchmakingService.RoomSnapshot;
+import com.ludoworldfree.backend.service.OnlineMatchChatService;
 import com.ludoworldfree.backend.model.OnlineMatchStateEvent;
 import com.ludoworldfree.backend.util.PlayerIdResolver;
 import org.slf4j.Logger;
@@ -34,12 +35,15 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper;
     private final MatchmakingService matchmakingService;
+    private final OnlineMatchChatService onlineMatchChatService;
     private final Map<String, LocalRoom> localRooms = new ConcurrentHashMap<>();
 
     public GameRoomWebSocketHandler(ObjectMapper objectMapper,
-                                    MatchmakingService matchmakingService) {
+                                    MatchmakingService matchmakingService,
+                                    OnlineMatchChatService onlineMatchChatService) {
         this.objectMapper = objectMapper;
         this.matchmakingService = matchmakingService;
+        this.onlineMatchChatService = onlineMatchChatService;
     }
 
     @Override
@@ -169,14 +173,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         synchronized (localRoom) {
             LocalConnection sender = localRoom.sessions.get(playerId);
             if (sender == null || sender.session != session) return;
-            Map<String, Object> chat = Map.of(
-                    "type", "chat",
-                    "playerId", playerId.toString(),
-                    "text", text,
-                    "sentAt", System.currentTimeMillis());
-            for (LocalConnection connection : localRoom.sessions.values()) {
-                send(connection.session, chat);
-            }
+            onlineMatchChatService.save(localRoom.id, playerId, text);
         }
     }
 
@@ -398,7 +395,22 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                         sendState(connection.session, event.getSenderId(), event.getStateJson());
                     }
                 }
+                relayChatEvents(localRoom);
             }
+        }
+    }
+
+    private void relayChatEvents(LocalRoom localRoom) {
+        List<OnlineMatchChatService.ChatEvent> events = onlineMatchChatService.after(
+                localRoom.id, localRoom.lastChatEventId);
+        for (OnlineMatchChatService.ChatEvent event : events) {
+            localRoom.lastChatEventId = event.id();
+            Map<String, Object> chat = Map.of(
+                    "type", "chat",
+                    "playerId", event.playerId().toString(),
+                    "text", event.text(),
+                    "sentAt", event.createdAt().toEpochMilli());
+            broadcast(localRoom, chat);
         }
     }
 
@@ -548,6 +560,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         private final String id;
         private final Map<UUID, LocalConnection> sessions = new ConcurrentHashMap<>();
         private boolean readyNotified;
+        private long lastChatEventId;
 
         private LocalRoom(String id) { this.id = id; }
     }

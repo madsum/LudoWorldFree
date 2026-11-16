@@ -102,4 +102,27 @@ class PlayerModel {
       eliminationOrder: eliminationOrder ?? this.eliminationOrder,
     );
   }
+
+  PlayerModel copyWithColor(LudoColor nextColor) => PlayerModel(
+        id: id,
+        name: name,
+        avatarUrl: avatarUrl,
+        country: country,
+        countryFlag: countryFlag,
+        coins: coins,
+        diamonds: diamonds,
+        color: nextColor,
+        isBot: isBot,
+        pawns: pawns
+            .map((pawn) => pawn.copyWith(color: nextColor))
+            .toList(growable: false),
+        rank: rank,
+        killCounts: {
+          for (final entry in killCounts.entries)
+            entry.key == color ? nextColor : entry.key: entry.value,
+        },
+        missedTurns: missedTurns,
+        isEliminated: isEliminated,
+        eliminationOrder: eliminationOrder,
+      );
 }

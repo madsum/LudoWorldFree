@@ -1166,6 +1166,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                           gameController.configureOnlineMatch(
                                             roomId: roomId,
                                             playerId: playerId,
+                                            selectedColor: color,
                                             requestDiceRoll: ref
                                                 .read(webSocketServiceProvider)
                                                 .requestDiceRoll,

@@ -5,7 +5,8 @@ const Object _undefined = Object();
 class PawnModel {
   final int id; // 0..3 per player
   final LudoColor color;
-  final int stepCount; // -1: Yard, 0..50: Main Path, 51..55: Home Stretch, 56: Finished in Home
+  final int
+      stepCount; // -1: Yard, 0..50: Main Path, 51..55: Home Stretch, 56: Finished in Home
   final String? pairId;
   final bool isPairSelected;
 
@@ -30,13 +31,14 @@ class PawnModel {
   }
 
   PawnModel copyWith({
+    LudoColor? color,
     int? stepCount,
     Object? pairId = _undefined,
     bool? isPairSelected,
   }) {
     return PawnModel(
       id: id,
-      color: color,
+      color: color ?? this.color,
       stepCount: stepCount ?? this.stepCount,
       pairId: pairId == _undefined ? this.pairId : (pairId as String?),
       isPairSelected: isPairSelected ?? this.isPairSelected,

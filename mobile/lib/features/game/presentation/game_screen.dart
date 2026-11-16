@@ -239,7 +239,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             _onlineStateSyncQueued = false;
             if (!mounted || !gameNotifier.isOnlineMode) return;
             webSocketService.sendGameState(
-              ref.read(gameControllerProvider).toJson(),
+              gameNotifier.toOnlineWireJson(ref.read(gameControllerProvider)),
             );
           });
         }
@@ -247,7 +247,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
       if ((initialState.players.length == 2 ||
               initialState.players.length == 4) &&
           initialState.currentPlayer.id == gameNotifier.onlineLocalPlayerId) {
-        webSocketService.sendGameState(initialState.toJson());
+        webSocketService
+            .sendGameState(gameNotifier.toOnlineWireJson(initialState));
       }
     }
 
@@ -433,7 +434,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
       }
       final freshState = ref.read(gameControllerProvider);
       if (freshState.currentPlayer.id == localPlayerId) {
-        ref.read(webSocketServiceProvider).sendGameState(freshState.toJson());
+        ref
+            .read(webSocketServiceProvider)
+            .sendGameState(gameNotifier.toOnlineWireJson(freshState));
       }
     }
   }
@@ -755,8 +758,26 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final humanIndex = gameState.players.indexWhere((player) => !player.isBot);
     final humanColor =
         humanIndex < 0 ? null : gameState.players[humanIndex].color;
-    final boardQuarterTurns = isVsComputer && humanColor != null
-        ? (3 - humanColor.index) % 4
+    final localPlayerId = gameNotifier.onlineLocalPlayerId;
+    final localOnlinePlayer =
+        gameState.players.where((player) => player.id == localPlayerId);
+    final perspectiveColor =
+        gameNotifier.isOnlineMode && localOnlinePlayer.isNotEmpty
+            ? localOnlinePlayer.first.color
+            : isVsComputer && humanColor != null
+                ? humanColor
+                : gameState.players.isNotEmpty
+                    ? gameState.players[0].color
+                    : null;
+    final twoPlayerDisplayOrder = gameNotifier.isOnlineMode &&
+            localOnlinePlayer.isNotEmpty
+        ? [
+            localOnlinePlayer.first,
+            ...gameState.players.where((player) => player.id != localPlayerId),
+          ]
+        : gameState.players;
+    final boardQuarterTurns = perspectiveColor != null
+        ? (3 - perspectiveColor.index) % 4
         : gameState.players.isNotEmpty
             ? (3 - gameState.players[0].color.index) % 4
             : 0;
@@ -898,17 +919,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               children: [
                                 Expanded(
                                   child: PlayerInfoCard(
-                                    player: gameState.players[0],
+                                    player: twoPlayerDisplayOrder[0],
                                     gameState: gameState,
-                                    isCurrentTurn:
-                                        gameState.currentTurnIndex == 0,
+                                    isCurrentTurn: gameState.currentPlayer.id ==
+                                        twoPlayerDisplayOrder[0].id,
                                     onRoll: () => gameNotifier.rollDice(),
                                     twoPlayerLayout: true,
-                                    onChatPressed: gameNotifier.isOnlineMode
-                                        ? () => _openOnlineChat(context)
-                                        : null,
                                     showRollArrow: isPlayerRollTurn &&
-                                        gameState.currentTurnIndex == 0,
+                                        gameState.currentPlayer.id ==
+                                            twoPlayerDisplayOrder[0].id,
                                     rollArrowPointsUp: false,
                                   ),
                                 ),
@@ -923,17 +942,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 ),
                                 Expanded(
                                   child: PlayerInfoCard(
-                                    player: gameState.players[1],
+                                    player: twoPlayerDisplayOrder[1],
                                     gameState: gameState,
-                                    isCurrentTurn:
-                                        gameState.currentTurnIndex == 1,
+                                    isCurrentTurn: gameState.currentPlayer.id ==
+                                        twoPlayerDisplayOrder[1].id,
                                     onRoll: () => gameNotifier.rollDice(),
                                     twoPlayerLayout: true,
-                                    onChatPressed: gameNotifier.isOnlineMode
-                                        ? () => _openOnlineChat(context)
-                                        : null,
                                     showRollArrow: isPlayerRollTurn &&
-                                        gameState.currentTurnIndex == 1,
+                                        gameState.currentPlayer.id ==
+                                            twoPlayerDisplayOrder[1].id,
                                   ),
                                 ),
                               ],
@@ -1015,19 +1032,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   ),
                 ),
 
-                if (gameNotifier.isOnlineMode &&
-                    !gameState.isGameOver &&
-                    (!isTwoPlayerMode || _latestChatMessage != null))
+                if (gameNotifier.isOnlineMode && !gameState.isGameOver)
                   Positioned(
                     left: 8,
-                    bottom: 72,
+                    bottom: isTwoPlayerMode ? 132 : 72,
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        if (!isTwoPlayerMode)
-                          OnlineChatButton(
-                            onPressed: () => _openOnlineChat(context),
-                          ),
+                        OnlineChatButton(
+                          onPressed: () => _openOnlineChat(context),
+                        ),
                         if (_latestChatMessage != null)
                           Positioned(
                             left: 0,

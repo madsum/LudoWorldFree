@@ -19,7 +19,6 @@ class PlayerInfoCard extends StatefulWidget {
   final bool compact;
   final bool showRollArrow;
   final bool rollArrowPointsUp;
-  final VoidCallback? onChatPressed;
 
   const PlayerInfoCard({
     super.key,
@@ -31,7 +30,6 @@ class PlayerInfoCard extends StatefulWidget {
     this.compact = false,
     this.showRollArrow = false,
     this.rollArrowPointsUp = false,
-    this.onChatPressed,
   });
 
   @override
@@ -443,35 +441,6 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                 ),
               ),
             ),
-            if (widget.onChatPressed != null)
-              SizedBox(
-                width: 26,
-                height: 26,
-                child: IconButton(
-                  tooltip: 'Open match chat',
-                  onPressed: widget.onChatPressed,
-                  padding: EdgeInsets.zero,
-                  visualDensity: VisualDensity.compact,
-                  icon: const Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Icon(
-                        Icons.chat_bubble_rounded,
-                        color: Colors.white,
-                        size: 26,
-                      ),
-                      Padding(
-                        padding: EdgeInsets.only(bottom: 4),
-                        child: Icon(
-                          Icons.more_horiz_rounded,
-                          color: AppColors.bgNavy,
-                          size: 18,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
           ],
         ),
         const SizedBox(height: 3),

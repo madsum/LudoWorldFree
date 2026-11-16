@@ -37,6 +37,10 @@ class GameNotifier extends StateNotifier<GameState> {
   bool _turnTimerPaused = false;
   String? _onlineRoomId;
   String? _onlineLocalPlayerId;
+  LudoColor? _onlineSelectedColor;
+  Map<String, LudoColor> _onlineWireColorByPlayerId = const {};
+  Map<String, String> _onlineViewColorByWireName = const {};
+  Map<String, String> _onlineWireColorByViewName = const {};
   Future<int> Function(int rollOpportunityId)? _onlineDiceRoller;
   bool _applyingRemoteState = false;
   String _currentGameId = '';
@@ -53,10 +57,12 @@ class GameNotifier extends StateNotifier<GameState> {
   void configureOnlineMatch({
     required String roomId,
     required String playerId,
+    required LudoColor selectedColor,
     required Future<int> Function(int rollOpportunityId) requestDiceRoll,
   }) {
     _onlineRoomId = roomId;
     _onlineLocalPlayerId = playerId;
+    _onlineSelectedColor = selectedColor;
     _onlineDiceRoller = requestDiceRoll;
     state = state.copyWith(localPlayerId: playerId);
   }
@@ -65,13 +71,18 @@ class GameNotifier extends StateNotifier<GameState> {
     _onlineRoomId = null;
     _onlineLocalPlayerId = null;
     _onlineDiceRoller = null;
+    _onlineSelectedColor = null;
+    _onlineWireColorByPlayerId = const {};
+    _onlineViewColorByWireName = const {};
+    _onlineWireColorByViewName = const {};
     state = state.copyWith(clearLocalPlayerId: true);
   }
 
   void applyRemoteGameState(Map<String, dynamic> json) {
     if (!isOnlineMode) return;
-    final remote =
-        GameState.fromJson(json, localPlayerId: _onlineLocalPlayerId);
+    final perspectiveJson = _mapWireColors(json, _onlineViewColorByWireName);
+    final remote = GameState.fromJson(perspectiveJson,
+        localPlayerId: _onlineLocalPlayerId);
     if ((remote.players.length != 2 && remote.players.length != 4) ||
         remote.players.any((player) => player.isBot)) {
       return;
@@ -107,6 +118,29 @@ class GameNotifier extends StateNotifier<GameState> {
     }
   }
 
+  Map<String, dynamic> toOnlineWireJson(GameState gameState) =>
+      _mapWireColors(gameState.toJson(), _onlineWireColorByViewName);
+
+  Map<String, dynamic> _mapWireColors(
+    Map<String, dynamic> json,
+    Map<String, String> mapping,
+  ) {
+    dynamic mapValue(dynamic value) {
+      if (value is String) return mapping[value] ?? value;
+      if (value is List) return value.map(mapValue).toList(growable: false);
+      if (value is Map) {
+        return <String, dynamic>{
+          for (final entry in value.entries)
+            (mapping[entry.key.toString()] ?? entry.key.toString()):
+                mapValue(entry.value),
+        };
+      }
+      return value;
+    }
+
+    return Map<String, dynamic>.from(mapValue(json) as Map);
+  }
+
   @override
   void dispose() {
     _isDisposed = true;
@@ -120,6 +154,39 @@ class GameNotifier extends StateNotifier<GameState> {
   void startNewGame({
     required List<PlayerModel> players,
   }) {
+    var gamePlayers = players;
+    if (isOnlineMode &&
+        players.length == 2 &&
+        _onlineSelectedColor != null &&
+        _onlineWireColorByPlayerId.isEmpty) {
+      final local =
+          players.where((player) => player.id == _onlineLocalPlayerId);
+      if (local.isNotEmpty) {
+        final localWireColor = local.first.color;
+        final opponentWireColor = players
+            .firstWhere((player) => player.id != _onlineLocalPlayerId)
+            .color;
+        final opponentViewColor = LudoColor.values[
+            (_onlineSelectedColor!.index + 2) % LudoColor.values.length];
+        _onlineWireColorByPlayerId = {
+          for (final player in players) player.id: player.color,
+        };
+        _onlineViewColorByWireName = {
+          localWireColor.name: _onlineSelectedColor!.name,
+          opponentWireColor.name: opponentViewColor.name,
+        };
+        _onlineWireColorByViewName = {
+          for (final entry in _onlineViewColorByWireName.entries)
+            entry.value: entry.key,
+        };
+        gamePlayers = players
+            .map((player) => player.copyWithColor(
+                player.id == _onlineLocalPlayerId
+                    ? _onlineSelectedColor!
+                    : opponentViewColor))
+            .toList(growable: false);
+      }
+    }
     _currentGameId =
         '${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(1 << 32)}';
     _botTimer?.cancel();
@@ -129,7 +196,7 @@ class GameNotifier extends StateNotifier<GameState> {
     _isTurnProcessing = false;
     _turnTimerPaused = false;
     _sixSequenceSnapshot = null;
-    final freshPlayers = players
+    final freshPlayers = gamePlayers
         .map(
           (player) => PlayerModel.initial(
             id: player.id,
