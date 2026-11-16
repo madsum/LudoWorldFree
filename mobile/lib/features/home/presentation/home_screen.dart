@@ -29,6 +29,8 @@ import 'widgets/online_matchmaking_dialog.dart';
 import 'widgets/daily_bonus_dialog.dart';
 import 'widgets/social_hub_dialog.dart';
 import 'widgets/incoming_buddy_request_dialog.dart';
+import 'widgets/incoming_voice_call_dialog.dart';
+import '../../game/presentation/services/voice_call_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -39,6 +41,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   late final ProviderSubscription<AuthState> _authSubscription;
+  late final VoiceCallService _voiceCallService;
   Timer? _dailyBonusStartupTimer;
   Timer? _dailyBonusStartupPoll;
   Timer? _buddyRequestPollTimer;
@@ -48,6 +51,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _dailyBonusDialogShowing = false;
   String? _dailyBonusPopupPlayerId;
   String? _buddyRequestPollPlayerId;
+  String? _shownIncomingVoiceCallId;
   bool _buddyRequestPollInFlight = false;
   bool _buddyRequestDialogShowing = false;
   final Set<String> _seenBuddyRequestIds = <String>{};
@@ -58,6 +62,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _waitForStartupUser();
+    _voiceCallService = ref.read(voiceCallServiceProvider);
+    _voiceCallService.addListener(_handleVoiceCallServiceChanged);
     _authSubscription = ref.listenManual<AuthState>(
       authControllerProvider,
       _handleAuthStateChanged,
@@ -82,8 +88,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _seenBuddyRequestIds.clear();
       _pendingBuddyRequests.clear();
       _dailyBonusPopupPlayerId = null;
+      unawaited(_voiceCallService.disconnect());
       return;
     }
+    unawaited(_voiceCallService.connect(user.id));
     _startBuddyRequestPolling(user.id);
     _dailyBonusStartupPoll?.cancel();
     _dailyBonusStartupPoll = null;
@@ -91,6 +99,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     _dailyBonusPopupPlayerId = user.id;
     _queueDailyBonusCheck(user.id);
+  }
+
+  void _handleVoiceCallServiceChanged() {
+    final currentCall = _voiceCallService.call;
+    if (currentCall?.phase == VoiceCallPhase.incoming &&
+        currentCall!.callId != _shownIncomingVoiceCallId) {
+      _shownIncomingVoiceCallId = currentCall.callId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _voiceCallService.call?.callId != currentCall.callId ||
+            _voiceCallService.call?.phase != VoiceCallPhase.incoming) {
+          return;
+        }
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => IncomingVoiceCallDialog(
+            voiceCallService: _voiceCallService,
+          ),
+        );
+      });
+    }
+    final error = _voiceCallService.takeLastError();
+    if (error != null && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error)));
+    }
   }
 
   void _startBuddyRequestPolling(String playerId) {
@@ -1033,6 +1069,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _dailyBonusStartupTimer?.cancel();
     _dailyBonusStartupPoll?.cancel();
     _buddyRequestPollTimer?.cancel();
+    _voiceCallService.removeListener(_handleVoiceCallServiceChanged);
+    unawaited(_voiceCallService.disconnect());
     _authSubscription.close();
     super.dispose();
   }

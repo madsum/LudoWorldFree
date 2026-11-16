@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:vibration/vibration.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
@@ -20,14 +19,15 @@ import '../../../shared/widgets/banner_ad_widget.dart';
 import '../domain/models/game_state.dart';
 import '../domain/models/ludo_color.dart';
 import '../domain/models/player_model.dart';
+import 'services/voice_call_service.dart';
 import 'controllers/game_controller.dart';
 import 'widgets/exit_game_dialog.dart';
 import 'widgets/ludo_board_widget.dart';
 import 'widgets/online_chat_panel.dart';
-import 'widgets/player_info_card.dart';
-import '../../home/presentation/widgets/player_buddy_profile_dialog.dart';
-import 'widgets/victory_dialog.dart';
+import '../../home/presentation/widgets/incoming_voice_call_dialog.dart';
 import '../../home/presentation/widgets/incoming_buddy_request_dialog.dart';
+import 'widgets/player_info_card.dart';
+import 'widgets/victory_dialog.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   const GameScreen({super.key});
@@ -54,22 +54,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Timer? _bellAlertTimer;
   Timer? _opponentDisconnectTimer;
   Timer? _buddyRequestPollTimer;
-  Timer? _voiceCallTimeoutTimer;
   bool _buddyRequestPollInFlight = false;
   bool _buddyRequestDialogShowing = false;
   final Set<String> _seenBuddyRequestIds = <String>{};
   final List<Map<String, dynamic>> _pendingBuddyRequests = [];
   bool _onlineStateSyncQueued = false;
   final AudioPlayer _bellAudioPlayer = AudioPlayer();
-  RTCPeerConnection? _voicePeerConnection;
-  MediaStream? _voiceLocalStream;
-  String? _voiceCallId;
-  String? _voiceCallPeerId;
-  String? _voiceCallPeerName;
-  bool _voiceCallConnected = false;
-  bool _voiceCallMuted = false;
-  bool _incomingVoiceCallDialogOpen = false;
-  final List<RTCIceCandidate> _queuedVoiceCandidates = [];
   LudoColor? _bellAlertedPlayerColor;
   bool _rematchPending = false;
   bool _restartingForRematch = false;
@@ -78,14 +68,24 @@ class _GameScreenState extends ConsumerState<GameScreen>
   final Set<String> _shownRematchDialogs = <String>{};
   final Set<String> _startedRematchRounds = <String>{};
   final Set<String> _disconnectedOnlinePlayerIds = <String>{};
+  final Set<String> _existingBuddyOrRequestPlayerIds = <String>{};
+  String? _shownIncomingVoiceCallId;
+  late final VoiceCallService _voiceCallService;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _voiceCallService = ref.read(voiceCallServiceProvider);
+    _voiceCallService.addListener(_handleVoiceCallChanged);
     final gameNotifier = ref.read(gameControllerProvider.notifier);
     if (gameNotifier.isOnlineMode) {
       _onlineGameNotifier = gameNotifier;
+      final localPlayerId = gameNotifier.onlineLocalPlayerId;
+      if (localPlayerId != null) {
+        unawaited(_voiceCallService.connect(localPlayerId));
+        unawaited(_loadBuddyRelationships(localPlayerId));
+      }
       unawaited(Future<void>.delayed(
         const Duration(seconds: 1),
         _pollIncomingBuddyRequests,
@@ -125,9 +125,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
             });
           });
           if (mounted) setState(() {});
-        } else if (message['type']?.toString().startsWith('voice_call_') ==
-            true) {
-          unawaited(_handleVoiceCallSignal(message));
         } else if (message['type'] == 'bell_alert' &&
             message['targetPlayerId'] == gameNotifier.onlineLocalPlayerId) {
           unawaited(_handleBellAlert(message));
@@ -146,16 +143,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     : reason,
               ),
             ),
-          );
-        } else if (message['type'] == 'error' &&
-            message['code']?.toString().startsWith('VOICE_CALL_') == true &&
-            mounted) {
-          final reason = message['message']?.toString().trim();
-          unawaited(_clearVoiceCall(sendEndSignal: false));
-          _showVoiceCallMessage(
-            reason == null || reason.isEmpty
-                ? 'The voice call could not be started.'
-                : reason,
           );
         } else if (message['type'] == 'player_disconnected' ||
             message['type'] == 'connection_lost') {
@@ -346,6 +333,28 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
+  void _handleVoiceCallChanged() {
+    final activeCall = _voiceCallService.call;
+    if (activeCall?.phase == VoiceCallPhase.incoming &&
+        activeCall!.callId != _shownIncomingVoiceCallId) {
+      _shownIncomingVoiceCallId = activeCall.callId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _voiceCallService.call?.callId != activeCall.callId ||
+            _voiceCallService.call?.phase != VoiceCallPhase.incoming) {
+          return;
+        }
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => IncomingVoiceCallDialog(
+            voiceCallService: _voiceCallService,
+          ),
+        );
+      });
+    }
+  }
+
   Future<void> _handleRematchUpdate(Map<String, dynamic> message) async {
     if (!mounted) return;
     final status = message['status'] as String?;
@@ -442,12 +451,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _voiceCallTimeoutTimer?.cancel();
+    _voiceCallService.removeListener(_handleVoiceCallChanged);
     _buddyRequestPollTimer?.cancel();
     _chatBubbleTimer?.cancel();
     _bellAlertTimer?.cancel();
     _opponentDisconnectTimer?.cancel();
-    unawaited(_clearVoiceCall(sendEndSignal: true));
     unawaited(_bellAudioPlayer.dispose());
     _chatMessages.dispose();
     _onlineSubscription?.cancel();
@@ -562,25 +570,57 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
-  VoidCallback? _profileTapFor(PlayerModel player, GameNotifier gameNotifier) {
-    if (!gameNotifier.isOnlineMode ||
-        player.isBot ||
-        player.id == gameNotifier.onlineLocalPlayerId) {
-      return null;
+  Future<void> _loadBuddyRelationships(String playerId) async {
+    try {
+      final response = await ref.read(apiClientProvider).get(
+            '/friends',
+            options: Options(headers: {'X-Player-ID': playerId}),
+          );
+      final entries = response.data is Map ? response.data['entries'] : null;
+      if (!mounted || entries is! List) return;
+      setState(() {
+        _existingBuddyOrRequestPlayerIds
+          ..clear()
+          ..addAll(entries
+              .whereType<Map>()
+              .map(
+                (entry) => entry['playerId']?.toString() ?? '',
+              )
+              .where((id) => id.isNotEmpty));
+      });
+    } catch (error) {
+      debugPrint('Could not load buddy states for this match: $error');
     }
-    return () => unawaited(PlayerBuddyProfileDialog.show(context, player));
   }
 
-  void _showBoardPlayerProfile(String playerId, GameNotifier gameNotifier) {
-    if (!gameNotifier.isOnlineMode ||
-        playerId == gameNotifier.onlineLocalPlayerId) {
+  Future<void> _sendBuddyRequest(String targetPlayerId) async {
+    final playerId = _onlineGameNotifier?.onlineLocalPlayerId;
+    if (playerId == null ||
+        _existingBuddyOrRequestPlayerIds.contains(targetPlayerId)) {
       return;
     }
-    final player = gameNotifier.currentState.players
-        .where((candidate) => candidate.id == playerId && !candidate.isBot)
-        .firstOrNull;
-    if (player != null) {
-      unawaited(PlayerBuddyProfileDialog.show(context, player));
+    try {
+      final response = await ref.read(apiClientProvider).post(
+            '/friends/requests',
+            data: {'playerId': targetPlayerId},
+            options: Options(headers: {'X-Player-ID': playerId}),
+          );
+      final status =
+          response.data is Map ? response.data['status']?.toString() : null;
+      if (!mounted) return;
+      setState(() => _existingBuddyOrRequestPlayerIds.add(targetPlayerId));
+      final player = _onlineGameNotifier?.currentState.players
+          .where((candidate) => candidate.id == targetPlayerId)
+          .firstOrNull;
+      final name = player?.name ?? 'Player';
+      _showVoiceCallMessage(status == 'ACCEPTED'
+          ? 'You and $name are buddies now.'
+          : 'Buddy request sent to $name.');
+    } on DioException catch (error) {
+      final message = error.response?.data is Map
+          ? error.response?.data['message']?.toString()
+          : null;
+      _showVoiceCallMessage(message ?? 'Could not send the buddy request.');
     }
   }
 
@@ -702,6 +742,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget build(BuildContext context) {
     final gameState = ref.watch(gameControllerProvider);
     final gameNotifier = ref.read(gameControllerProvider.notifier);
+    final voiceCallService = ref.watch(voiceCallServiceProvider);
+    final voiceCall = voiceCallService.call;
     final botCount = gameState.players.where((player) => player.isBot).length;
     final isVsComputer =
         botCount == gameState.players.length - 1 && botCount > 0;
@@ -756,8 +798,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               PlayerInfoCard(
                                 player: gameState.players[0],
                                 gameState: gameState,
-                                onProfilePressed: _profileTapFor(
-                                    gameState.players[0], gameNotifier),
                                 isCurrentTurn: gameState.currentTurnIndex == 0,
                                 onRoll: () => gameNotifier.rollDice(),
                                 compact: true,
@@ -769,8 +809,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               PlayerInfoCard(
                                 player: gameState.players[1],
                                 gameState: gameState,
-                                onProfilePressed: _profileTapFor(
-                                    gameState.players[1], gameNotifier),
                                 isCurrentTurn: gameState.currentTurnIndex == 1,
                                 onRoll: () => gameNotifier.rollDice(),
                                 compact: true,
@@ -834,10 +872,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                     alertedPlayerColor: _bellAlertedPlayerColor,
                                     unavailableBellPlayerIds:
                                         _disconnectedOnlinePlayerIds,
-                                    onPlayerProfileTap: gameNotifier
-                                            .isOnlineMode
-                                        ? (playerId) => _showBoardPlayerProfile(
-                                            playerId, gameNotifier)
+                                    existingBuddyOrRequestPlayerIds:
+                                        _existingBuddyOrRequestPlayerIds,
+                                    onBuddyRequestTap: gameNotifier.isOnlineMode
+                                        ? _sendBuddyRequest
                                         : null,
                                   ),
                                 ),
@@ -862,12 +900,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                   child: PlayerInfoCard(
                                     player: gameState.players[0],
                                     gameState: gameState,
-                                    onProfilePressed: _profileTapFor(
-                                        gameState.players[0], gameNotifier),
                                     isCurrentTurn:
                                         gameState.currentTurnIndex == 0,
                                     onRoll: () => gameNotifier.rollDice(),
                                     twoPlayerLayout: true,
+                                    onChatPressed: gameNotifier.isOnlineMode
+                                        ? () => _openOnlineChat(context)
+                                        : null,
                                     showRollArrow: isPlayerRollTurn &&
                                         gameState.currentTurnIndex == 0,
                                     rollArrowPointsUp: false,
@@ -886,12 +925,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                   child: PlayerInfoCard(
                                     player: gameState.players[1],
                                     gameState: gameState,
-                                    onProfilePressed: _profileTapFor(
-                                        gameState.players[1], gameNotifier),
                                     isCurrentTurn:
                                         gameState.currentTurnIndex == 1,
                                     onRoll: () => gameNotifier.rollDice(),
                                     twoPlayerLayout: true,
+                                    onChatPressed: gameNotifier.isOnlineMode
+                                        ? () => _openOnlineChat(context)
+                                        : null,
                                     showRollArrow: isPlayerRollTurn &&
                                         gameState.currentTurnIndex == 1,
                                   ),
@@ -905,8 +945,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                   PlayerInfoCard(
                                     player: gameState.players[3],
                                     gameState: gameState,
-                                    onProfilePressed: _profileTapFor(
-                                        gameState.players[3], gameNotifier),
                                     isCurrentTurn:
                                         gameState.currentTurnIndex == 3,
                                     onRoll: () => gameNotifier.rollDice(),
@@ -918,8 +956,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                   PlayerInfoCard(
                                     player: gameState.players[2],
                                     gameState: gameState,
-                                    onProfilePressed: _profileTapFor(
-                                        gameState.players[2], gameNotifier),
                                     isCurrentTurn:
                                         gameState.currentTurnIndex == 2,
                                     onRoll: () => gameNotifier.rollDice(),
@@ -979,16 +1015,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   ),
                 ),
 
-                if (gameNotifier.isOnlineMode && !gameState.isGameOver)
+                if (gameNotifier.isOnlineMode &&
+                    !gameState.isGameOver &&
+                    (!isTwoPlayerMode || _latestChatMessage != null))
                   Positioned(
                     left: 8,
                     bottom: 72,
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        OnlineChatButton(
-                          onPressed: () => _openOnlineChat(context),
-                        ),
+                        if (!isTwoPlayerMode)
+                          OnlineChatButton(
+                            onPressed: () => _openOnlineChat(context),
+                          ),
                         if (_latestChatMessage != null)
                           Positioned(
                             left: 0,
@@ -1003,7 +1042,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                   ),
 
-                if (_voiceCallPeerId != null)
+                if (voiceCall != null)
                   Positioned(
                     right: 10,
                     bottom: 78,
@@ -1017,17 +1056,17 @@ class _GameScreenState extends ConsumerState<GameScreen>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              _voiceCallConnected
+                              voiceCall.phase == VoiceCallPhase.connected
                                   ? Icons.call_rounded
                                   : Icons.call_made_rounded,
-                              color: _voiceCallConnected
+                              color: voiceCall.phase == VoiceCallPhase.connected
                                   ? Colors.greenAccent
                                   : AppColors.gold,
                               size: 17,
                             ),
                             const SizedBox(width: 7),
                             Text(
-                              '${_voiceCallConnected ? (_voiceCallMuted ? 'MUTED' : 'VOICE') : 'CALLING'} ${_voiceCallPeerName?.toUpperCase() ?? ''}',
+                              '${voiceCall.phase == VoiceCallPhase.connected ? (voiceCall.muted ? 'MUTED' : 'VOICE') : voiceCall.phase.name.toUpperCase()} ${voiceCall.peerName.toUpperCase()}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.poppins(
@@ -1037,12 +1076,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               ),
                             ),
                             IconButton(
-                              tooltip: _voiceCallMuted ? 'Unmute' : 'Mute',
+                              tooltip: voiceCall.muted ? 'Unmute' : 'Mute',
                               onPressed:
-                                  _voiceCallConnected ? _toggleVoiceMute : null,
+                                  voiceCall.phase == VoiceCallPhase.connected
+                                      ? voiceCallService.toggleMute
+                                      : null,
                               visualDensity: VisualDensity.compact,
                               icon: Icon(
-                                _voiceCallMuted
+                                voiceCall.muted
                                     ? Icons.mic_off_rounded
                                     : Icons.mic_rounded,
                                 color: Colors.white,
@@ -1051,7 +1092,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                             ),
                             IconButton(
                               tooltip: 'End voice call',
-                              onPressed: _endVoiceCall,
+                              onPressed: voiceCallService.endCall,
                               visualDensity: VisualDensity.compact,
                               icon: const Icon(Icons.call_end_rounded,
                                   color: Colors.redAccent, size: 19),
@@ -1168,7 +1209,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   ) async {
     final localPlayerId = gameNotifier.onlineLocalPlayerId;
     if (localPlayerId == null || !gameNotifier.isOnlineMode) return;
-    if (_voiceCallPeerId != null) {
+    if (ref.read(voiceCallServiceProvider).call != null) {
       _showVoiceCallMessage('Finish your current voice call first.');
       return;
     }
@@ -1223,20 +1264,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return;
     }
 
-    final callId = DateTime.now().microsecondsSinceEpoch.toString();
-    setState(() {
-      _voiceCallId = callId;
-      _voiceCallPeerId = target!.id;
-      _voiceCallPeerName = target.name;
-      _voiceCallConnected = false;
-      _voiceCallMuted = false;
-    });
-    ref.read(webSocketServiceProvider).sendVoiceCallSignal(
-          type: 'voice_call_request',
-          targetPlayerId: target.id,
-          callId: callId,
-        );
-    _startVoiceCallTimeout(callId);
+    try {
+      await ref
+          .read(voiceCallServiceProvider)
+          .startCall(target.id, target.name);
+    } catch (error) {
+      _showVoiceCallMessage(error.toString().replaceFirst('Bad state: ', ''));
+    }
   }
 
   Future<void> _showBuddyOnlyCallDialog(
@@ -1280,300 +1314,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
-  Future<void> _handleVoiceCallSignal(Map<String, dynamic> message) async {
-    final type = message['type']?.toString();
-    final fromPlayerId = message['fromPlayerId']?.toString();
-    final callId = message['callId']?.toString();
-    if (type == null || fromPlayerId == null || callId == null) return;
-    final player = _onlineGameNotifier?.currentState.players
-        .where((candidate) => candidate.id == fromPlayerId)
-        .firstOrNull;
-    final playerName = player?.name ?? 'Buddy';
-
-    switch (type) {
-      case 'voice_call_incoming':
-        if (_voiceCallPeerId != null) {
-          _sendVoiceCallSignal(
-              type: 'voice_call_decline',
-              targetPlayerId: fromPlayerId,
-              callId: callId);
-          return;
-        }
-        setState(() {
-          _voiceCallId = callId;
-          _voiceCallPeerId = fromPlayerId;
-          _voiceCallPeerName = playerName;
-        });
-        _startVoiceCallTimeout(callId);
-        _incomingVoiceCallDialogOpen = true;
-        final accept = await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) => AlertDialog(
-            title: const Text('Incoming voice call'),
-            content: Text('$playerName is calling you.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('DECLINE'),
-              ),
-              FilledButton.icon(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                icon: const Icon(Icons.call_rounded),
-                label: const Text('ANSWER'),
-              ),
-            ],
-          ),
-        );
-        _incomingVoiceCallDialogOpen = false;
-        if (!mounted) return;
-        if (_voiceCallId != callId) return;
-        if (accept != true) {
-          _sendVoiceCallSignal(
-              type: 'voice_call_decline',
-              targetPlayerId: fromPlayerId,
-              callId: callId);
-          await _clearVoiceCall(sendEndSignal: false);
-          return;
-        }
-        setState(() {
-          _voiceCallId = callId;
-          _voiceCallPeerId = fromPlayerId;
-          _voiceCallPeerName = playerName;
-          _voiceCallConnected = false;
-          _voiceCallMuted = false;
-        });
-        _startVoiceCallTimeout(callId);
-        if (!await _prepareVoicePeer()) {
-          _sendVoiceCallSignal(
-              type: 'voice_call_decline',
-              targetPlayerId: fromPlayerId,
-              callId: callId);
-          await _clearVoiceCall(sendEndSignal: false);
-          return;
-        }
-        _sendVoiceCallSignal(
-            type: 'voice_call_accept',
-            targetPlayerId: fromPlayerId,
-            callId: callId);
-        return;
-      case 'voice_call_accept':
-        if (callId != _voiceCallId || fromPlayerId != _voiceCallPeerId) return;
-        if (!await _prepareVoicePeer()) {
-          await _clearVoiceCall(sendEndSignal: true);
-          return;
-        }
-        final offer = await _voicePeerConnection!.createOffer();
-        await _voicePeerConnection!.setLocalDescription(offer);
-        _sendVoiceCallSignal(
-          type: 'voice_call_offer',
-          targetPlayerId: fromPlayerId,
-          callId: callId,
-          description: offer.toMap().cast<String, dynamic>(),
-        );
-        return;
-      case 'voice_call_offer':
-        if (callId != _voiceCallId || fromPlayerId != _voiceCallPeerId) return;
-        if (_voicePeerConnection == null && !await _prepareVoicePeer()) return;
-        final description = message['description'];
-        if (description is! Map) return;
-        await _voicePeerConnection!.setRemoteDescription(RTCSessionDescription(
-          description['sdp']?.toString(),
-          description['type']?.toString(),
-        ));
-        await _applyQueuedVoiceCandidates();
-        final answer = await _voicePeerConnection!.createAnswer();
-        await _voicePeerConnection!.setLocalDescription(answer);
-        _sendVoiceCallSignal(
-          type: 'voice_call_answer',
-          targetPlayerId: fromPlayerId,
-          callId: callId,
-          description: answer.toMap().cast<String, dynamic>(),
-        );
-        return;
-      case 'voice_call_answer':
-        if (callId != _voiceCallId || fromPlayerId != _voiceCallPeerId) return;
-        final answer = message['description'];
-        if (answer is! Map || _voicePeerConnection == null) return;
-        await _voicePeerConnection!.setRemoteDescription(RTCSessionDescription(
-          answer['sdp']?.toString(),
-          answer['type']?.toString(),
-        ));
-        await _applyQueuedVoiceCandidates();
-        return;
-      case 'voice_call_ice':
-        if (callId != _voiceCallId || fromPlayerId != _voiceCallPeerId) return;
-        final candidate = message['candidate'];
-        if (candidate is! Map) return;
-        final rtcCandidate = RTCIceCandidate(
-          candidate['candidate']?.toString(),
-          candidate['sdpMid']?.toString(),
-          (candidate['sdpMLineIndex'] as num?)?.toInt(),
-        );
-        final remoteDescription =
-            await _voicePeerConnection?.getRemoteDescription();
-        if (remoteDescription == null) {
-          _queuedVoiceCandidates.add(rtcCandidate);
-        } else {
-          await _voicePeerConnection?.addCandidate(rtcCandidate);
-        }
-        return;
-      case 'voice_call_decline':
-        if (callId == _voiceCallId) {
-          await _clearVoiceCall(sendEndSignal: false);
-          _showVoiceCallMessage('$playerName declined the call.');
-        }
-        return;
-      case 'voice_call_end':
-        if (callId == _voiceCallId) {
-          await _clearVoiceCall(sendEndSignal: false);
-          if (_incomingVoiceCallDialogOpen && mounted) {
-            Navigator.of(context, rootNavigator: true).maybePop(false);
-          }
-          _showVoiceCallMessage('Voice call ended.');
-        }
-        return;
-    }
-  }
-
-  void _sendVoiceCallSignal({
-    required String type,
-    required String targetPlayerId,
-    required String callId,
-    Map<String, dynamic>? description,
-    Map<String, dynamic>? candidate,
-  }) {
-    ref.read(webSocketServiceProvider).sendVoiceCallSignal(
-          type: type,
-          targetPlayerId: targetPlayerId,
-          callId: callId,
-          description: description,
-          candidate: candidate,
-        );
-  }
-
-  Future<bool> _prepareVoicePeer() async {
-    if (_voicePeerConnection != null) return true;
-    try {
-      final stream = await navigator.mediaDevices.getUserMedia({
-        'audio': true,
-        'video': false,
-      });
-      final peer = await createPeerConnection({
-        'iceServers': [
-          {'urls': 'stun:stun.l.google.com:19302'},
-        ],
-      });
-      _voiceLocalStream = stream;
-      _voicePeerConnection = peer;
-      for (final track in stream.getAudioTracks()) {
-        await peer.addTrack(track, stream);
-      }
-      peer.onIceCandidate = (candidate) {
-        final peerId = _voiceCallPeerId;
-        final callId = _voiceCallId;
-        if (candidate.candidate == null || peerId == null || callId == null) {
-          return;
-        }
-        _sendVoiceCallSignal(
-          type: 'voice_call_ice',
-          targetPlayerId: peerId,
-          callId: callId,
-          candidate: candidate.toMap().cast<String, dynamic>(),
-        );
-      };
-      peer.onConnectionState = (connectionState) {
-        if (!mounted) return;
-        if (connectionState ==
-            RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-          _voiceCallTimeoutTimer?.cancel();
-          if (mounted) setState(() => _voiceCallConnected = true);
-        } else if (connectionState ==
-                RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-            connectionState ==
-                RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
-          unawaited(_clearVoiceCall(sendEndSignal: false));
-        }
-      };
-      return true;
-    } catch (error) {
-      _showVoiceCallMessage(
-          'Microphone access is needed for voice calls. Check your permission and try again.');
-      debugPrint('Could not start voice call media: $error');
-      return false;
-    }
-  }
-
-  Future<void> _applyQueuedVoiceCandidates() async {
-    final peer = _voicePeerConnection;
-    if (peer == null) return;
-    for (final candidate in _queuedVoiceCandidates) {
-      await peer.addCandidate(candidate);
-    }
-    _queuedVoiceCandidates.clear();
-  }
-
-  Future<void> _toggleVoiceMute() async {
-    final muted = !_voiceCallMuted;
-    for (final track
-        in _voiceLocalStream?.getAudioTracks() ?? <MediaStreamTrack>[]) {
-      track.enabled = !muted;
-    }
-    if (mounted) setState(() => _voiceCallMuted = muted);
-  }
-
-  Future<void> _endVoiceCall() => _clearVoiceCall(sendEndSignal: true);
-
-  Future<void> _clearVoiceCall({required bool sendEndSignal}) async {
-    _voiceCallTimeoutTimer?.cancel();
-    _voiceCallTimeoutTimer = null;
-    final peerId = _voiceCallPeerId;
-    final callId = _voiceCallId;
-    if (sendEndSignal && peerId != null && callId != null) {
-      _sendVoiceCallSignal(
-          type: 'voice_call_end', targetPlayerId: peerId, callId: callId);
-    }
-    final stream = _voiceLocalStream;
-    final peer = _voicePeerConnection;
-    _voicePeerConnection = null;
-    _voiceLocalStream = null;
-    _queuedVoiceCandidates.clear();
-    if (mounted) {
-      setState(() {
-        _voiceCallId = null;
-        _voiceCallPeerId = null;
-        _voiceCallPeerName = null;
-        _voiceCallConnected = false;
-        _voiceCallMuted = false;
-      });
-    }
-    if (stream != null) {
-      for (final track in stream.getTracks()) {
-        await track.stop();
-      }
-      await stream.dispose();
-    }
-    await peer?.close();
-    await peer?.dispose();
-  }
-
   void _showVoiceCallMessage(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  void _startVoiceCallTimeout(String callId) {
-    _voiceCallTimeoutTimer?.cancel();
-    _voiceCallTimeoutTimer = Timer(const Duration(seconds: 30), () {
-      if (!mounted || _voiceCallId != callId || _voiceCallConnected) return;
-      unawaited(_clearVoiceCall(sendEndSignal: true));
-      if (_incomingVoiceCallDialogOpen) {
-        Navigator.of(context, rootNavigator: true).maybePop(false);
-      }
-      _showVoiceCallMessage('No answer. The voice call was ended.');
-    });
   }
 
   void _confirmExitDialog(BuildContext context) {

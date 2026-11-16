@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
+import '../../../game/presentation/services/voice_call_service.dart';
 import 'friend_chat_dialog.dart';
 
 class FriendsPanel extends ConsumerStatefulWidget {
@@ -169,6 +170,17 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
     }
   }
 
+  Future<void> _callFriend(Map<String, dynamic> friend) async {
+    try {
+      await ref.read(voiceCallServiceProvider).startCall(
+            friend['playerId']?.toString() ?? '',
+            friend['displayName']?.toString() ?? 'Buddy',
+          );
+    } catch (error) {
+      _showMessage(error.toString().replaceFirst('Bad state: ', ''));
+    }
+  }
+
   void _showMessage(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -181,6 +193,7 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final currentVoiceCall = ref.watch(voiceCallServiceProvider).call;
     return Column(
       children: [
         Padding(
@@ -326,6 +339,40 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                         ? Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
+                                              IconButton(
+                                                tooltip:
+                                                    currentVoiceCall?.peerId ==
+                                                            friend['playerId']
+                                                                ?.toString()
+                                                        ? 'End voice call'
+                                                        : 'Call buddy',
+                                                onPressed: () {
+                                                  if (currentVoiceCall
+                                                          ?.peerId ==
+                                                      friend['playerId']
+                                                          ?.toString()) {
+                                                    ref
+                                                        .read(
+                                                            voiceCallServiceProvider)
+                                                        .endCall();
+                                                  } else {
+                                                    _callFriend(friend);
+                                                  }
+                                                },
+                                                icon: Icon(
+                                                  currentVoiceCall?.peerId ==
+                                                          friend['playerId']
+                                                              ?.toString()
+                                                      ? Icons.call_end_rounded
+                                                      : Icons.call_rounded,
+                                                  color: currentVoiceCall
+                                                              ?.peerId ==
+                                                          friend['playerId']
+                                                              ?.toString()
+                                                      ? Colors.redAccent
+                                                      : Colors.greenAccent,
+                                                ),
+                                              ),
                                               IconButton(
                                                 tooltip: 'Chat',
                                                 onPressed: () =>

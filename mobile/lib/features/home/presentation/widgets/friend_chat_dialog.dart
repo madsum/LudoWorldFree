@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
+import '../../../game/presentation/services/voice_call_service.dart';
 
 class FriendChatDialog extends ConsumerStatefulWidget {
   final String friendId;
@@ -26,7 +27,8 @@ class FriendChatDialog extends ConsumerStatefulWidget {
   }) =>
       showDialog<void>(
         context: context,
-        builder: (_) => FriendChatDialog(friendId: friendId, friendName: friendName),
+        builder: (_) =>
+            FriendChatDialog(friendId: friendId, friendName: friendName),
       );
 
   @override
@@ -66,7 +68,11 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
 
   Future<void> _loadMessages({bool silent = false}) async {
     if (_playerId == null) {
-      if (mounted) setState(() { _loading = false; _error = 'Sign in to use friend chat.'; });
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _error = 'Sign in to use friend chat.';
+        });
       return;
     }
     try {
@@ -76,15 +82,23 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
           );
       final raw = response.data is Map ? response.data['messages'] : null;
       final messages = raw is List
-          ? raw.whereType<Map>()
+          ? raw
+              .whereType<Map>()
               .map((item) => Map<String, dynamic>.from(item))
               .toList(growable: false)
           : <Map<String, dynamic>>[];
       if (!mounted) return;
-      setState(() { _messages = messages; _loading = false; _error = null; });
+      setState(() {
+        _messages = messages;
+        _loading = false;
+        _error = null;
+      });
     } catch (_) {
       if (!mounted || silent) return;
-      setState(() { _loading = false; _error = 'Could not load this conversation.'; });
+      setState(() {
+        _loading = false;
+        _error = 'Could not load this conversation.';
+      });
     }
   }
 
@@ -115,7 +129,8 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
       final message = error.response?.data is Map
           ? error.response?.data['message']?.toString()
           : null;
-      if (mounted) setState(() => _error = message ?? 'Message could not be sent.');
+      if (mounted)
+        setState(() => _error = message ?? 'Message could not be sent.');
     } catch (_) {
       if (mounted) setState(() => _error = 'Message could not be sent.');
     } finally {
@@ -123,9 +138,24 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
     }
   }
 
+  Future<void> _startVoiceCall() async {
+    try {
+      await ref
+          .read(voiceCallServiceProvider)
+          .startCall(widget.friendId, widget.friendName);
+    } catch (error) {
+      if (mounted) {
+        setState(
+            () => _error = error.toString().replaceFirst('Bad state: ', ''));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final playerId = _playerId;
+    final voiceCall = ref.watch(voiceCallServiceProvider).call;
+    final callingThisFriend = voiceCall?.peerId == widget.friendId;
     return Dialog(
       backgroundColor: const Color(0xFF102447),
       insetPadding: const EdgeInsets.all(18),
@@ -154,8 +184,24 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
                     ),
                   ),
                   IconButton(
+                    tooltip: callingThisFriend
+                        ? 'End voice call'
+                        : 'Call this buddy',
+                    onPressed: callingThisFriend
+                        ? () => ref.read(voiceCallServiceProvider).endCall()
+                        : _startVoiceCall,
+                    icon: Icon(
+                      callingThisFriend
+                          ? Icons.call_end_rounded
+                          : Icons.call_rounded,
+                      color:
+                          callingThisFriend ? Colors.redAccent : AppColors.gold,
+                    ),
+                  ),
+                  IconButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                    icon:
+                        const Icon(Icons.close_rounded, color: Colors.white70),
                   ),
                 ],
               ),
@@ -165,11 +211,13 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
               Padding(
                 padding: const EdgeInsets.all(8),
                 child: Text(_error!,
-                    style: GoogleFonts.poppins(color: Colors.orangeAccent, fontSize: 12)),
+                    style: GoogleFonts.poppins(
+                        color: Colors.orangeAccent, fontSize: 12)),
               ),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
+                  ? const Center(
+                      child: CircularProgressIndicator(color: AppColors.gold))
                   : _messages.isEmpty
                       ? Center(
                           child: Text(
@@ -185,18 +233,25 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
                             final message = _messages[index];
                             final mine = message['senderId'] == playerId;
                             return Align(
-                              alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+                              alignment: mine
+                                  ? Alignment.centerRight
+                                  : Alignment.centerLeft,
                               child: Container(
-                                constraints: const BoxConstraints(maxWidth: 290),
+                                constraints:
+                                    const BoxConstraints(maxWidth: 290),
                                 margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 9),
                                 decoration: BoxDecoration(
-                                  color: mine ? const Color(0xFF8F6511) : const Color(0xFF1B355A),
+                                  color: mine
+                                      ? const Color(0xFF8F6511)
+                                      : const Color(0xFF1B355A),
                                   borderRadius: BorderRadius.circular(14),
                                 ),
                                 child: Text(
                                   message['content']?.toString() ?? '',
-                                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 13),
+                                  style: GoogleFonts.poppins(
+                                      color: Colors.white, fontSize: 13),
                                 ),
                               ),
                             );
@@ -215,14 +270,16 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
                       maxLines: 3,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _sendMessage(),
-                      style: GoogleFonts.poppins(color: Colors.white, fontSize: 13),
+                      style: GoogleFonts.poppins(
+                          color: Colors.white, fontSize: 13),
                       decoration: InputDecoration(
                         counterText: '',
                         hintText: 'Write a message',
                         hintStyle: GoogleFonts.poppins(color: Colors.white38),
                         filled: true,
                         fillColor: const Color(0xFF091A35),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 13, vertical: 10),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(14),
                           borderSide: BorderSide.none,

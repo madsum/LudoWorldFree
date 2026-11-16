@@ -16,14 +16,17 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     private final GameWebSocketHandler gameWebSocketHandler;
     private final GameRoomWebSocketHandler gameRoomWebSocketHandler;
+    private final VoiceCallWebSocketHandler voiceCallWebSocketHandler;
     private final List<String> allowedOriginPatterns;
 
     public WebSocketConfig(
             GameWebSocketHandler gameWebSocketHandler,
             GameRoomWebSocketHandler gameRoomWebSocketHandler,
+            VoiceCallWebSocketHandler voiceCallWebSocketHandler,
             @Value("${app.cors.allowed-origins:*}") String allowedOrigins) {
         this.gameWebSocketHandler = gameWebSocketHandler;
         this.gameRoomWebSocketHandler = gameRoomWebSocketHandler;
+        this.voiceCallWebSocketHandler = voiceCallWebSocketHandler;
         this.allowedOriginPatterns = Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
                 .filter(origin -> !origin.isEmpty())
@@ -35,6 +38,8 @@ public class WebSocketConfig implements WebSocketConfigurer {
         registry.addHandler(gameWebSocketHandler, "/ws")
                 .setAllowedOriginPatterns(allowedOriginPatterns.toArray(String[]::new));
         registry.addHandler(gameRoomWebSocketHandler, "/ws/game")
+                .setAllowedOriginPatterns(allowedOriginPatterns.toArray(String[]::new));
+        registry.addHandler(voiceCallWebSocketHandler, "/ws/voice")
                 .setAllowedOriginPatterns(allowedOriginPatterns.toArray(String[]::new));
     }
 }

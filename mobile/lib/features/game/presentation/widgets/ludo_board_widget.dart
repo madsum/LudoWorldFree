@@ -19,7 +19,8 @@ class LudoBoardWidget extends StatefulWidget {
   final LudoColor? alertedPlayerColor;
   final Set<String> unavailableBellPlayerIds;
   final String? localPlayerId;
-  final ValueChanged<String>? onPlayerProfileTap;
+  final Set<String> existingBuddyOrRequestPlayerIds;
+  final ValueChanged<String>? onBuddyRequestTap;
 
   const LudoBoardWidget({
     super.key,
@@ -32,7 +33,8 @@ class LudoBoardWidget extends StatefulWidget {
     this.alertedPlayerColor,
     this.unavailableBellPlayerIds = const {},
     this.localPlayerId,
-    this.onPlayerProfileTap,
+    this.existingBuddyOrRequestPlayerIds = const {},
+    this.onBuddyRequestTap,
   });
 
   @override
@@ -274,13 +276,13 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                     clipBehavior: Clip.none,
                     children: [
                       ..._buildPawnWidgets(tileSize),
-                      ..._buildPlayerProfileHotspots(tileSize),
                       ..._buildBellWidgets(tileSize),
                       ..._buildBellAlertText(tileSize),
                       ..._buildPlayerNamePlates(tileSize),
                       ..._buildFinishedPlayerCrowns(tileSize),
                       ..._buildEliminatedPlayerSigns(tileSize),
                       ..._buildCaptureFlame(tileSize),
+                      ..._buildBuddyRequestButtons(tileSize),
                     ],
                   );
                 },
@@ -292,33 +294,71 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     );
   }
 
-  List<Widget> _buildPlayerProfileHotspots(double tileSize) {
-    final onTap = widget.onPlayerProfileTap;
+  List<Widget> _buildBuddyRequestButtons(double tileSize) {
+    final onTap = widget.onBuddyRequestTap;
     if (onTap == null) return const [];
     return widget.gameState.players
         .where((player) => !player.isBot && player.id != widget.localPlayerId)
         .map((player) {
-      final topLeft = switch (player.color) {
-        LudoColor.red => const Offset(0, 0),
-        LudoColor.green => const Offset(9, 0),
-        LudoColor.yellow => const Offset(9, 9),
-        LudoColor.blue => const Offset(0, 9),
+      final relationshipExists =
+          widget.existingBuddyOrRequestPlayerIds.contains(player.id);
+      final anchor = switch (player.color) {
+        LudoColor.red => const Alignment(-0.70, -0.70),
+        LudoColor.green => const Alignment(0.70, -0.70),
+        LudoColor.yellow => const Alignment(0.70, 0.70),
+        LudoColor.blue => const Alignment(-0.70, 0.70),
       };
-      return Positioned(
-        key: ValueKey('player_profile_area_${player.id}'),
-        left: topLeft.dx * tileSize,
-        top: topLeft.dy * tileSize,
-        width: tileSize * 6,
-        height: tileSize * 6,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => onTap(player.id),
-            borderRadius: BorderRadius.circular(tileSize * 0.7),
+      final size = tileSize * 2;
+      return Align(
+        alignment: anchor,
+        child: Padding(
+          padding: EdgeInsets.all(tileSize * 0.06),
+          child: SizedBox.square(
+            dimension: size,
             child: Semantics(
-              button: true,
-              label: 'View ${player.name} profile',
-              child: const SizedBox.expand(),
+              button: !relationshipExists,
+              label: relationshipExists
+                  ? 'Buddy request already sent or player is already a buddy'
+                  : 'Add ${player.name} as a buddy',
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: relationshipExists ? null : () => onTap(player.id),
+                  customBorder: const CircleBorder(),
+                  child: Padding(
+                    padding: EdgeInsets.all(tileSize * 0.04),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned.fill(
+                          child: Image.asset(
+                            'assets/images/add_buddy.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                        if (relationshipExists)
+                          Positioned(
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              width: tileSize * 0.58,
+                              height: tileSize * 0.58,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF00B967),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.check_rounded,
+                                color: Colors.white,
+                                size: tileSize * 0.44,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ),
