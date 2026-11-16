@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -50,9 +51,11 @@ class VoiceCallService extends ChangeNotifier {
   String? _playerId;
   bool _shouldReconnect = false;
   bool _disposed = false;
+  int _ringtoneGeneration = 0;
   MediaStream? _localStream;
   RTCPeerConnection? _peerConnection;
   final List<RTCIceCandidate> _queuedCandidates = [];
+  final AudioPlayer _ringtonePlayer = AudioPlayer();
 
   VoiceCallSession? call;
   String? lastError;
@@ -154,11 +157,13 @@ class VoiceCallService extends ChangeNotifier {
     notifyListeners();
     _send('voice_call_request', peerId, callId);
     _startTimeout(callId);
+    unawaited(_startRingtone());
   }
 
   Future<void> acceptIncomingCall() async {
     final current = call;
     if (current == null || current.phase != VoiceCallPhase.incoming) return;
+    await _stopRingtone();
     call = current.copyWith(phase: VoiceCallPhase.connecting);
     notifyListeners();
     if (!await _preparePeer()) {
@@ -241,6 +246,7 @@ class VoiceCallService extends ChangeNotifier {
         phase: VoiceCallPhase.incoming,
       );
       notifyListeners();
+      unawaited(_startRingtone());
       return;
     }
 
@@ -252,6 +258,7 @@ class VoiceCallService extends ChangeNotifier {
     }
     switch (type) {
       case 'voice_call_accept':
+        await _stopRingtone();
         if (!await _preparePeer()) {
           await endCall();
           lastError = 'Microphone access is needed for voice calls.';
@@ -344,6 +351,7 @@ class VoiceCallService extends ChangeNotifier {
           final current = call;
           if (current != null) {
             call = current.copyWith(phase: VoiceCallPhase.connected);
+            unawaited(_stopRingtone());
             notifyListeners();
           }
         } else if (state ==
@@ -382,6 +390,7 @@ class VoiceCallService extends ChangeNotifier {
   Future<void> _clearCall() async {
     _callTimeout?.cancel();
     _callTimeout = null;
+    await _stopRingtone();
     final peer = _peerConnection;
     final stream = _localStream;
     _peerConnection = null;
@@ -399,12 +408,38 @@ class VoiceCallService extends ChangeNotifier {
     await peer?.dispose();
   }
 
+  Future<void> _startRingtone() async {
+    final generation = ++_ringtoneGeneration;
+    try {
+      await _ringtonePlayer.setReleaseMode(ReleaseMode.loop);
+      if (generation != _ringtoneGeneration || _disposed) return;
+      await _ringtonePlayer.play(AssetSource('audio/ring.mp3'));
+      if (generation != _ringtoneGeneration || _disposed) {
+        await _ringtonePlayer.stop();
+      }
+    } catch (error) {
+      debugPrint('Could not play the voice-call ringtone: $error');
+    }
+  }
+
+  Future<void> _stopRingtone() async {
+    _ringtoneGeneration++;
+    try {
+      await _ringtonePlayer.stop();
+    } catch (error) {
+      debugPrint('Could not stop the voice-call ringtone: $error');
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;
+    _ringtoneGeneration++;
     _shouldReconnect = false;
     _reconnectTimer?.cancel();
     _callTimeout?.cancel();
+    unawaited(_ringtonePlayer.stop());
+    unawaited(_ringtonePlayer.dispose());
     unawaited(_subscription?.cancel());
     unawaited(_channel?.sink.close());
     unawaited(_peerConnection?.close());
