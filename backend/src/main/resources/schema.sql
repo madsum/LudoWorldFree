@@ -237,6 +237,7 @@ CREATE TABLE IF NOT EXISTS online_match_chat_events (
     room_id VARCHAR(64) NOT NULL,
     player_id UUID NOT NULL,
     message_text VARCHAR(200) NOT NULL,
+    event_type VARCHAR(16) NOT NULL DEFAULT 'MESSAGE',
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

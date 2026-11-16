@@ -303,12 +303,12 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
       final relationshipExists =
           widget.existingBuddyOrRequestPlayerIds.contains(player.id);
       final anchor = switch (player.color) {
-        LudoColor.red => const Alignment(-0.70, -0.70),
-        LudoColor.green => const Alignment(0.70, -0.70),
-        LudoColor.yellow => const Alignment(0.70, 0.70),
-        LudoColor.blue => const Alignment(-0.70, 0.70),
+        LudoColor.red => const Alignment(-0.93, -0.83),
+        LudoColor.green => const Alignment(0.93, -0.83),
+        LudoColor.yellow => const Alignment(0.93, 0.83),
+        LudoColor.blue => const Alignment(-0.93, 0.83),
       };
-      final size = tileSize * 2;
+      final size = tileSize * 0.8;
       return Align(
         alignment: anchor,
         child: Padding(
@@ -341,8 +341,8 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                             right: 0,
                             bottom: 0,
                             child: Container(
-                              width: tileSize * 0.58,
-                              height: tileSize * 0.58,
+                              width: size * 0.29,
+                              height: size * 0.29,
                               decoration: const BoxDecoration(
                                 color: Color(0xFF00B967),
                                 shape: BoxShape.circle,
@@ -350,7 +350,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                               child: Icon(
                                 Icons.check_rounded,
                                 color: Colors.white,
-                                size: tileSize * 0.44,
+                                size: size * 0.22,
                               ),
                             ),
                           ),

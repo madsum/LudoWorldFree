@@ -131,6 +131,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
             case "forfeit_disconnected" -> forfeitDisconnectedPlayer(
                     session, localRoom, roomId, playerId, payload);
             case "chat" -> relayChatMessage(session, localRoom, playerId, payload);
+            case "chat_typing" -> relayChatTyping(session, localRoom, playerId, payload);
             case "bell_alert" -> relayBellAlert(session, localRoom, playerId, payload);
             case "rematch_request" -> requestRematch(session, localRoom, roomId, playerId);
             case "rematch_response" -> respondToRematch(
@@ -174,6 +175,18 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
             LocalConnection sender = localRoom.sessions.get(playerId);
             if (sender == null || sender.session != session) return;
             onlineMatchChatService.save(localRoom.id, playerId, text);
+            relayChatEvents(localRoom);
+        }
+    }
+
+    private void relayChatTyping(WebSocketSession session, LocalRoom localRoom,
+                                 UUID playerId, JsonNode payload) {
+        boolean isTyping = payload.path("isTyping").asBoolean(false);
+        synchronized (localRoom) {
+            LocalConnection sender = localRoom.sessions.get(playerId);
+            if (sender == null || sender.session != session) return;
+            onlineMatchChatService.saveTypingStatus(localRoom.id, playerId, isTyping);
+            relayChatEvents(localRoom);
         }
     }
 
@@ -395,7 +408,15 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                         sendState(connection.session, event.getSenderId(), event.getStateJson());
                     }
                 }
-                relayChatEvents(localRoom);
+            }
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${game.chat.poll-interval-ms:100}")
+    public void relaySharedChatEvents() {
+        for (LocalRoom localRoom : new ArrayList<>(localRooms.values())) {
+            synchronized (localRoom) {
+                if (!localRoom.sessions.isEmpty()) relayChatEvents(localRoom);
             }
         }
     }
@@ -405,6 +426,13 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                 localRoom.id, localRoom.lastChatEventId);
         for (OnlineMatchChatService.ChatEvent event : events) {
             localRoom.lastChatEventId = event.id();
+            if (event.eventType().startsWith("TYPING_")) {
+                broadcast(localRoom, Map.of(
+                        "type", "chat_typing",
+                        "playerId", event.playerId().toString(),
+                        "isTyping", "TYPING_START".equals(event.eventType())));
+                continue;
+            }
             Map<String, Object> chat = Map.of(
                     "type", "chat",
                     "playerId", event.playerId().toString(),

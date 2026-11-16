@@ -194,6 +194,11 @@ class WebSocketService {
     _send({'type': 'chat', 'text': message});
   }
 
+  void sendChatTyping(bool isTyping) {
+    if (!isConnected) return;
+    _send({'type': 'chat_typing', 'isTyping': isTyping});
+  }
+
   void sendBellAlert(String targetPlayerId) {
     if (!isConnected || targetPlayerId.isEmpty) return;
     _send({'type': 'bell_alert', 'targetPlayerId': targetPlayerId});

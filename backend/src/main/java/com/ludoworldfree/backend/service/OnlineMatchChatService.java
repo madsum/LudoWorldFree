@@ -24,6 +24,14 @@ public class OnlineMatchChatService {
         return toChatEvent(event);
     }
 
+    @Transactional
+    public ChatEvent saveTypingStatus(String roomId, UUID playerId, boolean isTyping) {
+        String eventType = isTyping ? "TYPING_START" : "TYPING_STOP";
+        OnlineMatchChatEvent event = repository.saveAndFlush(
+                new OnlineMatchChatEvent(roomId, playerId, "", eventType));
+        return toChatEvent(event);
+    }
+
     @Transactional(readOnly = true)
     public List<ChatEvent> after(String roomId, long eventId) {
         return repository.findByRoomIdAndIdGreaterThanOrderByIdAsc(roomId, eventId)
@@ -32,8 +40,9 @@ public class OnlineMatchChatService {
 
     private static ChatEvent toChatEvent(OnlineMatchChatEvent event) {
         return new ChatEvent(event.getId(), event.getPlayerId(), event.getText(),
-                event.getCreatedAt());
+                event.getEventType(), event.getCreatedAt());
     }
 
-    public record ChatEvent(long id, UUID playerId, String text, Instant createdAt) {}
+    public record ChatEvent(long id, UUID playerId, String text, String eventType,
+                            Instant createdAt) {}
 }

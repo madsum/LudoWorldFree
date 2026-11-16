@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -67,6 +69,45 @@ class OnlineChatButton extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+        ),
+      );
+}
+
+class OnlineChatTypingIndicator extends StatelessWidget {
+  const OnlineChatTypingIndicator({super.key});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        label: 'Your opponent is typing',
+        child: Container(
+          height: 34,
+          margin: const EdgeInsets.only(right: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 7),
+          decoration: BoxDecoration(
+            color: const Color(0xFF17243B),
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(color: Colors.white, width: 1.5),
+            boxShadow: const [
+              BoxShadow(
+                  color: Colors.black45, blurRadius: 5, offset: Offset(0, 2)),
+            ],
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.edit_rounded, color: Colors.white, size: 15),
+              SizedBox(width: 2),
+              Text(
+                '...',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -147,6 +188,7 @@ class OnlineChatSheet extends StatefulWidget {
     required this.localPlayerId,
     required this.playerNames,
     required this.onSend,
+    this.onTypingChanged,
     required this.onVoiceCallPressed,
   });
 
@@ -154,6 +196,7 @@ class OnlineChatSheet extends StatefulWidget {
   final String localPlayerId;
   final Map<String, String> playerNames;
   final ValueChanged<String> onSend;
+  final ValueChanged<bool>? onTypingChanged;
   final VoidCallback onVoiceCallPressed;
 
   static Future<void> show(
@@ -162,6 +205,7 @@ class OnlineChatSheet extends StatefulWidget {
     required String localPlayerId,
     required Map<String, String> playerNames,
     required ValueChanged<String> onSend,
+    ValueChanged<bool>? onTypingChanged,
     required VoidCallback onVoiceCallPressed,
   }) {
     return showModalBottomSheet<void>(
@@ -174,6 +218,7 @@ class OnlineChatSheet extends StatefulWidget {
         localPlayerId: localPlayerId,
         playerNames: playerNames,
         onSend: onSend,
+        onTypingChanged: onTypingChanged,
         onVoiceCallPressed: onVoiceCallPressed,
       ),
     );
@@ -187,9 +232,15 @@ class _OnlineChatSheetState extends State<OnlineChatSheet> {
   final _textController = TextEditingController();
   final _inputFocusNode = FocusNode();
   bool _showPresets = true;
+  bool _isTyping = false;
+  Timer? _typingIdleTimer;
+  Timer? _typingRefreshTimer;
 
   @override
   void dispose() {
+    _typingIdleTimer?.cancel();
+    _typingRefreshTimer?.cancel();
+    if (_isTyping) widget.onTypingChanged?.call(false);
     _textController.dispose();
     _inputFocusNode.dispose();
     super.dispose();
@@ -198,6 +249,7 @@ class _OnlineChatSheetState extends State<OnlineChatSheet> {
   void _send(String text) {
     final message = text.trim();
     if (message.isEmpty || message.length > 200) return;
+    _stopTyping();
     widget.onSend(message);
     _textController.clear();
     _inputFocusNode.unfocus();
@@ -207,8 +259,37 @@ class _OnlineChatSheetState extends State<OnlineChatSheet> {
   void _sendPreset(String text) {
     final message = text.trim();
     if (message.isEmpty) return;
+    _stopTyping();
     widget.onSend(message);
     Navigator.of(context).pop();
+  }
+
+  void _handleTypingChanged(String value) {
+    final hasText = value.trim().isNotEmpty;
+    if (!hasText) {
+      _stopTyping();
+      return;
+    }
+    if (!_isTyping) {
+      _isTyping = true;
+      widget.onTypingChanged?.call(true);
+      _typingRefreshTimer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => widget.onTypingChanged?.call(true),
+      );
+    }
+    _typingIdleTimer?.cancel();
+    _typingIdleTimer = Timer(const Duration(seconds: 2), _stopTyping);
+  }
+
+  void _stopTyping() {
+    _typingIdleTimer?.cancel();
+    _typingIdleTimer = null;
+    _typingRefreshTimer?.cancel();
+    _typingRefreshTimer = null;
+    if (!_isTyping) return;
+    _isTyping = false;
+    widget.onTypingChanged?.call(false);
   }
 
   @override
@@ -431,6 +512,7 @@ class _OnlineChatSheetState extends State<OnlineChatSheet> {
                   maxLength: 200,
                   textInputAction: TextInputAction.send,
                   onSubmitted: _send,
+                  onChanged: _handleTypingChanged,
                   decoration: InputDecoration(
                     hintText: 'Write a message…',
                     hintStyle: const TextStyle(color: Color(0xFF667085)),

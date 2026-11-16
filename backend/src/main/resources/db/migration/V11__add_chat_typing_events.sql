@@ -1,0 +1,2 @@
+ALTER TABLE online_match_chat_events
+    ADD COLUMN IF NOT EXISTS event_type VARCHAR(16) NOT NULL DEFAULT 'MESSAGE';

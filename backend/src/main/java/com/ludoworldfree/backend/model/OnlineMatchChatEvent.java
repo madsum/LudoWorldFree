@@ -26,6 +26,9 @@ public class OnlineMatchChatEvent {
     @Column(name = "message_text", nullable = false, length = 200)
     private String text;
 
+    @Column(name = "event_type", nullable = false, length = 16)
+    private String eventType = "MESSAGE";
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -37,9 +40,16 @@ public class OnlineMatchChatEvent {
         this.text = text;
     }
 
+    public OnlineMatchChatEvent(String roomId, UUID playerId, String text,
+                                String eventType) {
+        this(roomId, playerId, text);
+        this.eventType = eventType;
+    }
+
     public Long getId() { return id; }
     public String getRoomId() { return roomId; }
     public UUID getPlayerId() { return playerId; }
     public String getText() { return text; }
+    public String getEventType() { return eventType; }
     public Instant getCreatedAt() { return createdAt; }
 }

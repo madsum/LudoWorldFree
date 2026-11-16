@@ -51,6 +51,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
       ValueNotifier<List<OnlineChatMessage>>(<OnlineChatMessage>[]);
   OnlineChatMessage? _latestChatMessage;
   Timer? _chatBubbleTimer;
+  String? _typingPlayerId;
+  Timer? _typingIndicatorTimer;
   Timer? _bellAlertTimer;
   Timer? _opponentDisconnectTimer;
   Timer? _buddyRequestPollTimer;
@@ -124,6 +126,22 @@ class _GameScreenState extends ConsumerState<GameScreen>
               _latestChatMessage = null;
             });
           });
+          if (mounted) setState(() {});
+        } else if (message['type'] == 'chat_typing' &&
+            message['playerId'] is String &&
+            message['playerId'] != gameNotifier.onlineLocalPlayerId) {
+          final playerId = message['playerId'] as String;
+          final isTyping = message['isTyping'] == true;
+          _typingIndicatorTimer?.cancel();
+          if (isTyping) {
+            _typingPlayerId = playerId;
+            _typingIndicatorTimer = Timer(const Duration(seconds: 3), () {
+              if (!mounted || _typingPlayerId != playerId) return;
+              setState(() => _typingPlayerId = null);
+            });
+          } else if (_typingPlayerId == playerId) {
+            _typingPlayerId = null;
+          }
           if (mounted) setState(() {});
         } else if (message['type'] == 'bell_alert' &&
             message['targetPlayerId'] == gameNotifier.onlineLocalPlayerId) {
@@ -457,6 +475,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _voiceCallService.removeListener(_handleVoiceCallChanged);
     _buddyRequestPollTimer?.cancel();
     _chatBubbleTimer?.cancel();
+    _typingIndicatorTimer?.cancel();
     _bellAlertTimer?.cancel();
     _opponentDisconnectTimer?.cancel();
     unawaited(_bellAudioPlayer.dispose());
@@ -485,12 +504,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (sender.isEmpty || !mounted) return;
 
     unawaited(_vibrateForBellAlert());
-    unawaited(_bellAudioPlayer
-        .stop()
-        .then((_) => _bellAudioPlayer.play(AssetSource('audio/play-fast.mp3')))
-        .catchError((error) {
-      debugPrint('Could not play the bell alert: $error');
-    }));
+    _playBellAlertSound();
     final localPlayer = gameState.players.where(
       (player) =>
           player.id ==
@@ -513,6 +527,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
+  void _playBellAlertSound() {
+    unawaited(_bellAudioPlayer
+        .stop()
+        .then((_) => _bellAudioPlayer.play(AssetSource('audio/ring.mp3')))
+        .catchError((error) {
+      debugPrint('Could not play the bell alert: $error');
+    }));
+  }
+
   void _ringPlayerBell(LudoColor playerColor) {
     final gameNotifier = ref.read(gameControllerProvider.notifier);
     final gameState = ref.read(gameControllerProvider);
@@ -526,6 +549,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return;
     }
     ref.read(webSocketServiceProvider).sendBellAlert(target.first.id);
+    _playBellAlertSound();
   }
 
   String? _resolveDisconnectedPlayerId(
@@ -1034,18 +1058,25 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
                 if (gameNotifier.isOnlineMode && !gameState.isGameOver)
                   Positioned(
-                    left: 8,
-                    bottom: isTwoPlayerMode ? 132 : 72,
+                    right: 8,
+                    bottom: isTwoPlayerMode ? 66 : 57,
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        OnlineChatButton(
-                          onPressed: () => _openOnlineChat(context),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_typingPlayerId != null)
+                              const OnlineChatTypingIndicator(),
+                            OnlineChatButton(
+                              onPressed: () => _openOnlineChat(context),
+                            ),
+                          ],
                         ),
                         if (_latestChatMessage != null)
                           Positioned(
-                            left: 0,
-                            bottom: 0,
+                            right: 0,
+                            bottom: 54,
                             child: IgnorePointer(
                               child: OnlineChatMessageBubble(
                                 text: _latestChatMessage!.text,
@@ -1212,6 +1243,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         for (final player in gameState.players) player.id: player.name
       },
       onSend: ref.read(webSocketServiceProvider).sendChatMessage,
+      onTypingChanged: ref.read(webSocketServiceProvider).sendChatTyping,
       onVoiceCallPressed: () =>
           _chooseVoiceCallTarget(gameState.players, gameNotifier),
     );
