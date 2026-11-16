@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ludoworldfree.backend.service.MatchmakingService;
 import com.ludoworldfree.backend.service.MatchmakingService.RoomSnapshot;
 import com.ludoworldfree.backend.model.OnlineMatchStateEvent;
+import com.ludoworldfree.backend.model.Friendship;
+import com.ludoworldfree.backend.repository.FriendshipRepository;
 import com.ludoworldfree.backend.util.PlayerIdResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,12 +36,15 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper;
     private final MatchmakingService matchmakingService;
+    private final FriendshipRepository friendshipRepository;
     private final Map<String, LocalRoom> localRooms = new ConcurrentHashMap<>();
 
     public GameRoomWebSocketHandler(ObjectMapper objectMapper,
-                                    MatchmakingService matchmakingService) {
+                                    MatchmakingService matchmakingService,
+                                    FriendshipRepository friendshipRepository) {
         this.objectMapper = objectMapper;
         this.matchmakingService = matchmakingService;
+        this.friendshipRepository = friendshipRepository;
     }
 
     @Override
@@ -128,6 +133,11 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                     session, localRoom, roomId, playerId, payload);
             case "chat" -> relayChatMessage(session, localRoom, playerId, payload);
             case "bell_alert" -> relayBellAlert(session, localRoom, playerId, payload);
+            case "voice_call_request" -> relayVoiceCallRequest(
+                    session, localRoom, playerId, payload);
+            case "voice_call_accept", "voice_call_decline", "voice_call_offer",
+                    "voice_call_answer", "voice_call_ice", "voice_call_end" ->
+                    relayVoiceCallSignal(session, localRoom, playerId, payload, type);
             case "rematch_request" -> requestRematch(session, localRoom, roomId, playerId);
             case "rematch_response" -> respondToRematch(
                     session, localRoom, roomId, playerId, payload);
@@ -178,6 +188,70 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                 send(connection.session, chat);
             }
         }
+    }
+
+    private void relayVoiceCallRequest(WebSocketSession session, LocalRoom localRoom,
+                                       UUID playerId, JsonNode payload) {
+        UUID targetPlayerId = parsePlayerId(payload.path("targetPlayerId").asText(null));
+        String callId = payload.path("callId").asText("");
+        if (targetPlayerId == null || targetPlayerId.equals(playerId)
+                || callId.isBlank() || !areAcceptedBuddies(playerId, targetPlayerId)) {
+            sendError(session, "VOICE_CALL_BUDDY_REQUIRED",
+                    "Voice calls are available between buddies only.");
+            return;
+        }
+        synchronized (localRoom) {
+            LocalConnection caller = localRoom.sessions.get(playerId);
+            LocalConnection recipient = localRoom.sessions.get(targetPlayerId);
+            if (caller == null || caller.session != session || recipient == null) {
+                sendError(session, "VOICE_CALL_PLAYER_UNAVAILABLE",
+                        "That player is no longer in this game.");
+                return;
+            }
+            send(recipient.session, Map.of(
+                    "type", "voice_call_incoming",
+                    "fromPlayerId", playerId.toString(),
+                    "callId", callId));
+        }
+    }
+
+    private void relayVoiceCallSignal(WebSocketSession session, LocalRoom localRoom,
+                                     UUID playerId, JsonNode payload, String type) {
+        UUID targetPlayerId = parsePlayerId(payload.path("targetPlayerId").asText(null));
+        String callId = payload.path("callId").asText("");
+        if (targetPlayerId == null || targetPlayerId.equals(playerId)
+                || callId.isBlank() || !areAcceptedBuddies(playerId, targetPlayerId)) {
+            sendError(session, "VOICE_CALL_BUDDY_REQUIRED",
+                    "Voice calls are available between buddies only.");
+            return;
+        }
+        synchronized (localRoom) {
+            LocalConnection sender = localRoom.sessions.get(playerId);
+            LocalConnection recipient = localRoom.sessions.get(targetPlayerId);
+            if (sender == null || sender.session != session || recipient == null) return;
+            Map<String, Object> message = new java.util.LinkedHashMap<>();
+            message.put("type", type);
+            message.put("fromPlayerId", playerId.toString());
+            message.put("callId", callId);
+            if (payload.has("description")) {
+                message.put("description", objectMapper.convertValue(
+                        payload.get("description"), Map.class));
+            }
+            if (payload.has("candidate")) {
+                message.put("candidate", objectMapper.convertValue(
+                        payload.get("candidate"), Map.class));
+            }
+            send(recipient.session, message);
+        }
+    }
+
+    private boolean areAcceptedBuddies(UUID firstPlayerId, UUID secondPlayerId) {
+        return friendshipRepository
+                .findByRequesterIdAndAddresseeId(firstPlayerId, secondPlayerId)
+                .or(() -> friendshipRepository
+                        .findByRequesterIdAndAddresseeId(secondPlayerId, firstPlayerId))
+                .map(friendship -> friendship.getStatus() == Friendship.Status.ACCEPTED)
+                .orElse(false);
     }
 
     private void relayBellAlert(WebSocketSession session, LocalRoom localRoom,

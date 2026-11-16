@@ -52,6 +52,31 @@ public class FriendshipController {
         return Map.of("entries", entries);
     }
 
+    @GetMapping("/incoming-requests")
+    public Map<String, Object> incomingRequests(
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId) {
+        UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
+        List<Map<String, Object>> entries = new ArrayList<>();
+        for (Friendship friendship : friendshipRepository
+                .findAllByRequesterIdOrAddresseeId(playerId, playerId)) {
+            if (!friendship.getAddresseeId().equals(playerId)
+                    || friendship.getStatus() != Friendship.Status.PENDING) {
+                continue;
+            }
+            PlayerProfile profile = profileRepository
+                    .findByUserId(friendship.getRequesterId()).orElse(null);
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id", friendship.getId().toString());
+            entry.put("playerId", friendship.getRequesterId().toString());
+            entry.put("displayName", profile == null ? "Player" : profile.getDisplayName());
+            entry.put("avatarUrl", profile == null ? null : profile.getAvatarUrl());
+            entry.put("countryFlag", profile == null ? "🌐" : profile.getCountryFlag());
+            entry.put("status", friendship.getStatus().name());
+            entries.add(entry);
+        }
+        return Map.of("entries", entries);
+    }
+
     @PostMapping("/requests")
     @Transactional
     public Map<String, Object> sendRequest(

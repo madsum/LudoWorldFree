@@ -28,7 +28,7 @@ class PlayerBuddyProfileDialog extends ConsumerStatefulWidget {
 class _PlayerBuddyProfileDialogState
     extends ConsumerState<PlayerBuddyProfileDialog> {
   Map<String, dynamic>? _relationship;
-  bool _loading = true;
+  bool _loading = false;
   bool _saving = false;
   String? _error;
 
@@ -164,6 +164,13 @@ class _PlayerBuddyProfileDialogState
     final incoming =
         status == 'PENDING' && relationship?['direction'] == 'INCOMING';
     final accepted = status == 'ACCEPTED';
+    final relationshipHint = incoming
+        ? 'They already sent you a buddy request.'
+        : accepted
+            ? 'You are buddies. Start a chat any time.'
+            : status == 'PENDING'
+                ? 'Your buddy request is waiting for a reply.'
+                : 'Add this player to your buddies to chat later.';
 
     return Dialog(
       backgroundColor: const Color(0xFF102447),
@@ -201,6 +208,12 @@ class _PlayerBuddyProfileDialogState
             Text('${widget.player.countryFlag}  ${widget.player.country}',
                 style:
                     GoogleFonts.poppins(color: Colors.white60, fontSize: 12)),
+            const SizedBox(height: 8),
+            Text(
+              relationshipHint,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+            ),
             const SizedBox(height: 20),
             if (_loading)
               const CircularProgressIndicator(color: AppColors.gold)
@@ -245,7 +258,7 @@ class _PlayerBuddyProfileDialogState
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.person_add_alt_1_rounded),
-                label: const Text('ASK TO BE BUDDIES'),
+                label: const Text('ADD BUDDY'),
               ),
           ],
         ),

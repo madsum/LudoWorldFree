@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,7 @@ import '../../../config/ad_config.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/network/websocket_service.dart';
+import '../../../core/network/api_client.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
 import '../../../core/ads/rewarded_ad_service.dart';
 import '../../../shared/widgets/flying_coin_overlay.dart';
@@ -26,6 +28,7 @@ import 'widgets/lobby_header_bar.dart';
 import 'widgets/online_matchmaking_dialog.dart';
 import 'widgets/daily_bonus_dialog.dart';
 import 'widgets/social_hub_dialog.dart';
+import 'widgets/incoming_buddy_request_dialog.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -38,11 +41,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   late final ProviderSubscription<AuthState> _authSubscription;
   Timer? _dailyBonusStartupTimer;
   Timer? _dailyBonusStartupPoll;
+  Timer? _buddyRequestPollTimer;
   int _currentNavIndex = 0;
   bool _isClaimingReward = false;
   bool _isClaimingDailyBonus = false;
   bool _dailyBonusDialogShowing = false;
   String? _dailyBonusPopupPlayerId;
+  String? _buddyRequestPollPlayerId;
+  bool _buddyRequestPollInFlight = false;
+  bool _buddyRequestDialogShowing = false;
+  final Set<String> _seenBuddyRequestIds = <String>{};
+  final List<Map<String, dynamic>> _pendingBuddyRequests = [];
   final GlobalKey _walletKey = GlobalKey();
 
   @override
@@ -68,15 +77,98 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final user = next.user;
     if (user == null) {
       _dailyBonusStartupTimer?.cancel();
+      _buddyRequestPollTimer?.cancel();
+      _buddyRequestPollPlayerId = null;
+      _seenBuddyRequestIds.clear();
+      _pendingBuddyRequests.clear();
       _dailyBonusPopupPlayerId = null;
       return;
     }
+    _startBuddyRequestPolling(user.id);
     _dailyBonusStartupPoll?.cancel();
     _dailyBonusStartupPoll = null;
     if (_dailyBonusPopupPlayerId == user.id) return;
 
     _dailyBonusPopupPlayerId = user.id;
     _queueDailyBonusCheck(user.id);
+  }
+
+  void _startBuddyRequestPolling(String playerId) {
+    if (_buddyRequestPollPlayerId == playerId) return;
+    _buddyRequestPollTimer?.cancel();
+    _buddyRequestPollPlayerId = playerId;
+    _seenBuddyRequestIds.clear();
+    _pendingBuddyRequests.clear();
+    unawaited(Future<void>.delayed(
+      const Duration(seconds: 1),
+      () => _pollIncomingBuddyRequests(playerId),
+    ));
+    _buddyRequestPollTimer = Timer.periodic(
+      const Duration(seconds: 4),
+      (_) => unawaited(_pollIncomingBuddyRequests(playerId)),
+    );
+  }
+
+  Future<void> _pollIncomingBuddyRequests(String playerId) async {
+    if (_buddyRequestPollInFlight ||
+        !mounted ||
+        ref.read(authControllerProvider).user?.id != playerId ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    _buddyRequestPollInFlight = true;
+    try {
+      final response = await ref.read(apiClientProvider).get(
+            '/friends/incoming-requests',
+            options: Options(headers: {'X-Player-ID': playerId}),
+          );
+      final rawEntries = response.data is Map ? response.data['entries'] : null;
+      if (rawEntries is List) {
+        final activeRequestIds = <String>{};
+        for (final raw in rawEntries.whereType<Map>()) {
+          final request = Map<String, dynamic>.from(raw);
+          final requestId = request['id']?.toString();
+          if (requestId != null) activeRequestIds.add(requestId);
+          if (requestId != null && _seenBuddyRequestIds.add(requestId)) {
+            _pendingBuddyRequests.add(request);
+          }
+        }
+        _pendingBuddyRequests.removeWhere(
+          (request) => !activeRequestIds.contains(request['id']?.toString()),
+        );
+      }
+    } catch (_) {
+      // Keep the lobby usable during transient API failures; the next poll retries.
+    } finally {
+      _buddyRequestPollInFlight = false;
+    }
+    _showNextBuddyRequest();
+  }
+
+  Future<void> _showNextBuddyRequest() async {
+    if (!mounted ||
+        _buddyRequestDialogShowing ||
+        _dailyBonusDialogShowing ||
+        _pendingBuddyRequests.isEmpty ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    final request = _pendingBuddyRequests.removeAt(0);
+    _buddyRequestDialogShowing = true;
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => IncomingBuddyRequestDialog(request: request),
+    );
+    _buddyRequestDialogShowing = false;
+    if (!mounted) return;
+    if (accepted == true) {
+      final name = request['displayName']?.toString() ?? 'Player';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('You and $name are buddies now.')),
+      );
+    }
+    _showNextBuddyRequest();
   }
 
   void _waitForStartupUser() {
@@ -188,7 +280,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onClaim: _watchAdAndClaimDailyBonus,
       ),
     ).then((result) async {
-      _dailyBonusDialogShowing = false;
       if (mounted && result?.success == true) {
         final doubleReward = await _showDailyBonusDoubleOffer(result!);
         final wasDoubled =
@@ -212,6 +303,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         );
       }
+      _dailyBonusDialogShowing = false;
+      _showNextBuddyRequest();
     });
   }
 
@@ -939,6 +1032,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void dispose() {
     _dailyBonusStartupTimer?.cancel();
     _dailyBonusStartupPoll?.cancel();
+    _buddyRequestPollTimer?.cancel();
     _authSubscription.close();
     super.dispose();
   }

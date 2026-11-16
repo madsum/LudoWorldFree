@@ -147,12 +147,14 @@ class OnlineChatSheet extends StatefulWidget {
     required this.localPlayerId,
     required this.playerNames,
     required this.onSend,
+    required this.onVoiceCallPressed,
   });
 
   final ValueListenable<List<OnlineChatMessage>> messages;
   final String localPlayerId;
   final Map<String, String> playerNames;
   final ValueChanged<String> onSend;
+  final VoidCallback onVoiceCallPressed;
 
   static Future<void> show(
     BuildContext context, {
@@ -160,6 +162,7 @@ class OnlineChatSheet extends StatefulWidget {
     required String localPlayerId,
     required Map<String, String> playerNames,
     required ValueChanged<String> onSend,
+    required VoidCallback onVoiceCallPressed,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -171,6 +174,7 @@ class OnlineChatSheet extends StatefulWidget {
         localPlayerId: localPlayerId,
         playerNames: playerNames,
         onSend: onSend,
+        onVoiceCallPressed: onVoiceCallPressed,
       ),
     );
   }
@@ -263,6 +267,12 @@ class _OnlineChatSheetState extends State<OnlineChatSheet> {
                         ],
                       ),
                     ),
+                  ),
+                  IconButton(
+                    onPressed: widget.onVoiceCallPressed,
+                    tooltip: 'Voice call a buddy',
+                    icon: const Icon(Icons.call_rounded,
+                        color: Colors.white, size: 23),
                   ),
                   Material(
                     color: const Color(0xFFE31B23),

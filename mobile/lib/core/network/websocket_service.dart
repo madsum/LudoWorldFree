@@ -194,6 +194,23 @@ class WebSocketService {
     _send({'type': 'chat', 'text': message});
   }
 
+  void sendVoiceCallSignal({
+    required String type,
+    required String targetPlayerId,
+    required String callId,
+    Map<String, dynamic>? description,
+    Map<String, dynamic>? candidate,
+  }) {
+    if (!isConnected || targetPlayerId.isEmpty || callId.isEmpty) return;
+    _send({
+      'type': type,
+      'targetPlayerId': targetPlayerId,
+      'callId': callId,
+      if (description != null) 'description': description,
+      if (candidate != null) 'candidate': candidate,
+    });
+  }
+
   void sendBellAlert(String targetPlayerId) {
     if (!isConnected || targetPlayerId.isEmpty) return;
     _send({'type': 'bell_alert', 'targetPlayerId': targetPlayerId});

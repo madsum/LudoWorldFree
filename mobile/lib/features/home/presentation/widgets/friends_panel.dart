@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,15 +23,22 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
   bool _loading = true;
   bool _submitting = false;
   String? _error;
+  Timer? _refreshTimer;
+  bool _requestInFlight = false;
 
   @override
   void initState() {
     super.initState();
     _loadFriends();
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 4),
+      (_) => _loadFriends(),
+    );
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _usernameController.dispose();
     super.dispose();
   }
@@ -41,6 +50,7 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
       );
 
   Future<void> _loadFriends() async {
+    if (_requestInFlight) return;
     final playerId = _playerId;
     if (playerId == null) {
       if (mounted) {
@@ -51,6 +61,7 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
       }
       return;
     }
+    _requestInFlight = true;
     try {
       final response = await ref.read(apiClientProvider).get(
             '/friends',
@@ -76,6 +87,8 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
         _loading = false;
         _error = 'Could not load your friends.';
       });
+    } finally {
+      _requestInFlight = false;
     }
   }
 

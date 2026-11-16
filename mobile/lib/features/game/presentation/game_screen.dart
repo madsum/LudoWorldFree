@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:vibration/vibration.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
@@ -26,6 +27,7 @@ import 'widgets/online_chat_panel.dart';
 import 'widgets/player_info_card.dart';
 import '../../home/presentation/widgets/player_buddy_profile_dialog.dart';
 import 'widgets/victory_dialog.dart';
+import '../../home/presentation/widgets/incoming_buddy_request_dialog.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   const GameScreen({super.key});
@@ -51,8 +53,23 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Timer? _chatBubbleTimer;
   Timer? _bellAlertTimer;
   Timer? _opponentDisconnectTimer;
+  Timer? _buddyRequestPollTimer;
+  Timer? _voiceCallTimeoutTimer;
+  bool _buddyRequestPollInFlight = false;
+  bool _buddyRequestDialogShowing = false;
+  final Set<String> _seenBuddyRequestIds = <String>{};
+  final List<Map<String, dynamic>> _pendingBuddyRequests = [];
   bool _onlineStateSyncQueued = false;
   final AudioPlayer _bellAudioPlayer = AudioPlayer();
+  RTCPeerConnection? _voicePeerConnection;
+  MediaStream? _voiceLocalStream;
+  String? _voiceCallId;
+  String? _voiceCallPeerId;
+  String? _voiceCallPeerName;
+  bool _voiceCallConnected = false;
+  bool _voiceCallMuted = false;
+  bool _incomingVoiceCallDialogOpen = false;
+  final List<RTCIceCandidate> _queuedVoiceCandidates = [];
   LudoColor? _bellAlertedPlayerColor;
   bool _rematchPending = false;
   bool _restartingForRematch = false;
@@ -69,6 +86,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final gameNotifier = ref.read(gameControllerProvider.notifier);
     if (gameNotifier.isOnlineMode) {
       _onlineGameNotifier = gameNotifier;
+      unawaited(Future<void>.delayed(
+        const Duration(seconds: 1),
+        _pollIncomingBuddyRequests,
+      ));
+      _buddyRequestPollTimer = Timer.periodic(
+        const Duration(seconds: 4),
+        (_) => unawaited(_pollIncomingBuddyRequests()),
+      );
       final webSocketService = ref.read(webSocketServiceProvider);
       _onlineSubscription = webSocketService.messageStream.listen((message) {
         if (message['type'] == 'game_state' &&
@@ -100,6 +125,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
             });
           });
           if (mounted) setState(() {});
+        } else if (message['type']?.toString().startsWith('voice_call_') ==
+            true) {
+          unawaited(_handleVoiceCallSignal(message));
         } else if (message['type'] == 'bell_alert' &&
             message['targetPlayerId'] == gameNotifier.onlineLocalPlayerId) {
           unawaited(_handleBellAlert(message));
@@ -118,6 +146,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     : reason,
               ),
             ),
+          );
+        } else if (message['type'] == 'error' &&
+            message['code']?.toString().startsWith('VOICE_CALL_') == true &&
+            mounted) {
+          final reason = message['message']?.toString().trim();
+          unawaited(_clearVoiceCall(sendEndSignal: false));
+          _showVoiceCallMessage(
+            reason == null || reason.isEmpty
+                ? 'The voice call could not be started.'
+                : reason,
           );
         } else if (message['type'] == 'player_disconnected' ||
             message['type'] == 'connection_lost') {
@@ -404,9 +442,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _voiceCallTimeoutTimer?.cancel();
+    _buddyRequestPollTimer?.cancel();
     _chatBubbleTimer?.cancel();
     _bellAlertTimer?.cancel();
     _opponentDisconnectTimer?.cancel();
+    unawaited(_clearVoiceCall(sendEndSignal: true));
     unawaited(_bellAudioPlayer.dispose());
     _chatMessages.dispose();
     _onlineSubscription?.cancel();
@@ -541,6 +582,81 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (player != null) {
       unawaited(PlayerBuddyProfileDialog.show(context, player));
     }
+  }
+
+  Future<void> _pollIncomingBuddyRequests() async {
+    final gameNotifier = _onlineGameNotifier;
+    final playerId = gameNotifier?.onlineLocalPlayerId;
+    if (_buddyRequestPollInFlight ||
+        !mounted ||
+        gameNotifier == null ||
+        playerId == null ||
+        !gameNotifier.isOnlineMode) {
+      return;
+    }
+    _buddyRequestPollInFlight = true;
+    try {
+      final response = await ref.read(apiClientProvider).get(
+            '/friends/incoming-requests',
+            options: Options(headers: {'X-Player-ID': playerId}),
+          );
+      final rawEntries = response.data is Map ? response.data['entries'] : null;
+      if (rawEntries is List) {
+        final activeIds = <String>{};
+        for (final raw in rawEntries.whereType<Map>()) {
+          final request = Map<String, dynamic>.from(raw);
+          final requestId = request['id']?.toString();
+          if (requestId != null) activeIds.add(requestId);
+          if (requestId != null && _seenBuddyRequestIds.add(requestId)) {
+            _pendingBuddyRequests.add(request);
+          }
+        }
+        _pendingBuddyRequests.removeWhere(
+          (request) => !activeIds.contains(request['id']?.toString()),
+        );
+      }
+    } catch (_) {
+      // Retry at the next poll without interrupting the online game.
+    } finally {
+      _buddyRequestPollInFlight = false;
+    }
+    _showNextIncomingBuddyRequest();
+  }
+
+  Future<void> _showNextIncomingBuddyRequest() async {
+    final gameNotifier = _onlineGameNotifier;
+    if (!mounted ||
+        _buddyRequestDialogShowing ||
+        _pendingBuddyRequests.isEmpty ||
+        gameNotifier == null ||
+        gameNotifier.currentState.isGameOver ||
+        ModalRoute.of(context)?.isCurrent != true) {
+      return;
+    }
+    final request = _pendingBuddyRequests.removeAt(0);
+    _buddyRequestDialogShowing = true;
+    gameNotifier.pauseTurnTimer();
+    bool? accepted;
+    try {
+      accepted = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => IncomingBuddyRequestDialog(request: request),
+      );
+    } finally {
+      _buddyRequestDialogShowing = false;
+      if (mounted && !gameNotifier.currentState.isGameOver) {
+        gameNotifier.resumeTurnTimer();
+      }
+    }
+    if (!mounted) return;
+    if (accepted == true) {
+      final name = request['displayName']?.toString() ?? 'Player';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('You and $name are buddies now.')),
+      );
+    }
+    _showNextIncomingBuddyRequest();
   }
 
   Future<void> _recordDailyGoalEvents(
@@ -887,6 +1003,65 @@ class _GameScreenState extends ConsumerState<GameScreen>
                     ),
                   ),
 
+                if (_voiceCallPeerId != null)
+                  Positioned(
+                    right: 10,
+                    bottom: 78,
+                    child: Material(
+                      color: const Color(0xF0122447),
+                      borderRadius: BorderRadius.circular(24),
+                      elevation: 8,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 13, right: 4),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _voiceCallConnected
+                                  ? Icons.call_rounded
+                                  : Icons.call_made_rounded,
+                              color: _voiceCallConnected
+                                  ? Colors.greenAccent
+                                  : AppColors.gold,
+                              size: 17,
+                            ),
+                            const SizedBox(width: 7),
+                            Text(
+                              '${_voiceCallConnected ? (_voiceCallMuted ? 'MUTED' : 'VOICE') : 'CALLING'} ${_voiceCallPeerName?.toUpperCase() ?? ''}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: _voiceCallMuted ? 'Unmute' : 'Mute',
+                              onPressed:
+                                  _voiceCallConnected ? _toggleVoiceMute : null,
+                              visualDensity: VisualDensity.compact,
+                              icon: Icon(
+                                _voiceCallMuted
+                                    ? Icons.mic_off_rounded
+                                    : Icons.mic_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'End voice call',
+                              onPressed: _endVoiceCall,
+                              visualDensity: VisualDensity.compact,
+                              icon: const Icon(Icons.call_end_rounded,
+                                  color: Colors.redAccent, size: 19),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
                 // Victory Dialog (Shows ONLY after the Fullscreen Interstitial Ad completes and is dismissed)
                 if (gameState.isGameOver && _readyToShowVictoryDialog)
                   Positioned.fill(
@@ -982,7 +1157,423 @@ class _GameScreenState extends ConsumerState<GameScreen>
         for (final player in gameState.players) player.id: player.name
       },
       onSend: ref.read(webSocketServiceProvider).sendChatMessage,
+      onVoiceCallPressed: () =>
+          _chooseVoiceCallTarget(gameState.players, gameNotifier),
     );
+  }
+
+  Future<void> _chooseVoiceCallTarget(
+    List<PlayerModel> players,
+    GameNotifier gameNotifier,
+  ) async {
+    final localPlayerId = gameNotifier.onlineLocalPlayerId;
+    if (localPlayerId == null || !gameNotifier.isOnlineMode) return;
+    if (_voiceCallPeerId != null) {
+      _showVoiceCallMessage('Finish your current voice call first.');
+      return;
+    }
+    final opponents = players
+        .where((player) => !player.isBot && player.id != localPlayerId)
+        .toList(growable: false);
+    if (opponents.isEmpty) return;
+    PlayerModel? target;
+    if (opponents.length == 1) {
+      target = opponents.single;
+    } else {
+      target = await showDialog<PlayerModel>(
+        context: context,
+        builder: (dialogContext) => SimpleDialog(
+          title: const Text('Call a player'),
+          children: [
+            for (final player in opponents)
+              SimpleDialogOption(
+                onPressed: () => Navigator.of(dialogContext).pop(player),
+                child: Row(
+                  children: [
+                    Icon(Icons.circle, size: 10, color: player.color.color),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(player.name)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+    if (target == null || !mounted) return;
+
+    try {
+      final response = await ref.read(apiClientProvider).get(
+            '/friends',
+            options: Options(headers: {'X-Player-ID': localPlayerId}),
+          );
+      final entries = response.data is Map ? response.data['entries'] : null;
+      final relationship = entries is List
+          ? entries.whereType<Map>().cast<Map>().firstWhere(
+                (entry) => entry['playerId']?.toString() == target!.id,
+                orElse: () => <String, dynamic>{},
+              )
+          : <String, dynamic>{};
+      if (relationship['status'] != 'ACCEPTED') {
+        await _showBuddyOnlyCallDialog(target, relationship);
+        return;
+      }
+    } catch (_) {
+      _showVoiceCallMessage('Could not check buddy status. Try again.');
+      return;
+    }
+
+    final callId = DateTime.now().microsecondsSinceEpoch.toString();
+    setState(() {
+      _voiceCallId = callId;
+      _voiceCallPeerId = target!.id;
+      _voiceCallPeerName = target.name;
+      _voiceCallConnected = false;
+      _voiceCallMuted = false;
+    });
+    ref.read(webSocketServiceProvider).sendVoiceCallSignal(
+          type: 'voice_call_request',
+          targetPlayerId: target.id,
+          callId: callId,
+        );
+    _startVoiceCallTimeout(callId);
+  }
+
+  Future<void> _showBuddyOnlyCallDialog(
+    PlayerModel target,
+    Map relationship,
+  ) async {
+    final isPending = relationship['status'] == 'PENDING';
+    final addBuddy = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Voice calls are for buddies'),
+        content: Text(isPending
+            ? 'Your buddy request to ${target.name} is still waiting for a reply. You can call after they accept.'
+            : 'Add ${target.name} as a buddy first. You can call each other after they accept your request.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('CLOSE'),
+          ),
+          if (!isPending)
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.person_add_alt_1_rounded),
+              label: const Text('ADD BUDDY'),
+            ),
+        ],
+      ),
+    );
+    if (addBuddy != true) return;
+    final playerId = _onlineGameNotifier?.onlineLocalPlayerId;
+    if (playerId == null) return;
+    try {
+      await ref.read(apiClientProvider).post(
+            '/friends/requests',
+            data: {'playerId': target.id},
+            options: Options(headers: {'X-Player-ID': playerId}),
+          );
+      _showVoiceCallMessage('Buddy request sent to ${target.name}.');
+    } catch (_) {
+      _showVoiceCallMessage('Could not send the buddy request. Try again.');
+    }
+  }
+
+  Future<void> _handleVoiceCallSignal(Map<String, dynamic> message) async {
+    final type = message['type']?.toString();
+    final fromPlayerId = message['fromPlayerId']?.toString();
+    final callId = message['callId']?.toString();
+    if (type == null || fromPlayerId == null || callId == null) return;
+    final player = _onlineGameNotifier?.currentState.players
+        .where((candidate) => candidate.id == fromPlayerId)
+        .firstOrNull;
+    final playerName = player?.name ?? 'Buddy';
+
+    switch (type) {
+      case 'voice_call_incoming':
+        if (_voiceCallPeerId != null) {
+          _sendVoiceCallSignal(
+              type: 'voice_call_decline',
+              targetPlayerId: fromPlayerId,
+              callId: callId);
+          return;
+        }
+        setState(() {
+          _voiceCallId = callId;
+          _voiceCallPeerId = fromPlayerId;
+          _voiceCallPeerName = playerName;
+        });
+        _startVoiceCallTimeout(callId);
+        _incomingVoiceCallDialogOpen = true;
+        final accept = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Incoming voice call'),
+            content: Text('$playerName is calling you.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('DECLINE'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                icon: const Icon(Icons.call_rounded),
+                label: const Text('ANSWER'),
+              ),
+            ],
+          ),
+        );
+        _incomingVoiceCallDialogOpen = false;
+        if (!mounted) return;
+        if (_voiceCallId != callId) return;
+        if (accept != true) {
+          _sendVoiceCallSignal(
+              type: 'voice_call_decline',
+              targetPlayerId: fromPlayerId,
+              callId: callId);
+          await _clearVoiceCall(sendEndSignal: false);
+          return;
+        }
+        setState(() {
+          _voiceCallId = callId;
+          _voiceCallPeerId = fromPlayerId;
+          _voiceCallPeerName = playerName;
+          _voiceCallConnected = false;
+          _voiceCallMuted = false;
+        });
+        _startVoiceCallTimeout(callId);
+        if (!await _prepareVoicePeer()) {
+          _sendVoiceCallSignal(
+              type: 'voice_call_decline',
+              targetPlayerId: fromPlayerId,
+              callId: callId);
+          await _clearVoiceCall(sendEndSignal: false);
+          return;
+        }
+        _sendVoiceCallSignal(
+            type: 'voice_call_accept',
+            targetPlayerId: fromPlayerId,
+            callId: callId);
+        return;
+      case 'voice_call_accept':
+        if (callId != _voiceCallId || fromPlayerId != _voiceCallPeerId) return;
+        if (!await _prepareVoicePeer()) {
+          await _clearVoiceCall(sendEndSignal: true);
+          return;
+        }
+        final offer = await _voicePeerConnection!.createOffer();
+        await _voicePeerConnection!.setLocalDescription(offer);
+        _sendVoiceCallSignal(
+          type: 'voice_call_offer',
+          targetPlayerId: fromPlayerId,
+          callId: callId,
+          description: offer.toMap().cast<String, dynamic>(),
+        );
+        return;
+      case 'voice_call_offer':
+        if (callId != _voiceCallId || fromPlayerId != _voiceCallPeerId) return;
+        if (_voicePeerConnection == null && !await _prepareVoicePeer()) return;
+        final description = message['description'];
+        if (description is! Map) return;
+        await _voicePeerConnection!.setRemoteDescription(RTCSessionDescription(
+          description['sdp']?.toString(),
+          description['type']?.toString(),
+        ));
+        await _applyQueuedVoiceCandidates();
+        final answer = await _voicePeerConnection!.createAnswer();
+        await _voicePeerConnection!.setLocalDescription(answer);
+        _sendVoiceCallSignal(
+          type: 'voice_call_answer',
+          targetPlayerId: fromPlayerId,
+          callId: callId,
+          description: answer.toMap().cast<String, dynamic>(),
+        );
+        return;
+      case 'voice_call_answer':
+        if (callId != _voiceCallId || fromPlayerId != _voiceCallPeerId) return;
+        final answer = message['description'];
+        if (answer is! Map || _voicePeerConnection == null) return;
+        await _voicePeerConnection!.setRemoteDescription(RTCSessionDescription(
+          answer['sdp']?.toString(),
+          answer['type']?.toString(),
+        ));
+        await _applyQueuedVoiceCandidates();
+        return;
+      case 'voice_call_ice':
+        if (callId != _voiceCallId || fromPlayerId != _voiceCallPeerId) return;
+        final candidate = message['candidate'];
+        if (candidate is! Map) return;
+        final rtcCandidate = RTCIceCandidate(
+          candidate['candidate']?.toString(),
+          candidate['sdpMid']?.toString(),
+          (candidate['sdpMLineIndex'] as num?)?.toInt(),
+        );
+        final remoteDescription =
+            await _voicePeerConnection?.getRemoteDescription();
+        if (remoteDescription == null) {
+          _queuedVoiceCandidates.add(rtcCandidate);
+        } else {
+          await _voicePeerConnection?.addCandidate(rtcCandidate);
+        }
+        return;
+      case 'voice_call_decline':
+        if (callId == _voiceCallId) {
+          await _clearVoiceCall(sendEndSignal: false);
+          _showVoiceCallMessage('$playerName declined the call.');
+        }
+        return;
+      case 'voice_call_end':
+        if (callId == _voiceCallId) {
+          await _clearVoiceCall(sendEndSignal: false);
+          if (_incomingVoiceCallDialogOpen && mounted) {
+            Navigator.of(context, rootNavigator: true).maybePop(false);
+          }
+          _showVoiceCallMessage('Voice call ended.');
+        }
+        return;
+    }
+  }
+
+  void _sendVoiceCallSignal({
+    required String type,
+    required String targetPlayerId,
+    required String callId,
+    Map<String, dynamic>? description,
+    Map<String, dynamic>? candidate,
+  }) {
+    ref.read(webSocketServiceProvider).sendVoiceCallSignal(
+          type: type,
+          targetPlayerId: targetPlayerId,
+          callId: callId,
+          description: description,
+          candidate: candidate,
+        );
+  }
+
+  Future<bool> _prepareVoicePeer() async {
+    if (_voicePeerConnection != null) return true;
+    try {
+      final stream = await navigator.mediaDevices.getUserMedia({
+        'audio': true,
+        'video': false,
+      });
+      final peer = await createPeerConnection({
+        'iceServers': [
+          {'urls': 'stun:stun.l.google.com:19302'},
+        ],
+      });
+      _voiceLocalStream = stream;
+      _voicePeerConnection = peer;
+      for (final track in stream.getAudioTracks()) {
+        await peer.addTrack(track, stream);
+      }
+      peer.onIceCandidate = (candidate) {
+        final peerId = _voiceCallPeerId;
+        final callId = _voiceCallId;
+        if (candidate.candidate == null || peerId == null || callId == null) {
+          return;
+        }
+        _sendVoiceCallSignal(
+          type: 'voice_call_ice',
+          targetPlayerId: peerId,
+          callId: callId,
+          candidate: candidate.toMap().cast<String, dynamic>(),
+        );
+      };
+      peer.onConnectionState = (connectionState) {
+        if (!mounted) return;
+        if (connectionState ==
+            RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+          _voiceCallTimeoutTimer?.cancel();
+          if (mounted) setState(() => _voiceCallConnected = true);
+        } else if (connectionState ==
+                RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
+            connectionState ==
+                RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
+          unawaited(_clearVoiceCall(sendEndSignal: false));
+        }
+      };
+      return true;
+    } catch (error) {
+      _showVoiceCallMessage(
+          'Microphone access is needed for voice calls. Check your permission and try again.');
+      debugPrint('Could not start voice call media: $error');
+      return false;
+    }
+  }
+
+  Future<void> _applyQueuedVoiceCandidates() async {
+    final peer = _voicePeerConnection;
+    if (peer == null) return;
+    for (final candidate in _queuedVoiceCandidates) {
+      await peer.addCandidate(candidate);
+    }
+    _queuedVoiceCandidates.clear();
+  }
+
+  Future<void> _toggleVoiceMute() async {
+    final muted = !_voiceCallMuted;
+    for (final track
+        in _voiceLocalStream?.getAudioTracks() ?? <MediaStreamTrack>[]) {
+      track.enabled = !muted;
+    }
+    if (mounted) setState(() => _voiceCallMuted = muted);
+  }
+
+  Future<void> _endVoiceCall() => _clearVoiceCall(sendEndSignal: true);
+
+  Future<void> _clearVoiceCall({required bool sendEndSignal}) async {
+    _voiceCallTimeoutTimer?.cancel();
+    _voiceCallTimeoutTimer = null;
+    final peerId = _voiceCallPeerId;
+    final callId = _voiceCallId;
+    if (sendEndSignal && peerId != null && callId != null) {
+      _sendVoiceCallSignal(
+          type: 'voice_call_end', targetPlayerId: peerId, callId: callId);
+    }
+    final stream = _voiceLocalStream;
+    final peer = _voicePeerConnection;
+    _voicePeerConnection = null;
+    _voiceLocalStream = null;
+    _queuedVoiceCandidates.clear();
+    if (mounted) {
+      setState(() {
+        _voiceCallId = null;
+        _voiceCallPeerId = null;
+        _voiceCallPeerName = null;
+        _voiceCallConnected = false;
+        _voiceCallMuted = false;
+      });
+    }
+    if (stream != null) {
+      for (final track in stream.getTracks()) {
+        await track.stop();
+      }
+      await stream.dispose();
+    }
+    await peer?.close();
+    await peer?.dispose();
+  }
+
+  void _showVoiceCallMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _startVoiceCallTimeout(String callId) {
+    _voiceCallTimeoutTimer?.cancel();
+    _voiceCallTimeoutTimer = Timer(const Duration(seconds: 30), () {
+      if (!mounted || _voiceCallId != callId || _voiceCallConnected) return;
+      unawaited(_clearVoiceCall(sendEndSignal: true));
+      if (_incomingVoiceCallDialogOpen) {
+        Navigator.of(context, rootNavigator: true).maybePop(false);
+      }
+      _showVoiceCallMessage('No answer. The voice call was ended.');
+    });
   }
 
   void _confirmExitDialog(BuildContext context) {
