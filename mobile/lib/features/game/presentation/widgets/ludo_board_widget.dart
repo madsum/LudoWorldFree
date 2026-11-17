@@ -16,6 +16,7 @@ class LudoBoardWidget extends StatefulWidget {
   final int orientationQuarterTurns;
   final bool compactFrame;
   final ValueChanged<LudoColor>? onBellTap;
+  final VoidCallback? onHurryUpTap;
   final LudoColor? alertedPlayerColor;
   final Set<String> unavailableBellPlayerIds;
   final String? localPlayerId;
@@ -30,6 +31,7 @@ class LudoBoardWidget extends StatefulWidget {
     this.orientationQuarterTurns = 0,
     this.compactFrame = false,
     this.onBellTap,
+    this.onHurryUpTap,
     this.alertedPlayerColor,
     this.unavailableBellPlayerIds = const {},
     this.localPlayerId,
@@ -276,13 +278,13 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                     clipBehavior: Clip.none,
                     children: [
                       ..._buildPawnWidgets(tileSize),
-                      ..._buildBellWidgets(tileSize),
+                      ..._buildHurryUpIcons(tileSize),
                       ..._buildBellAlertText(tileSize),
+                      ..._buildBuddyRequestButtons(tileSize),
                       ..._buildPlayerNamePlates(tileSize),
                       ..._buildFinishedPlayerCrowns(tileSize),
                       ..._buildEliminatedPlayerSigns(tileSize),
                       ..._buildCaptureFlame(tileSize),
-                      ..._buildBuddyRequestButtons(tileSize),
                     ],
                   );
                 },
@@ -294,68 +296,29 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     );
   }
 
-  List<Widget> _buildBuddyRequestButtons(double tileSize) {
-    final onTap = widget.onBuddyRequestTap;
-    if (onTap == null) return const [];
-    return widget.gameState.players
-        .where((player) => !player.isBot && player.id != widget.localPlayerId)
-        .map((player) {
-      final relationshipExists =
-          widget.existingBuddyOrRequestPlayerIds.contains(player.id);
-      final size = tileSize * 0.66;
-      const inset = 0.68;
-      final corner = switch (player.color) {
-        LudoColor.red => (x: inset, y: inset),
-        LudoColor.green => (x: 15 - inset, y: inset),
-        LudoColor.yellow => (x: 15 - inset, y: 15 - inset),
-        LudoColor.blue => (x: inset, y: 15 - inset),
-      };
+  List<Widget> _buildHurryUpIcons(double tileSize) {
+    final size = tileSize * 1.15;
+    const centers = [
+      Offset(3, 3),
+      Offset(12, 3),
+      Offset(12, 12),
+      Offset(3, 12)
+    ];
+    return centers.map((center) {
       return Positioned(
-        left: corner.x < 7.5 ? corner.x * tileSize : null,
-        right: corner.x >= 7.5 ? (15 - corner.x) * tileSize : null,
-        top: corner.y < 7.5 ? corner.y * tileSize : null,
-        bottom: corner.y >= 7.5 ? (15 - corner.y) * tileSize : null,
+        left: center.dx * tileSize - size / 2,
+        top: center.dy * tileSize - size / 2,
         width: size,
         height: size,
-        child: Semantics(
-          button: true,
-          label: relationshipExists
-              ? 'Buddy request already sent or player is already a buddy'
-              : 'Add ${player.name} as a buddy',
+        child: RotatedBox(
+          quarterTurns: widget.orientationQuarterTurns % 4,
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: () => onTap(player.id),
               customBorder: const CircleBorder(),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned.fill(
-                    child: Image.asset(
-                      'assets/images/add.jpeg',
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                  if (relationshipExists)
-                    Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: Container(
-                        width: size * 0.29,
-                        height: size * 0.29,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF00B967),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.check_rounded,
-                          color: Colors.white,
-                          size: size * 0.22,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+              onTap: widget.onHurryUpTap,
+              child: Image.asset('assets/images/hurry-up.png',
+                  fit: BoxFit.contain),
             ),
           ),
         ),
@@ -363,85 +326,40 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     }).toList(growable: false);
   }
 
-  List<Widget> _buildBellWidgets(double tileSize) {
-    if (widget.onBellTap == null || widget.gameState.isGameOver) {
-      return const [];
-    }
-    return widget.gameState.players.map((player) {
-      if (player.id == widget.localPlayerId ||
-          player.isEliminated ||
-          player.hasAllPawnsHome ||
-          widget.unavailableBellPlayerIds.contains(player.id)) {
-        return const SizedBox.shrink();
-      }
-      final yardPositions = BoardPosition.getYardPositions(player.color);
-      final centerX = yardPositions
-              .map((position) => position.x + 0.5)
-              .reduce((left, right) => left + right) /
-          yardPositions.length;
-      final centerY = yardPositions
-              .map((position) => position.y + 0.5)
-              .reduce((top, bottom) => top + bottom) /
-          yardPositions.length;
-      final bellSize = tileSize * 0.72;
-
+  List<Widget> _buildBuddyRequestButtons(double tileSize) {
+    final onTap = widget.onBuddyRequestTap;
+    if (onTap == null) return const [];
+    return widget.gameState.players
+        .where((player) => !player.isBot && player.id != widget.localPlayerId)
+        .map((player) {
+      final center = switch (player.color) {
+        LudoColor.red => const Offset(0.75, 0.5),
+        LudoColor.green => const Offset(9.35, 0.5),
+        LudoColor.yellow => const Offset(9.35, 14.5),
+        LudoColor.blue => const Offset(0.75, 14.5),
+      };
+      final size = tileSize * 0.82;
       return Positioned(
-        key: ValueKey('bell_${player.id}'),
-        left: centerX * tileSize - bellSize / 2,
-        top: centerY * tileSize - bellSize / 2,
-        width: bellSize,
-        height: bellSize,
-        child: Semantics(
-          button: true,
-          label: 'Ring bell for ${player.name}',
-          child: Material(
-            color: Colors.transparent,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: widget.onBellTap == null
-                  ? null
-                  : () => widget.onBellTap!(player.color),
-              child: Ink(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const RadialGradient(
-                    center: Alignment(-0.3, -0.45),
-                    radius: 0.9,
-                    colors: [
-                      Color(0xFFFFF8CC),
-                      Color(0xFFFFD54F),
-                      Color(0xFFE69A00),
-                      Color(0xFF9A4F00),
-                    ],
-                    stops: [0, 0.35, 0.74, 1],
+        left: center.dx * tileSize - size / 2,
+        top: center.dy * tileSize - size / 2,
+        width: size,
+        height: size,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () => onTap(player.id),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.asset('assets/images/buddy-add.png', fit: BoxFit.contain),
+                if (widget.existingBuddyOrRequestPlayerIds.contains(player.id))
+                  const Align(
+                    alignment: Alignment.bottomRight,
+                    child: Icon(Icons.check_circle,
+                        color: Color(0xFF00B967), size: 10),
                   ),
-                  border:
-                      Border.all(color: const Color(0xFFFFF2A6), width: 1.3),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0xCCFFC928),
-                      blurRadius: 8,
-                      spreadRadius: 1,
-                    ),
-                    BoxShadow(
-                      color: Color(0xAA000000),
-                      blurRadius: 3,
-                      offset: Offset(1, 2),
-                    ),
-                  ],
-                ),
-                child: Center(
-                  child: Icon(
-                    Icons.notifications_active_rounded,
-                    color: const Color(0xFF8D3E00),
-                    size: bellSize * 0.62,
-                    shadows: const [
-                      Shadow(color: Colors.white, blurRadius: 3),
-                    ],
-                  ),
-                ),
-              ),
+              ],
             ),
           ),
         ),
@@ -454,13 +372,13 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     if (alertColor == null) return const [];
 
     final anchor = switch (alertColor) {
-      LudoColor.red => const Offset(3, 4.55),
-      LudoColor.green => const Offset(12, 4.55),
-      LudoColor.yellow => const Offset(12, 10.45),
-      LudoColor.blue => const Offset(3, 10.45),
+      LudoColor.red => const Offset(3, 3),
+      LudoColor.green => const Offset(12, 3),
+      LudoColor.yellow => const Offset(12, 12),
+      LudoColor.blue => const Offset(3, 12),
     };
-    final textWidth = tileSize * 5.8;
-    final textHeight = tileSize * 1.55;
+    final textWidth = tileSize * 5.2;
+    final textHeight = tileSize * 1.1;
 
     return [
       Positioned(
@@ -487,7 +405,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                 maxLines: 1,
                 style: TextStyle(
                   color: Colors.black,
-                  fontSize: tileSize * 1.12,
+                  fontSize: tileSize * 0.62,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 0.3,
                 ),
@@ -518,33 +436,69 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
         top: (nameCenter.dy * tileSize) - (nameHeight / 2),
         width: nameWidth,
         height: nameHeight,
-        child: IgnorePointer(
-          child: RotatedBox(
-            quarterTurns: (4 - widget.orientationQuarterTurns % 4) % 4,
-            child: Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  player.name,
-                  maxLines: 1,
-                  style: GoogleFonts.poppins(
-                    fontSize: tileSize * 0.38,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    shadows: const [
-                      Shadow(
-                        color: Colors.black,
-                        blurRadius: 5,
-                        offset: Offset(0, 1.5),
+        child: RotatedBox(
+          quarterTurns: (4 - widget.orientationQuarterTurns % 4) % 4,
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.onBuddyRequestTap != null &&
+                      !player.isBot &&
+                      player.id != widget.localPlayerId)
+                    Padding(
+                      padding: EdgeInsets.only(right: tileSize * 0.12),
+                      child: SizedBox(
+                        width: tileSize * 0.62,
+                        height: tileSize * 0.62,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () => widget.onBuddyRequestTap!(player.id),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.asset(
+                                  'assets/images/buddy-add.png',
+                                  fit: BoxFit.contain,
+                                ),
+                                if (widget.existingBuddyOrRequestPlayerIds
+                                    .contains(player.id))
+                                  const Align(
+                                    alignment: Alignment.bottomRight,
+                                    child: Icon(Icons.check_circle,
+                                        color: Color(0xFF00B967), size: 10),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                      Shadow(
-                        color: Colors.black87,
-                        blurRadius: 2,
-                        offset: Offset(0, 1),
-                      ),
-                    ],
+                    ),
+                  Text(
+                    player.name,
+                    maxLines: 1,
+                    style: GoogleFonts.poppins(
+                      fontSize: tileSize * 0.38,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      shadows: const [
+                        Shadow(
+                          color: Colors.black,
+                          blurRadius: 5,
+                          offset: Offset(0, 1.5),
+                        ),
+                        Shadow(
+                          color: Colors.black87,
+                          blurRadius: 2,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),

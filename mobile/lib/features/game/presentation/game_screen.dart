@@ -539,6 +539,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _showBellAlertText(target.first.color);
   }
 
+  void _hurryUp(GameState gameState, GameNotifier gameNotifier) {
+    if (gameState.isGameOver) return;
+    final localId = gameNotifier.onlineLocalPlayerId;
+    final opponents = gameState.players.where((player) =>
+        player.id != localId && !player.isBot && !player.isEliminated);
+    if (opponents.isEmpty) return;
+    final target = opponents.first;
+    if (gameNotifier.isOnlineMode) {
+      ref.read(webSocketServiceProvider).sendBellAlert(target.id);
+    }
+    _playBellAlertSound();
+    _showBellAlertText(target.color);
+  }
+
   String? _resolveDisconnectedPlayerId(
     String? messagePlayerId,
     GameNotifier gameNotifier,
@@ -907,6 +921,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                           !gameState.isGameOver
                                       ? _ringPlayerBell
                                       : null,
+                                  onHurryUpTap: gameState.isGameOver
+                                      ? null
+                                      : () => _hurryUp(gameState, gameNotifier),
                                   alertedPlayerColor: _bellAlertedPlayerColor,
                                   unavailableBellPlayerIds:
                                       _disconnectedOnlinePlayerIds,
