@@ -118,15 +118,14 @@ public class MatchmakingService {
             return responseFor(activeRoom, playerId);
         }
 
-        var existingTicket = ticketRepository.findByPlayerId(playerId);
+        var existingTicket = ticketRepository.findByPlayerIdForUpdate(playerId);
         MatchmakingTicket currentTicket;
         if (existingTicket.isPresent()
                 && existingTicket.get().getEntryFee() == request.getEntryFee()
                 && existingTicket.get().getPlayerCount() == request.getPlayerCount()
                 && existingTicket.get().getSelectedColor().equals(selectedColor)) {
             currentTicket = existingTicket.get();
-            currentTicket.touch();
-            ticketRepository.save(currentTicket);
+            ticketRepository.touchByPlayerId(playerId, Instant.now());
         } else {
             existingTicket.ifPresent(ticketRepository::delete);
             currentTicket = new MatchmakingTicket(
@@ -203,7 +202,8 @@ public class MatchmakingService {
             ticketRepository.deleteById(playerId);
             return responseFor(activeRoom, playerId);
         }
-        MatchmakingTicket ticket = ticketRepository.findByPlayerId(playerId).orElse(null);
+        MatchmakingTicket ticket = ticketRepository.findByPlayerIdForUpdate(playerId)
+                .orElse(null);
         if (ticket != null) {
             MatchmakingRequestDto retry = new MatchmakingRequestDto(
                     playerId, ticket.getDisplayName(), ticket.getAvatarUrl(),

@@ -6,6 +6,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -28,7 +29,17 @@ public interface MatchmakingTicketRepository extends JpaRepository<MatchmakingTi
             @Param("activeStatuses") List<OnlineMatchRoom.Status> activeStatuses,
             Pageable pageable);
 
-    Optional<MatchmakingTicket> findByPlayerId(UUID playerId);
+    // Status polling can overlap the queue-join request for the same player.
+    // Lock the ticket before touching last_seen_at so Hibernate doesn't flush
+    // a stale update after another request has already changed/deleted it.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from MatchmakingTicket t where t.playerId = :playerId")
+    Optional<MatchmakingTicket> findByPlayerIdForUpdate(@Param("playerId") UUID playerId);
+
+    @Modifying(flushAutomatically = true)
+    @Query("update MatchmakingTicket t set t.lastSeenAt = :lastSeenAt where t.playerId = :playerId")
+    int touchByPlayerId(@Param("playerId") UUID playerId,
+                        @Param("lastSeenAt") Instant lastSeenAt);
 
     int deleteByLastSeenAtBefore(Instant expiredBefore);
 }
