@@ -51,6 +51,7 @@ class GameState {
   final String statusMessage;
   final int rollOpportunityId;
   final bool turnTimerPaused;
+  final bool turnTimerDisabled;
   final int turnTimerRemainingMilliseconds;
 
   const GameState({
@@ -70,6 +71,7 @@ class GameState {
     this.statusMessage = 'Roll the dice to start!',
     this.rollOpportunityId = 0,
     this.turnTimerPaused = false,
+    this.turnTimerDisabled = false,
     this.turnTimerRemainingMilliseconds = 5000,
   });
 
@@ -109,6 +111,7 @@ class GameState {
         'statusMessage': statusMessage,
         'rollOpportunityId': rollOpportunityId,
         'turnTimerPaused': turnTimerPaused,
+        'turnTimerDisabled': turnTimerDisabled,
         'turnTimerRemainingMilliseconds': turnTimerRemainingMilliseconds,
       };
 
@@ -147,7 +150,8 @@ class GameState {
     return GameState(
       players: players,
       localPlayerId: localPlayerId,
-      currentTurnIndex: players.isEmpty ? 0 : turnIndex.clamp(0, players.length - 1),
+      currentTurnIndex:
+          players.isEmpty ? 0 : turnIndex.clamp(0, players.length - 1),
       diceValue: (json['diceValue'] as num?)?.toInt(),
       playerDiceValues: playerDiceValues,
       turnPhase: GameTurnPhase.values.firstWhere(
@@ -181,6 +185,7 @@ class GameState {
       statusMessage: json['statusMessage']?.toString() ?? '',
       rollOpportunityId: (json['rollOpportunityId'] as num?)?.toInt() ?? 0,
       turnTimerPaused: json['turnTimerPaused'] == true,
+      turnTimerDisabled: json['turnTimerDisabled'] == true,
       turnTimerRemainingMilliseconds:
           (json['turnTimerRemainingMilliseconds'] as num?)?.toInt() ?? 5000,
     );
@@ -196,13 +201,15 @@ class GameState {
         'diamonds': player.diamonds,
         'color': player.color.name,
         'isBot': player.isBot,
-        'pawns': player.pawns.map((pawn) => {
-              'id': pawn.id,
-              'color': pawn.color.name,
-              'stepCount': pawn.stepCount,
-              'pairId': pawn.pairId,
-              'isPairSelected': pawn.isPairSelected,
-            }).toList(growable: false),
+        'pawns': player.pawns
+            .map((pawn) => {
+                  'id': pawn.id,
+                  'color': pawn.color.name,
+                  'stepCount': pawn.stepCount,
+                  'pairId': pawn.pairId,
+                  'isPairSelected': pawn.isPairSelected,
+                })
+            .toList(growable: false),
         'rank': player.rank,
         'killCounts': {
           for (final entry in player.killCounts.entries)
@@ -218,21 +225,21 @@ class GameState {
     final pawns = (json['pawns'] as List<dynamic>? ?? const [])
         .whereType<Map>()
         .map((item) {
-          final pawn = Map<String, dynamic>.from(item);
-          return PawnModel(
-            id: (pawn['id'] as num?)?.toInt() ?? 0,
-            color: _colorFromJson(pawn['color']) ?? color,
-            stepCount: (pawn['stepCount'] as num?)?.toInt() ?? -1,
-            pairId: pawn['pairId']?.toString(),
-            isPairSelected: pawn['isPairSelected'] == true,
-          );
-        })
-        .toList(growable: false);
+      final pawn = Map<String, dynamic>.from(item);
+      return PawnModel(
+        id: (pawn['id'] as num?)?.toInt() ?? 0,
+        color: _colorFromJson(pawn['color']) ?? color,
+        stepCount: (pawn['stepCount'] as num?)?.toInt() ?? -1,
+        pairId: pawn['pairId']?.toString(),
+        isPairSelected: pawn['isPairSelected'] == true,
+      );
+    }).toList(growable: false);
     final killCounts = <LudoColor, int>{};
     if (json['killCounts'] is Map) {
       (json['killCounts'] as Map).forEach((key, value) {
         final keyColor = _colorFromJson(key);
-        if (keyColor != null && value is num) killCounts[keyColor] = value.toInt();
+        if (keyColor != null && value is num)
+          killCounts[keyColor] = value.toInt();
       });
     }
     return PlayerModel(
@@ -281,6 +288,7 @@ class GameState {
     String? statusMessage,
     int? rollOpportunityId,
     bool? turnTimerPaused,
+    bool? turnTimerDisabled,
     int? turnTimerRemainingMilliseconds,
   }) {
     return GameState(
@@ -303,6 +311,7 @@ class GameState {
       statusMessage: statusMessage ?? this.statusMessage,
       rollOpportunityId: rollOpportunityId ?? this.rollOpportunityId,
       turnTimerPaused: turnTimerPaused ?? this.turnTimerPaused,
+      turnTimerDisabled: turnTimerDisabled ?? this.turnTimerDisabled,
       turnTimerRemainingMilliseconds:
           turnTimerRemainingMilliseconds ?? this.turnTimerRemainingMilliseconds,
     );

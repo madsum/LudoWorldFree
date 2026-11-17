@@ -6,6 +6,7 @@ import com.ludoworldfree.backend.model.Friendship;
 import com.ludoworldfree.backend.model.PlayerProfile;
 import com.ludoworldfree.backend.repository.FriendshipRepository;
 import com.ludoworldfree.backend.repository.PlayerProfileRepository;
+import com.ludoworldfree.backend.util.PlayerIdResolver;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -43,9 +44,11 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
         URI uri = session.getUri();
         String rawPlayerId = uri == null ? null : UriComponentsBuilder.fromUri(uri)
                 .build().getQueryParams().getFirst("playerId");
-        UUID playerId = parsePlayerId(rawPlayerId);
+        UUID playerId = rawPlayerId == null || rawPlayerId.isBlank()
+                ? null : PlayerIdResolver.resolve(rawPlayerId);
         if (playerId == null || !profileRepository.existsByUserId(playerId)) {
-            sendError(session, "VOICE_CONNECTION_REJECTED", "Sign in to use voice calls.");
+            sendError(session, "VOICE_CONNECTION_REJECTED",
+                    "Voice calling is unavailable for this profile.");
             session.close(CloseStatus.POLICY_VIOLATION);
             return;
         }

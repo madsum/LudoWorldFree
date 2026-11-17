@@ -64,6 +64,8 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
     if (oldWidget.isCurrentTurn != widget.isCurrentTurn ||
         oldWidget.gameState.isGameOver != widget.gameState.isGameOver ||
         oldWidget.gameState.turnPhase != widget.gameState.turnPhase ||
+        oldWidget.gameState.turnTimerDisabled !=
+            widget.gameState.turnTimerDisabled ||
         oldWidget.player.id != widget.player.id ||
         oldWidget.player.isEliminated != widget.player.isEliminated) {
       _syncPulse();
@@ -76,7 +78,9 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
         oldWidget.gameState.turnPhase != widget.gameState.turnPhase;
     final pauseChanged =
         oldWidget.gameState.turnTimerPaused != widget.gameState.turnTimerPaused;
-    if (opportunityChanged || playerChanged) {
+    final disabledChanged = oldWidget.gameState.turnTimerDisabled !=
+        widget.gameState.turnTimerDisabled;
+    if (opportunityChanged || playerChanged || disabledChanged) {
       _syncCountdown(reset: true);
     } else if (pauseChanged) {
       _syncCountdown(reset: widget.gameState.turnTimerPaused);
@@ -105,6 +109,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
       (widget.gameState.turnPhase == GameTurnPhase.rollDice ||
           (widget.gameState.turnPhase == GameTurnPhase.selectPawn &&
               widget.gameState.movablePawns.length > 1)) &&
+      !widget.gameState.turnTimerDisabled &&
       !widget.gameState.isGameOver;
 
   void _syncCountdown({bool reset = false}) {

@@ -201,6 +201,7 @@ class OnlineChatSheet extends StatefulWidget {
     required this.onSend,
     this.onTypingChanged,
     required this.onVoiceCallPressed,
+    required this.onStopTimerPressed,
   });
 
   final ValueListenable<List<OnlineChatMessage>> messages;
@@ -209,6 +210,7 @@ class OnlineChatSheet extends StatefulWidget {
   final ValueChanged<String> onSend;
   final ValueChanged<bool>? onTypingChanged;
   final VoidCallback onVoiceCallPressed;
+  final VoidCallback onStopTimerPressed;
 
   static Future<void> show(
     BuildContext context, {
@@ -218,6 +220,7 @@ class OnlineChatSheet extends StatefulWidget {
     required ValueChanged<String> onSend,
     ValueChanged<bool>? onTypingChanged,
     required VoidCallback onVoiceCallPressed,
+    required VoidCallback onStopTimerPressed,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -231,6 +234,7 @@ class OnlineChatSheet extends StatefulWidget {
         onSend: onSend,
         onTypingChanged: onTypingChanged,
         onVoiceCallPressed: onVoiceCallPressed,
+        onStopTimerPressed: onStopTimerPressed,
       ),
     );
   }
@@ -346,25 +350,37 @@ class _OnlineChatSheetState extends State<OnlineChatSheet> {
                       _inputFocusNode.requestFocus();
                     },
                   ),
+                  IconButton(
+                    onPressed: widget.onVoiceCallPressed,
+                    tooltip: 'Voice call a buddy',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.call_rounded,
+                        color: Colors.white, size: 23),
+                  ),
+                  IconButton(
+                    onPressed: widget.onStopTimerPressed,
+                    tooltip: 'Ask to stop the dice timer',
+                    visualDensity: VisualDensity.compact,
+                    icon: Image.asset(
+                      'assets/images/stop-timer.png',
+                      width: 34,
+                      height: 34,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
                   Expanded(
                     child: Text(
                       _showPresets ? 'Preset' : 'Chat',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 20,
+                        fontSize: 18,
                         fontWeight: FontWeight.w800,
                         shadows: [
                           Shadow(color: Color(0x66000000), blurRadius: 3),
                         ],
                       ),
                     ),
-                  ),
-                  IconButton(
-                    onPressed: widget.onVoiceCallPressed,
-                    tooltip: 'Voice call a buddy',
-                    icon: const Icon(Icons.call_rounded,
-                        color: Colors.white, size: 23),
                   ),
                   Material(
                     color: const Color(0xFFE31B23),

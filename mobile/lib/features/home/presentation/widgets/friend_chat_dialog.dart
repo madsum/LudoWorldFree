@@ -42,6 +42,7 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
   Timer? _refreshTimer;
   bool _loading = true;
   bool _sending = false;
+  bool _outgoingCallPending = false;
   String? _error;
 
   String? get _playerId => ref.read(authControllerProvider).user?.id;
@@ -51,6 +52,7 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
   @override
   void initState() {
     super.initState();
+    ref.read(voiceCallServiceProvider).addListener(_handleVoiceCallChanged);
     _loadMessages();
     _refreshTimer = Timer.periodic(
       const Duration(seconds: 5),
@@ -60,10 +62,29 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
 
   @override
   void dispose() {
+    ref.read(voiceCallServiceProvider).removeListener(_handleVoiceCallChanged);
     _refreshTimer?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _handleVoiceCallChanged() {
+    final currentCall = ref.read(voiceCallServiceProvider).call;
+    if (currentCall?.peerId != widget.friendId) {
+      if (currentCall == null) _outgoingCallPending = false;
+      return;
+    }
+    if (currentCall!.phase == VoiceCallPhase.outgoing) {
+      _outgoingCallPending = true;
+      return;
+    }
+    if (_outgoingCallPending &&
+        (currentCall.phase == VoiceCallPhase.connecting ||
+            currentCall.phase == VoiceCallPhase.connected)) {
+      _outgoingCallPending = false;
+      if (mounted) Navigator.of(context).pop();
+    }
   }
 
   Future<void> _loadMessages({bool silent = false}) async {

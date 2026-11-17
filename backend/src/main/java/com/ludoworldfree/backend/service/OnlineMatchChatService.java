@@ -32,6 +32,16 @@ public class OnlineMatchChatService {
         return toChatEvent(event);
     }
 
+    @Transactional
+    public ChatEvent saveControlEvent(String roomId, UUID playerId, String payload) {
+        if (payload == null || payload.length() > 200) {
+            throw new IllegalArgumentException("Room control events must be 200 characters or fewer.");
+        }
+        OnlineMatchChatEvent event = repository.saveAndFlush(
+                new OnlineMatchChatEvent(roomId, playerId, payload, "GAME_CONTROL"));
+        return toChatEvent(event);
+    }
+
     @Transactional(readOnly = true)
     public List<ChatEvent> after(String roomId, long eventId) {
         return repository.findByRoomIdAndIdGreaterThanOrderByIdAsc(roomId, eventId)

@@ -340,6 +340,25 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               IconButton(
+                                                tooltip: 'Chat',
+                                                onPressed: () =>
+                                                    FriendChatDialog.show(
+                                                  context,
+                                                  friendId: friend['playerId']
+                                                          ?.toString() ??
+                                                      '',
+                                                  friendName:
+                                                      friend['displayName']
+                                                              ?.toString() ??
+                                                          'Player',
+                                                ),
+                                                icon: const Icon(
+                                                  Icons
+                                                      .chat_bubble_outline_rounded,
+                                                  color: AppColors.gold,
+                                                ),
+                                              ),
+                                              IconButton(
                                                 tooltip:
                                                     currentVoiceCall?.peerId ==
                                                             friend['playerId']
@@ -371,25 +390,6 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                               ?.toString()
                                                       ? Colors.redAccent
                                                       : Colors.greenAccent,
-                                                ),
-                                              ),
-                                              IconButton(
-                                                tooltip: 'Chat',
-                                                onPressed: () =>
-                                                    FriendChatDialog.show(
-                                                  context,
-                                                  friendId: friend['playerId']
-                                                          ?.toString() ??
-                                                      '',
-                                                  friendName:
-                                                      friend['displayName']
-                                                              ?.toString() ??
-                                                          'Player',
-                                                ),
-                                                icon: const Icon(
-                                                  Icons
-                                                      .chat_bubble_outline_rounded,
-                                                  color: AppColors.gold,
                                                 ),
                                               ),
                                               PopupMenuButton<String>(

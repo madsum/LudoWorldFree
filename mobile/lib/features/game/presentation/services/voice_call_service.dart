@@ -225,7 +225,10 @@ class VoiceCallService extends ChangeNotifier {
   Future<void> _handleMessage(Map<String, dynamic> message) async {
     final type = message['type']?.toString();
     if (type == 'error') {
-      lastError = message['message']?.toString() ?? 'Voice call failed.';
+      final code = message['code']?.toString();
+      if (code != 'VOICE_CONNECTION_REJECTED') {
+        lastError = message['message']?.toString() ?? 'Voice call failed.';
+      }
       await _clearCall();
       notifyListeners();
       return;

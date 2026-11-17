@@ -24,7 +24,6 @@ import 'controllers/game_controller.dart';
 import 'widgets/exit_game_dialog.dart';
 import 'widgets/ludo_board_widget.dart';
 import 'widgets/online_chat_panel.dart';
-import '../../home/presentation/widgets/incoming_voice_call_dialog.dart';
 import '../../home/presentation/widgets/incoming_buddy_request_dialog.dart';
 import 'widgets/player_info_card.dart';
 import 'widgets/victory_dialog.dart';
@@ -58,6 +57,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Timer? _buddyRequestPollTimer;
   bool _buddyRequestPollInFlight = false;
   bool _buddyRequestDialogShowing = false;
+  bool _stopTimerRequestDialogShowing = false;
   final Set<String> _seenBuddyRequestIds = <String>{};
   final List<Map<String, dynamic>> _pendingBuddyRequests = [];
   bool _onlineStateSyncQueued = false;
@@ -71,7 +71,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
   final Set<String> _startedRematchRounds = <String>{};
   final Set<String> _disconnectedOnlinePlayerIds = <String>{};
   final Set<String> _existingBuddyOrRequestPlayerIds = <String>{};
-  String? _shownIncomingVoiceCallId;
   late final VoiceCallService _voiceCallService;
 
   @override
@@ -79,7 +78,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _voiceCallService = ref.read(voiceCallServiceProvider);
-    _voiceCallService.addListener(_handleVoiceCallChanged);
     final gameNotifier = ref.read(gameControllerProvider.notifier);
     if (gameNotifier.isOnlineMode) {
       _onlineGameNotifier = gameNotifier;
@@ -143,6 +141,24 @@ class _GameScreenState extends ConsumerState<GameScreen>
             _typingPlayerId = null;
           }
           if (mounted) setState(() {});
+        } else if (message['type'] == 'dice_timer_stop_request_sent') {
+          _showDiceTimerRequestSentDialog();
+        } else if (message['type'] == 'dice_timer_stop_requested') {
+          unawaited(_showIncomingDiceTimerStopRequest(message, gameNotifier));
+        } else if (message['type'] == 'dice_timer_stop_accepted') {
+          gameNotifier.disableTurnTimerForFriendlyChat();
+          if (_stopTimerRequestDialogShowing && mounted) {
+            Navigator.of(context).maybePop();
+          }
+          if (mounted) {
+            final requesterId = message['requesterPlayerId']?.toString();
+            _showVoiceCallMessage(requesterId ==
+                    gameNotifier.onlineLocalPlayerId
+                ? 'Your dice timer stop request was accepted.'
+                : 'The dice timer is stopped. The current player can roll when ready.');
+          }
+        } else if (message['type'] == 'dice_timer_stop_declined' && mounted) {
+          _showVoiceCallMessage('Your dice timer stop request was declined.');
         } else if (message['type'] == 'bell_alert' &&
             message['targetPlayerId'] == gameNotifier.onlineLocalPlayerId) {
           unawaited(_handleBellAlert(message));
@@ -162,6 +178,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
             ),
           );
+        } else if (message['type'] == 'error' &&
+            (message['code'] == 'DICE_TIMER_REQUEST_UNAVAILABLE' ||
+                message['code'] == 'DICE_TIMER_REQUEST_FAILED' ||
+                message['code'] == 'DICE_TIMER_RESPONSE_FAILED') &&
+            mounted) {
+          _showVoiceCallMessage(message['message']?.toString() ??
+              'No other player is connected to receive this request.');
         } else if (message['type'] == 'player_disconnected' ||
             message['type'] == 'connection_lost') {
           gameNotifier.pauseTurnTimer();
@@ -333,28 +356,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
-  void _handleVoiceCallChanged() {
-    final activeCall = _voiceCallService.call;
-    if (activeCall?.phase == VoiceCallPhase.incoming &&
-        activeCall!.callId != _shownIncomingVoiceCallId) {
-      _shownIncomingVoiceCallId = activeCall.callId;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted ||
-            _voiceCallService.call?.callId != activeCall.callId ||
-            _voiceCallService.call?.phase != VoiceCallPhase.incoming) {
-          return;
-        }
-        showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => IncomingVoiceCallDialog(
-            voiceCallService: _voiceCallService,
-          ),
-        );
-      });
-    }
-  }
-
   Future<void> _handleRematchUpdate(Map<String, dynamic> message) async {
     if (!mounted) return;
     final status = message['status'] as String?;
@@ -453,7 +454,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _voiceCallService.removeListener(_handleVoiceCallChanged);
     _buddyRequestPollTimer?.cancel();
     _chatBubbleTimer?.cancel();
     _typingIndicatorTimer?.cancel();
@@ -1021,6 +1021,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 ],
               ),
 
+              if (gameNotifier.isOnlineMode &&
+                  !gameState.isGameOver &&
+                  gameNotifier.onlineLocalPlayerId != null)
+                Positioned(
+                  left: 18,
+                  bottom: isTwoPlayerMode ? 102 : 94,
+                  child: OnlineChatButton(
+                    compact: true,
+                    onPressed: () => _openOnlineChat(context),
+                  ),
+                ),
+
               Positioned.fill(
                 child: IgnorePointer(
                   child: AnimatedOpacity(
@@ -1227,10 +1239,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
             children: [
               if (_typingPlayerId == playerId)
                 const OnlineChatTypingIndicator(),
-              OnlineChatButton(
-                compact: true,
-                onPressed: () => _openOnlineChat(context),
-              ),
             ],
           ),
         ),
@@ -1273,7 +1281,94 @@ class _GameScreenState extends ConsumerState<GameScreen>
       onTypingChanged: ref.read(webSocketServiceProvider).sendChatTyping,
       onVoiceCallPressed: () =>
           _chooseVoiceCallTarget(gameState.players, gameNotifier),
+      onStopTimerPressed: _requestDiceTimerStop,
     );
+  }
+
+  void _requestDiceTimerStop() {
+    final gameNotifier = ref.read(gameControllerProvider.notifier);
+    final localPlayerId = gameNotifier.onlineLocalPlayerId;
+    final localPlayer = gameNotifier.currentState.players
+        .where((player) => player.id == localPlayerId);
+    if (localPlayer.isEmpty) return;
+    final sent = ref
+        .read(webSocketServiceProvider)
+        .requestDiceTimerStop(localPlayer.first.name);
+    if (!sent) {
+      _showVoiceCallMessage(
+          'Could not send the dice timer stop request. Reconnecting…');
+    }
+  }
+
+  void _showDiceTimerRequestSentDialog() {
+    if (!mounted) return;
+    unawaited(showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Request sent'),
+        content: const Text(
+          'Dice timer stop request sent for chat friendly Ludo game.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    ));
+  }
+
+  Future<void> _showIncomingDiceTimerStopRequest(
+    Map<String, dynamic> message,
+    GameNotifier gameNotifier,
+  ) async {
+    if (!mounted || _stopTimerRequestDialogShowing) return;
+    final requestId = message['requestId']?.toString() ?? '';
+    if (requestId.isEmpty) return;
+    final requesterId = message['requesterPlayerId']?.toString();
+    if (requesterId == gameNotifier.onlineLocalPlayerId) return;
+    final expiresAt = (message['expiresAt'] as num?)?.toInt() ?? 0;
+    if (expiresAt == 0) return;
+    final requesterIndex = gameNotifier.currentState.players
+        .indexWhere((player) => player.id == requesterId);
+    final playerLabel =
+        requesterIndex < 0 ? 'Player' : 'Player ${requesterIndex + 1}';
+    final requesterName = message['requesterName']?.toString() ?? 'Player';
+    _stopTimerRequestDialogShowing = true;
+    bool? accepted;
+    try {
+      accepted = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Dice timer stop request'),
+          content: Text(
+            '$playerLabel ($requesterName) requested to stop the dice timer '
+            'to start a chat friendly Ludo game.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('DECLINE'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('ACCEPT'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      _stopTimerRequestDialogShowing = false;
+    }
+    if (!mounted || accepted == null) return;
+    ref.read(webSocketServiceProvider).respondToDiceTimerStop(
+          requestId: requestId,
+          requesterPlayerId: requesterId ?? '',
+          expiresAt: expiresAt,
+          accept: accepted,
+        );
   }
 
   Future<void> _chooseVoiceCallTarget(

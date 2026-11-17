@@ -199,6 +199,31 @@ class WebSocketService {
     _send({'type': 'chat_typing', 'isTyping': isTyping});
   }
 
+  bool requestDiceTimerStop(String requesterName) {
+    if (!isConnected) return false;
+    _send({
+      'type': 'dice_timer_stop_request',
+      'requesterName': requesterName,
+    });
+    return true;
+  }
+
+  void respondToDiceTimerStop({
+    required String requestId,
+    required String requesterPlayerId,
+    required int expiresAt,
+    required bool accept,
+  }) {
+    if (!isConnected || requestId.isEmpty || requesterPlayerId.isEmpty) return;
+    _send({
+      'type': 'dice_timer_stop_response',
+      'requestId': requestId,
+      'requesterPlayerId': requesterPlayerId,
+      'expiresAt': expiresAt,
+      'accept': accept,
+    });
+  }
+
   void sendBellAlert(String targetPlayerId) {
     if (!isConnected || targetPlayerId.isEmpty) return;
     _send({'type': 'bell_alert', 'targetPlayerId': targetPlayerId});

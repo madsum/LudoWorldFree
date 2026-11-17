@@ -132,6 +132,10 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                     session, localRoom, roomId, playerId, payload);
             case "chat" -> relayChatMessage(session, localRoom, playerId, payload);
             case "chat_typing" -> relayChatTyping(session, localRoom, playerId, payload);
+            case "dice_timer_stop_request" -> requestDiceTimerStop(
+                    session, localRoom, playerId, payload);
+            case "dice_timer_stop_response" -> respondToDiceTimerStop(
+                    session, localRoom, playerId, payload);
             case "bell_alert" -> relayBellAlert(session, localRoom, playerId, payload);
             case "rematch_request" -> requestRematch(session, localRoom, roomId, playerId);
             case "rematch_response" -> respondToRematch(
@@ -187,6 +191,68 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
             if (sender == null || sender.session != session) return;
             onlineMatchChatService.saveTypingStatus(localRoom.id, playerId, isTyping);
             relayChatEvents(localRoom);
+        }
+    }
+
+    private void requestDiceTimerStop(WebSocketSession session, LocalRoom localRoom,
+                                      UUID playerId, JsonNode payload) {
+        String requesterName = payload.path("requesterName").asText("Player").strip();
+        if (requesterName.isEmpty()) requesterName = "Player";
+        if (requesterName.length() > 40) requesterName = requesterName.substring(0, 40);
+        synchronized (localRoom) {
+            LocalConnection sender = localRoom.sessions.get(playerId);
+            if (sender == null || sender.session != session) return;
+            RoomSnapshot snapshot = matchmakingService.getRoomSnapshot(localRoom.id);
+            boolean hasRecipient = snapshot != null && snapshot.playerIds().stream()
+                    .anyMatch(otherId -> !otherId.equals(playerId)
+                            && snapshot.isConnected(otherId));
+            if (!hasRecipient) {
+                sendError(session, "DICE_TIMER_REQUEST_UNAVAILABLE",
+                        "No other player is connected to receive this request.");
+                return;
+            }
+            try {
+                String request = objectMapper.writeValueAsString(Map.of(
+                        "type", "dice_timer_stop_requested",
+                        "requestId", UUID.randomUUID().toString(),
+                        "requesterName", requesterName,
+                        "expiresAt", System.currentTimeMillis() + 60_000));
+                onlineMatchChatService.saveControlEvent(localRoom.id, playerId, request);
+                relayChatEvents(localRoom);
+                send(sender.session, Map.of("type", "dice_timer_stop_request_sent"));
+            } catch (Exception exception) {
+                sendError(session, "DICE_TIMER_REQUEST_FAILED",
+                        "The dice timer stop request could not be sent.");
+            }
+        }
+    }
+
+    private void respondToDiceTimerStop(WebSocketSession session, LocalRoom localRoom,
+                                        UUID playerId, JsonNode payload) {
+        String requestId = payload.path("requestId").asText("");
+        String requesterPlayerId = payload.path("requesterPlayerId").asText("");
+        long expiresAt = payload.path("expiresAt").asLong(0);
+        if (requestId.isBlank() || !payload.path("accept").isBoolean()
+                || expiresAt < System.currentTimeMillis()) return;
+        synchronized (localRoom) {
+            LocalConnection responder = localRoom.sessions.get(playerId);
+            UUID requesterId = parsePlayerId(requesterPlayerId);
+            if (responder == null || responder.session != session || requesterId == null
+                    || requesterId.equals(playerId)
+                    || !matchmakingService.isPlayerInRoom(requesterId, localRoom.id)) return;
+            try {
+                String response = objectMapper.writeValueAsString(Map.of(
+                        "type", "dice_timer_stop_response",
+                        "requestId", requestId,
+                        "requesterPlayerId", requesterId.toString(),
+                        "accept", payload.path("accept").asBoolean(),
+                        "expiresAt", expiresAt));
+                onlineMatchChatService.saveControlEvent(localRoom.id, playerId, response);
+                relayChatEvents(localRoom);
+            } catch (Exception exception) {
+                sendError(session, "DICE_TIMER_RESPONSE_FAILED",
+                        "The dice timer stop response could not be sent.");
+            }
         }
     }
 
@@ -433,12 +499,52 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                         "isTyping", "TYPING_START".equals(event.eventType())));
                 continue;
             }
+            if ("GAME_CONTROL".equals(event.eventType())) {
+                relayGameControlEvent(localRoom, event);
+                continue;
+            }
             Map<String, Object> chat = Map.of(
                     "type", "chat",
                     "playerId", event.playerId().toString(),
                     "text", event.text(),
                     "sentAt", event.createdAt().toEpochMilli());
             broadcast(localRoom, chat);
+        }
+    }
+
+    private void relayGameControlEvent(LocalRoom localRoom,
+                                       OnlineMatchChatService.ChatEvent event) {
+        try {
+            JsonNode payload = objectMapper.readTree(event.text());
+            String type = payload.path("type").asText("");
+            if (payload.path("expiresAt").asLong(0) < System.currentTimeMillis()) return;
+            if ("dice_timer_stop_requested".equals(type)) {
+                Map<String, Object> request = objectMapper.convertValue(payload, Map.class);
+                request.put("requesterPlayerId", event.playerId().toString());
+                for (LocalConnection connection : localRoom.sessions.values()) {
+                    if (!connection.playerId.equals(event.playerId())) {
+                        send(connection.session, request);
+                    }
+                }
+            } else if ("dice_timer_stop_response".equals(type)) {
+                boolean accepted = payload.path("accept").asBoolean(false);
+                Map<String, Object> response = objectMapper.convertValue(payload, Map.class);
+                response.put("type", accepted
+                        ? "dice_timer_stop_accepted" : "dice_timer_stop_declined");
+                response.put("responderPlayerId", event.playerId().toString());
+                if (accepted) {
+                    broadcast(localRoom, response);
+                } else {
+                    UUID requesterId = parsePlayerId(
+                            payload.path("requesterPlayerId").asText(null));
+                    LocalConnection requester = requesterId == null
+                            ? null : localRoom.sessions.get(requesterId);
+                    if (requester != null) send(requester.session, response);
+                }
+            }
+        } catch (Exception exception) {
+            log.warn("Could not relay a game control event in room {}: {}",
+                    localRoom.id, exception.getMessage());
         }
     }
 

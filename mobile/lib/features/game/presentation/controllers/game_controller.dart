@@ -35,6 +35,7 @@ class GameNotifier extends StateNotifier<GameState> {
   bool _isTurnProcessing = false;
   bool _isDisposed = false;
   bool _turnTimerPaused = false;
+  bool _turnTimerDisabled = false;
   String? _onlineRoomId;
   String? _onlineLocalPlayerId;
   LudoColor? _onlineSelectedColor;
@@ -96,24 +97,33 @@ class GameNotifier extends StateNotifier<GameState> {
     _turnTimeRemaining = Duration(
       milliseconds: remote.turnTimerRemainingMilliseconds,
     );
+    _turnTimerDisabled = _turnTimerDisabled || remote.turnTimerDisabled;
+    final synchronizedRemote = _turnTimerDisabled && !remote.turnTimerDisabled
+        ? remote.copyWith(
+            turnTimerDisabled: true,
+            turnTimerRemainingMilliseconds: 0,
+          )
+        : remote;
     _pawnSelectionTimeRemaining = Duration(
-      milliseconds: remote.turnTimerRemainingMilliseconds,
+      milliseconds: synchronizedRemote.turnTimerRemainingMilliseconds,
     );
     _applyingRemoteState = true;
-    state = remote;
+    state = synchronizedRemote;
     _applyingRemoteState = false;
 
-    if (remote.isGameOver || remote.currentPlayer.id != _onlineLocalPlayerId) {
+    if (synchronizedRemote.isGameOver ||
+        synchronizedRemote.turnTimerDisabled ||
+        synchronizedRemote.currentPlayer.id != _onlineLocalPlayerId) {
       return;
     }
-    if (remote.turnPhase == GameTurnPhase.rollDice) {
+    if (synchronizedRemote.turnPhase == GameTurnPhase.rollDice) {
       _scheduleTurnTimeout(Duration(
-        milliseconds: remote.turnTimerRemainingMilliseconds,
+        milliseconds: synchronizedRemote.turnTimerRemainingMilliseconds,
       ));
-    } else if (remote.turnPhase == GameTurnPhase.selectPawn &&
-        remote.movablePawns.length > 1) {
+    } else if (synchronizedRemote.turnPhase == GameTurnPhase.selectPawn &&
+        synchronizedRemote.movablePawns.length > 1) {
       _schedulePawnSelectionTimeoutWithRemaining(Duration(
-        milliseconds: remote.turnTimerRemainingMilliseconds,
+        milliseconds: synchronizedRemote.turnTimerRemainingMilliseconds,
       ));
     }
   }
@@ -195,6 +205,7 @@ class GameNotifier extends StateNotifier<GameState> {
     _matchEpoch++;
     _isTurnProcessing = false;
     _turnTimerPaused = false;
+    _turnTimerDisabled = false;
     _sixSequenceSnapshot = null;
     final freshPlayers = gamePlayers
         .map(
@@ -234,6 +245,7 @@ class GameNotifier extends StateNotifier<GameState> {
       isDiceRolling: false,
       rollOpportunityId: 0,
       turnTimerPaused: false,
+      turnTimerDisabled: false,
       turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
       statusMessage: '${freshPlayers[startingTurnIndex].name}\'s turn to roll!',
     );
@@ -334,6 +346,7 @@ class GameNotifier extends StateNotifier<GameState> {
         winnerIds: snapshot?.winnerIds ?? state.winnerIds,
         rollOpportunityId: state.rollOpportunityId,
         turnTimerPaused: false,
+        turnTimerDisabled: _turnTimerDisabled,
         turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
         statusMessage: 'Three 6s! Moves reverted. Roll again.',
       );
@@ -649,12 +662,13 @@ class GameNotifier extends StateNotifier<GameState> {
     state = state.copyWith(
       rollOpportunityId: state.rollOpportunityId + 1,
       turnTimerPaused: _turnTimerPaused,
+      turnTimerDisabled: _turnTimerDisabled,
       turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
     );
 
     if (isOnlineMode && state.currentPlayer.id != _onlineLocalPlayerId) return;
 
-    if (_turnTimerPaused) return;
+    if (_turnTimerPaused || _turnTimerDisabled) return;
     if (state.isCurrentPlayerBot) {
       _checkBotTurn();
     } else {
@@ -666,6 +680,7 @@ class GameNotifier extends StateNotifier<GameState> {
     if (_isDisposed ||
         state.isGameOver ||
         state.turnTimerPaused ||
+        state.turnTimerDisabled ||
         state.turnPhase != GameTurnPhase.rollDice ||
         state.isCurrentPlayerBot) {
       return;
@@ -954,6 +969,7 @@ class GameNotifier extends StateNotifier<GameState> {
         _isTurnProcessing ||
         state.isGameOver ||
         state.turnTimerPaused ||
+        state.turnTimerDisabled ||
         (isOnlineMode && state.currentPlayer.id != _onlineLocalPlayerId) ||
         state.turnPhase != GameTurnPhase.selectPawn ||
         state.isCurrentPlayerBot ||
@@ -1072,12 +1088,27 @@ class GameNotifier extends StateNotifier<GameState> {
       }
       return;
     }
-    if (state.turnPhase != GameTurnPhase.rollDice) return;
+    if (state.turnTimerDisabled || state.turnPhase != GameTurnPhase.rollDice) {
+      return;
+    }
     if (state.isCurrentPlayerBot) {
       _checkBotTurn();
     } else {
       _scheduleTurnTimeout(_turnTimeRemaining);
     }
+  }
+
+  void disableTurnTimerForFriendlyChat() {
+    if (!isOnlineMode || state.isGameOver || _turnTimerDisabled) return;
+    _turnTimerDisabled = true;
+    _cancelTurnTimer();
+    _cancelPawnSelectionTimer();
+    _botTimer?.cancel();
+    if (_isDisposed) return;
+    state = state.copyWith(
+      turnTimerDisabled: true,
+      turnTimerRemainingMilliseconds: 0,
+    );
   }
 
   void _cancelTurnTimer() {
