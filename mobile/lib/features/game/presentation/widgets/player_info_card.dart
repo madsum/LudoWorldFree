@@ -224,7 +224,15 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                               vertical: 5,
                             ),
                   decoration: BoxDecoration(
-                    color: AppColors.bgNavy.withValues(alpha: 0.97),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color.lerp(AppColors.bgNavy, cardBorderColor, 0.10)!,
+                        AppColors.bgNavy,
+                        const Color(0xFF10182D),
+                      ],
+                    ),
                     borderRadius: BorderRadius.circular(11),
                     border: Border.all(
                       color: cardBorderColor,

@@ -854,16 +854,30 @@ class _PawnTileWidget extends StatelessWidget {
           height: size * 0.88,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Colors.white,
+            gradient: RadialGradient(
+              center: const Alignment(-0.42, -0.60),
+              radius: 1.15,
+              colors: [
+                Colors.white,
+                Color.lerp(Colors.white, color.lightColor, 0.22)!,
+                Color.lerp(Colors.white, baseColor, 0.08)!,
+              ],
+              stops: const [0, 0.6, 1],
+            ),
             border: Border.all(
               color: isPaired ? AppColors.gold : baseColor,
               width: isPaired ? 2.5 : 2.0,
             ),
-            boxShadow: const [
+            boxShadow: [
               BoxShadow(
                 color: Colors.black45,
-                blurRadius: 4,
-                offset: Offset(0, 2),
+                blurRadius: size * 0.12,
+                offset: Offset(0, size * 0.06),
+              ),
+              BoxShadow(
+                color: color.lightColor.withValues(alpha: 0.38),
+                blurRadius: size * 0.12,
+                offset: Offset(-size * 0.04, -size * 0.04),
               ),
             ],
           ),
@@ -1163,6 +1177,20 @@ class _LudoBoardPainter extends CustomPainter {
       const Radius.circular(14),
     );
     canvas.drawRRect(yardRect, yardPaint);
+    canvas.drawRRect(
+      yardRect,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(-0.75, -0.85),
+          radius: 1.35,
+          colors: [
+            Colors.white.withValues(alpha: 0.34),
+            Colors.white.withValues(alpha: 0.04),
+            Colors.black.withValues(alpha: 0.10),
+          ],
+          stops: const [0, 0.48, 1],
+        ).createShader(yardRect.outerRect),
+    );
 
     // Inner White Box with Drop Shadow
     final innerRect = RRect.fromRectAndRadius(
@@ -1176,8 +1204,20 @@ class _LudoBoardPainter extends CustomPainter {
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
     canvas.drawRRect(innerRect.shift(const Offset(0, 2)), shadowPaint);
 
-    final whitePaint = Paint()..color = const Color(0xFFFAFAFA);
+    final whitePaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFFFFFFF), Color(0xFFF5F8FF), Color(0xFFE8EDF6)],
+      ).createShader(innerRect.outerRect);
     canvas.drawRRect(innerRect, whitePaint);
+    canvas.drawRRect(
+      innerRect,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.72)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.1,
+    );
 
     // Draw 4 Circular 3D Pawn Seats
     final yardPositions = BoardPosition.getYardPositions(color);

@@ -820,6 +820,24 @@ class _GameScreenState extends ConsumerState<GameScreen>
         body: SafeArea(
           child: Stack(
             children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: const BoxDecoration(
+                      gradient: RadialGradient(
+                        center: Alignment(0.82, -0.72),
+                        radius: 1.35,
+                        colors: [
+                          Color(0xFF183D73),
+                          Color(0xFF101B38),
+                          AppColors.bgDark,
+                        ],
+                        stops: [0, 0.48, 1],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               Column(
                 children: [
                   if (!gameState.isGameOver)
