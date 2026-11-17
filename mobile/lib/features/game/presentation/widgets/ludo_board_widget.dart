@@ -280,7 +280,6 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                       ..._buildPawnWidgets(tileSize),
                       ..._buildHurryUpIcons(tileSize),
                       ..._buildBellAlertText(tileSize),
-                      ..._buildBuddyRequestButtons(tileSize),
                       ..._buildPlayerNamePlates(tileSize),
                       ..._buildFinishedPlayerCrowns(tileSize),
                       ..._buildEliminatedPlayerSigns(tileSize),
@@ -319,47 +318,6 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
               onTap: widget.onHurryUpTap,
               child: Image.asset('assets/images/hurry-up.png',
                   fit: BoxFit.contain),
-            ),
-          ),
-        ),
-      );
-    }).toList(growable: false);
-  }
-
-  List<Widget> _buildBuddyRequestButtons(double tileSize) {
-    final onTap = widget.onBuddyRequestTap;
-    if (onTap == null) return const [];
-    return widget.gameState.players
-        .where((player) => !player.isBot && player.id != widget.localPlayerId)
-        .map((player) {
-      final center = switch (player.color) {
-        LudoColor.red => const Offset(0.75, 0.5),
-        LudoColor.green => const Offset(9.35, 0.5),
-        LudoColor.yellow => const Offset(9.35, 14.5),
-        LudoColor.blue => const Offset(0.75, 14.5),
-      };
-      final size = tileSize * 0.82;
-      return Positioned(
-        left: center.dx * tileSize - size / 2,
-        top: center.dy * tileSize - size / 2,
-        width: size,
-        height: size,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: () => onTap(player.id),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.asset('assets/images/buddy-add.png', fit: BoxFit.contain),
-                if (widget.existingBuddyOrRequestPlayerIds.contains(player.id))
-                  const Align(
-                    alignment: Alignment.bottomRight,
-                    child: Icon(Icons.check_circle,
-                        color: Color(0xFF00B967), size: 10),
-                  ),
-              ],
             ),
           ),
         ),
@@ -444,9 +402,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (widget.onBuddyRequestTap != null &&
-                      !player.isBot &&
-                      player.id != widget.localPlayerId)
+                  if (widget.onBuddyRequestTap != null && !player.isBot)
                     Padding(
                       padding: EdgeInsets.only(right: tileSize * 0.12),
                       child: SizedBox(
@@ -456,7 +412,19 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                           color: Colors.transparent,
                           child: InkWell(
                             customBorder: const CircleBorder(),
-                            onTap: () => widget.onBuddyRequestTap!(player.id),
+                            onTap: () {
+                              final targetId = player.id == widget.localPlayerId
+                                  ? widget.gameState.players
+                                      .where((candidate) =>
+                                          !candidate.isBot &&
+                                          candidate.id != widget.localPlayerId)
+                                      .firstOrNull
+                                      ?.id
+                                  : player.id;
+                              if (targetId != null) {
+                                widget.onBuddyRequestTap!(targetId);
+                              }
+                            },
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
@@ -465,7 +433,15 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                                   fit: BoxFit.contain,
                                 ),
                                 if (widget.existingBuddyOrRequestPlayerIds
-                                    .contains(player.id))
+                                    .contains(player.id == widget.localPlayerId
+                                        ? widget.gameState.players
+                                            .where((candidate) =>
+                                                !candidate.isBot &&
+                                                candidate.id !=
+                                                    widget.localPlayerId)
+                                            .firstOrNull
+                                            ?.id
+                                        : player.id))
                                   const Align(
                                     alignment: Alignment.bottomRight,
                                     child: Icon(Icons.check_circle,
@@ -635,9 +611,34 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
 
     for (final player in widget.gameState.players) {
       for (final pawn in player.pawns) {
-        if (pawn.isFinished) continue;
-
         final key = '${pawn.color.name}_${pawn.id}';
+        if (pawn.isFinished) {
+          final size = tileSize * 0.58;
+          final (x, y) = switch (pawn.color) {
+            LudoColor.red => (6.08, 6.12 + pawn.id * 0.67),
+            LudoColor.green => (6.12 + pawn.id * 0.67, 6.08),
+            LudoColor.yellow => (8.34, 6.12 + pawn.id * 0.67),
+            LudoColor.blue => (6.12 + pawn.id * 0.67, 8.34),
+          };
+          widgets.add(
+            Positioned(
+              key: ValueKey('finished_$key'),
+              left: x * tileSize,
+              top: y * tileSize,
+              width: size,
+              height: size,
+              child: _PawnTileWidget(
+                color: pawn.color,
+                isMovable: false,
+                isPaired: pawn.isPaired,
+                isPairSelected: false,
+                size: size,
+              ),
+            ),
+          );
+          continue;
+        }
+
         final isAnimating = _activeControllers.containsKey(key);
 
         if (isAnimating) {
