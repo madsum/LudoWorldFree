@@ -108,7 +108,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
       !widget.player.isEliminated &&
       (widget.gameState.turnPhase == GameTurnPhase.rollDice ||
           (widget.gameState.turnPhase == GameTurnPhase.selectPawn &&
-              widget.gameState.movablePawns.length > 1)) &&
+              widget.gameState.legalMovablePawns.length > 1)) &&
       !widget.gameState.turnTimerDisabled &&
       !widget.gameState.isGameOver;
 

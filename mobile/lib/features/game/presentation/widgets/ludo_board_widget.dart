@@ -698,7 +698,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
           final isMovable =
               widget.gameState.turnPhase == GameTurnPhase.selectPawn &&
                   widget.gameState.currentPlayer.color == pawn.color &&
-                  widget.gameState.movablePawns
+                  widget.gameState.legalMovablePawns
                       .any((p) => p.id == pawn.id && p.color == pawn.color);
 
           staticTileOccupants.putIfAbsent(tileKey, () => []);

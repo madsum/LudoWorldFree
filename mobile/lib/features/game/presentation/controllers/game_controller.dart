@@ -82,11 +82,32 @@ class GameNotifier extends StateNotifier<GameState> {
   void applyRemoteGameState(Map<String, dynamic> json) {
     if (!isOnlineMode) return;
     final perspectiveJson = _mapWireColors(json, _onlineViewColorByWireName);
-    final remote = GameState.fromJson(perspectiveJson,
+    var remote = GameState.fromJson(perspectiveJson,
         localPlayerId: _onlineLocalPlayerId);
     if ((remote.players.length != 2 && remote.players.length != 4) ||
         remote.players.any((player) => player.isBot)) {
       return;
+    }
+    // Keep a pawn that has reached the finish visible if an online state
+    // update carries the completed move event before its pawn snapshot catches
+    // up. The event and pawn colors have already been mapped to this client's
+    // perspective above.
+    final completedMove = remote.lastMoveEvent;
+    if (completedMove?.toStep == 56) {
+      remote = remote.copyWith(
+        players: remote.players.map((player) {
+          if (player.color != completedMove!.color) return player;
+          return player.copyWith(
+            pawns: player.pawns
+                .map((pawn) => pawn.id == completedMove.pawnId &&
+                        (pawn.isFinished ||
+                            pawn.stepCount == completedMove.fromStep)
+                    ? pawn.copyWith(stepCount: 56)
+                    : pawn)
+                .toList(growable: false),
+          );
+        }).toList(growable: false),
+      );
     }
     _botTimer?.cancel();
     _cancelTurnTimer();
@@ -121,7 +142,7 @@ class GameNotifier extends StateNotifier<GameState> {
         milliseconds: synchronizedRemote.turnTimerRemainingMilliseconds,
       ));
     } else if (synchronizedRemote.turnPhase == GameTurnPhase.selectPawn &&
-        synchronizedRemote.movablePawns.length > 1) {
+        synchronizedRemote.legalMovablePawns.length > 1) {
       _schedulePawnSelectionTimeoutWithRemaining(Duration(
         milliseconds: synchronizedRemote.turnTimerRemainingMilliseconds,
       ));
@@ -427,7 +448,7 @@ class GameNotifier extends StateNotifier<GameState> {
         state.diceValue == null) {
       return;
     }
-    if (!state.movablePawns
+    if (!state.legalMovablePawns
         .any((p) => p.id == selectedPawn.id && p.color == selectedPawn.color)) {
       return;
     }
@@ -974,7 +995,7 @@ class GameNotifier extends StateNotifier<GameState> {
         state.turnPhase != GameTurnPhase.selectPawn ||
         state.isCurrentPlayerBot ||
         state.currentPlayer.isEliminated ||
-        state.movablePawns.length < 2) {
+        state.legalMovablePawns.length < 2) {
       return;
     }
 
@@ -1017,7 +1038,7 @@ class GameNotifier extends StateNotifier<GameState> {
         turnTimerRemainingMilliseconds: 0,
         statusMessage: 'Time ran out! Moving a token automatically.',
       );
-      final legalPawns = state.movablePawns
+      final legalPawns = state.legalMovablePawns
           .where(
               (pawn) => GameEngine.isPawnMoveValid(pawn, state.diceValue ?? 1))
           .toList(growable: false);
@@ -1083,7 +1104,7 @@ class GameNotifier extends StateNotifier<GameState> {
     if (state.turnPhase == GameTurnPhase.selectPawn) {
       if (state.isCurrentPlayerBot) {
         _scheduleBotMove();
-      } else if (state.movablePawns.length > 1) {
+      } else if (state.legalMovablePawns.length > 1) {
         _schedulePawnSelectionTimeoutWithRemaining(_pawnSelectionTimeRemaining);
       }
       return;
@@ -1162,7 +1183,7 @@ class GameNotifier extends StateNotifier<GameState> {
         return;
       }
       _botTimer = null;
-      _autoSelectAndMove(state.movablePawns);
+      _autoSelectAndMove(state.legalMovablePawns);
     });
   }
 }

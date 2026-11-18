@@ -1,4 +1,5 @@
 import 'ludo_color.dart';
+import '../game_engine.dart';
 import 'pawn_model.dart';
 import 'player_model.dart';
 
@@ -79,6 +80,19 @@ class GameState {
   bool get isCurrentPlayerBot => currentPlayer.isBot;
   bool get isLocalPlayerTurn =>
       localPlayerId == null || currentPlayer.id == localPlayerId;
+
+  /// Recomputes the selectable pawns from the active player and die result.
+  /// The serialized [movablePawns] list is useful for syncing older clients,
+  /// but can be stale or incomplete in an online state update. Keep the board,
+  /// tap validation, and turn timers on the same canonical set of legal moves.
+  List<PawnModel> get legalMovablePawns {
+    if (turnPhase != GameTurnPhase.selectPawn ||
+        diceValue == null ||
+        players.isEmpty) {
+      return const [];
+    }
+    return GameEngine.getMovablePawns(currentPlayer, diceValue!);
+  }
 
   Map<String, dynamic> toJson() => {
         'players': players.map(_playerToJson).toList(growable: false),
