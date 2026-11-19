@@ -46,7 +46,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
   );
   late final AnimationController _turnCountdown = AnimationController(
     vsync: this,
-    duration: GameNotifier.turnDuration,
+    duration: _turnDuration,
   );
   late final Listenable _animations =
       Listenable.merge([_turnPulse, _turnCountdown]);
@@ -112,6 +112,10 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
       !widget.gameState.turnTimerDisabled &&
       !widget.gameState.isGameOver;
 
+  Duration get _turnDuration => widget.gameState.localPlayerId == null
+      ? GameNotifier.turnDuration
+      : GameNotifier.onlineTurnDuration;
+
   void _syncCountdown({bool reset = false}) {
     if (!_timerOpportunityActive) {
       _turnCountdown.stop(canceled: false);
@@ -122,7 +126,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
       return;
     }
     if (reset) {
-      final fullDuration = GameNotifier.turnDuration.inMilliseconds;
+      final fullDuration = _turnDuration.inMilliseconds;
       final remaining = widget.gameState.turnTimerRemainingMilliseconds;
       _turnCountdown.value = (1 - remaining / fullDuration).clamp(0.0, 1.0);
     }

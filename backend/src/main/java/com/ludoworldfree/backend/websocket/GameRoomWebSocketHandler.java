@@ -92,7 +92,8 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
             if (snapshot.status() == com.ludoworldfree.backend.model.OnlineMatchRoom.Status.READY) {
                 broadcastRoomReady(localRoom, roomId);
                 if (snapshot.stateRevision() > 0 && snapshot.latestStateJson() != null) {
-                    sendState(session, snapshot.latestStateSenderId(), snapshot.latestStateJson());
+                    sendState(session, snapshot.latestStateSenderId(),
+                            snapshot.stateRevision(), snapshot.latestStateJson());
                 }
             } else {
                 send(session, Map.of("type", "room_waiting", "roomId", roomId));
@@ -127,6 +128,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
 
         switch (type) {
             case "game_state" -> recordGameState(session, localRoom, roomId, playerId, payload.get("state"));
+            case "state_sync_request" -> sendCurrentGameState(session, roomId, playerId);
             case "roll_request" -> issueDiceRoll(session, roomId, playerId, payload);
             case "forfeit_disconnected" -> forfeitDisconnectedPlayer(
                     session, localRoom, roomId, playerId, payload);
@@ -308,6 +310,26 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    private void sendCurrentGameState(WebSocketSession session, String roomId, UUID playerId) {
+        RoomSnapshot snapshot = matchmakingService.getRoomSnapshot(roomId);
+        if (snapshot == null
+                || snapshot.status() != com.ludoworldfree.backend.model.OnlineMatchRoom.Status.READY
+                || !snapshot.playerIds().contains(playerId)
+                || playerId.equals(snapshot.latestStateSenderId())
+                || snapshot.latestStateJson() == null) {
+            return;
+        }
+        try {
+            Object state = objectMapper.readValue(snapshot.latestStateJson(), Object.class);
+            send(session, Map.of(
+                    "type", "game_state_sync",
+                    "revision", snapshot.stateRevision(),
+                    "state", state));
+        } catch (Exception exception) {
+            sendError(session, "STATE_SYNC_FAILED", "The current game state could not be read.");
+        }
+    }
+
     private void forfeitDisconnectedPlayer(WebSocketSession session, LocalRoom localRoom,
                                            String roomId, UUID playerId, JsonNode payload) {
         UUID disconnectedPlayerId = parsePlayerId(
@@ -412,7 +434,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                 if (revision <= connection.lastRevision) continue;
                 connection.lastRevision = revision;
                 if (connection.playerId.equals(senderId)) continue;
-                sendState(connection.session, senderId, stateJson);
+                sendState(connection.session, senderId, revision, stateJson);
             }
         }
     }
@@ -471,7 +493,8 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                     for (OnlineMatchStateEvent event : events) {
                         connection.lastRevision = event.getRevision();
                         if (connection.playerId.equals(event.getSenderId())) continue;
-                        sendState(connection.session, event.getSenderId(), event.getStateJson());
+                        sendState(connection.session, event.getSenderId(),
+                                event.getRevision(), event.getStateJson());
                     }
                 }
             }
@@ -557,7 +580,8 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                 for (OnlineMatchStateEvent event : events) {
                     connection.lastRevision = event.getRevision();
                     if (connection.playerId.equals(event.getSenderId())) continue;
-                    sendState(connection.session, event.getSenderId(), event.getStateJson());
+                    sendState(connection.session, event.getSenderId(),
+                            event.getRevision(), event.getStateJson());
                 }
             }
         }
@@ -646,11 +670,16 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         send(session, Map.of("type", "error", "code", code, "message", detail));
     }
 
-    private void sendState(WebSocketSession session, UUID playerId, String stateJson) {
+    private void sendState(WebSocketSession session, UUID playerId,
+                           long revision, String stateJson) {
         if (playerId == null) return;
         try {
             Object state = objectMapper.readValue(stateJson, Object.class);
-            send(session, Map.of("type", "game_state", "playerId", playerId.toString(), "state", state));
+            send(session, Map.of(
+                    "type", "game_state",
+                    "playerId", playerId.toString(),
+                    "revision", revision,
+                    "state", state));
         } catch (Exception exception) {
             sendError(session, "INVALID_STATE", "A saved game update could not be read.");
         }

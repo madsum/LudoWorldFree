@@ -16,6 +16,9 @@ final gameControllerProvider =
 
 class GameNotifier extends StateNotifier<GameState> {
   static const Duration turnDuration = Duration(seconds: 5);
+  // Online turns include state delivery between two clients. Give the remote
+  // player time to receive the turn and tap the die before auto-roll begins.
+  static const Duration onlineTurnDuration = Duration(seconds: 15);
   static const int maxMissedTurns = 5;
 
   final math.Random _random = math.Random();
@@ -45,6 +48,7 @@ class GameNotifier extends StateNotifier<GameState> {
   Future<int> Function(int rollOpportunityId)? _onlineDiceRoller;
   bool _applyingRemoteState = false;
   String _currentGameId = '';
+  int _lastOnlineStateRevision = 0;
 
   GameNotifier() : super(const GameState(players: []));
 
@@ -52,6 +56,8 @@ class GameNotifier extends StateNotifier<GameState> {
   String? get onlineLocalPlayerId => _onlineLocalPlayerId;
   GameState get currentState => state;
   bool get isOnlineMode => _onlineRoomId != null;
+  Duration get _activeTurnDuration =>
+      isOnlineMode ? onlineTurnDuration : turnDuration;
   bool get isApplyingRemoteState => _applyingRemoteState;
   String get currentGameId => _currentGameId;
 
@@ -65,6 +71,7 @@ class GameNotifier extends StateNotifier<GameState> {
     _onlineLocalPlayerId = playerId;
     _onlineSelectedColor = selectedColor;
     _onlineDiceRoller = requestDiceRoll;
+    _lastOnlineStateRevision = 0;
     state = state.copyWith(localPlayerId: playerId);
   }
 
@@ -76,11 +83,13 @@ class GameNotifier extends StateNotifier<GameState> {
     _onlineWireColorByPlayerId = const {};
     _onlineViewColorByWireName = const {};
     _onlineWireColorByViewName = const {};
+    _lastOnlineStateRevision = 0;
     state = state.copyWith(clearLocalPlayerId: true);
   }
 
-  void applyRemoteGameState(Map<String, dynamic> json) {
+  void applyRemoteGameState(Map<String, dynamic> json, {int? revision}) {
     if (!isOnlineMode) return;
+    if (revision != null && revision <= _lastOnlineStateRevision) return;
     final perspectiveJson = _mapWireColors(json, _onlineViewColorByWireName);
     var remote = GameState.fromJson(perspectiveJson,
         localPlayerId: _onlineLocalPlayerId);
@@ -88,6 +97,7 @@ class GameNotifier extends StateNotifier<GameState> {
         remote.players.any((player) => player.isBot)) {
       return;
     }
+    if (revision != null) _lastOnlineStateRevision = revision;
     // Keep a pawn that has reached the finish visible if an online state
     // update carries the completed move event before its pawn snapshot catches
     // up. The event and pawn colors have already been mapped to this client's
@@ -267,7 +277,7 @@ class GameNotifier extends StateNotifier<GameState> {
       rollOpportunityId: 0,
       turnTimerPaused: false,
       turnTimerDisabled: false,
-      turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
+      turnTimerRemainingMilliseconds: _activeTurnDuration.inMilliseconds,
       statusMessage: '${freshPlayers[startingTurnIndex].name}\'s turn to roll!',
     );
 
@@ -319,10 +329,10 @@ class GameNotifier extends StateNotifier<GameState> {
         turnPhase: GameTurnPhase.rollDice,
         isDiceRolling: false,
         turnTimerPaused: false,
-        turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
+        turnTimerRemainingMilliseconds: _activeTurnDuration.inMilliseconds,
         statusMessage: 'Could not reach the game server. Tap to roll again.',
       );
-      _scheduleTurnTimeout(turnDuration);
+      _scheduleTurnTimeout(_activeTurnDuration);
       return;
     }
 
@@ -368,7 +378,7 @@ class GameNotifier extends StateNotifier<GameState> {
         rollOpportunityId: state.rollOpportunityId,
         turnTimerPaused: false,
         turnTimerDisabled: _turnTimerDisabled,
-        turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
+        turnTimerRemainingMilliseconds: _activeTurnDuration.inMilliseconds,
         statusMessage: 'Three 6s! Moves reverted. Roll again.',
       );
       _beginRollOpportunity();
@@ -420,7 +430,7 @@ class GameNotifier extends StateNotifier<GameState> {
         statusMessage:
             '${state.currentPlayer.name} rolled a $diceResult! Select a token.',
         turnTimerPaused: false,
-        turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
+        turnTimerRemainingMilliseconds: _activeTurnDuration.inMilliseconds,
       );
       _isTurnProcessing = false;
 
@@ -684,7 +694,7 @@ class GameNotifier extends StateNotifier<GameState> {
       rollOpportunityId: state.rollOpportunityId + 1,
       turnTimerPaused: _turnTimerPaused,
       turnTimerDisabled: _turnTimerDisabled,
-      turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
+      turnTimerRemainingMilliseconds: _activeTurnDuration.inMilliseconds,
     );
 
     if (isOnlineMode && state.currentPlayer.id != _onlineLocalPlayerId) return;
@@ -693,7 +703,7 @@ class GameNotifier extends StateNotifier<GameState> {
     if (state.isCurrentPlayerBot) {
       _checkBotTurn();
     } else {
-      _scheduleTurnTimeout(turnDuration);
+      _scheduleTurnTimeout(_activeTurnDuration);
     }
   }
 
@@ -832,7 +842,7 @@ class GameNotifier extends StateNotifier<GameState> {
       movablePawns: const [],
       isDiceRolling: false,
       turnTimerPaused: false,
-      turnTimerRemainingMilliseconds: turnDuration.inMilliseconds,
+      turnTimerRemainingMilliseconds: _activeTurnDuration.inMilliseconds,
       statusMessage: '${players[nextIndex].name} takes the next turn.',
     );
     _beginRollOpportunity();
@@ -981,7 +991,7 @@ class GameNotifier extends StateNotifier<GameState> {
   }
 
   void _schedulePawnSelectionTimeout() {
-    _schedulePawnSelectionTimeoutWithRemaining(turnDuration);
+    _schedulePawnSelectionTimeoutWithRemaining(_activeTurnDuration);
   }
 
   void _schedulePawnSelectionTimeoutWithRemaining(Duration delay) {
@@ -1053,7 +1063,7 @@ class GameNotifier extends StateNotifier<GameState> {
     _pawnSelectionStopwatch = null;
     _pawnSelectionTimerPlayerId = null;
     _pawnSelectionOpportunityId = null;
-    _pawnSelectionTimeRemaining = turnDuration;
+    _pawnSelectionTimeRemaining = _activeTurnDuration;
   }
 
   void pauseTurnTimer({bool updateGameState = true}) {
@@ -1138,7 +1148,7 @@ class GameNotifier extends StateNotifier<GameState> {
     _turnStopwatch?.stop();
     _turnStopwatch = null;
     _turnTimerPlayerId = null;
-    _turnTimeRemaining = turnDuration;
+    _turnTimeRemaining = _activeTurnDuration;
   }
 
   void _checkBotTurn() {

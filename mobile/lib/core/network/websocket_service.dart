@@ -188,6 +188,11 @@ class WebSocketService {
     _send({'type': 'game_state', 'state': state});
   }
 
+  void requestCurrentGameState() {
+    if (!isConnected) return;
+    _send({'type': 'state_sync_request'});
+  }
+
   void sendChatMessage(String text) {
     final message = text.trim();
     if (message.isEmpty || message.length > 200) return;

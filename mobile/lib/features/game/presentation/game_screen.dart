@@ -96,11 +96,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
       );
       final webSocketService = ref.read(webSocketServiceProvider);
       _onlineSubscription = webSocketService.messageStream.listen((message) {
-        if (message['type'] == 'game_state' &&
-            message['state'] is Map &&
-            message['playerId'] != gameNotifier.onlineLocalPlayerId) {
+        if ((message['type'] == 'game_state' &&
+                message['state'] is Map &&
+                message['playerId'] != gameNotifier.onlineLocalPlayerId) ||
+            (message['type'] == 'game_state_sync' && message['state'] is Map)) {
+          final revision = message['revision'];
           gameNotifier.applyRemoteGameState(
             Map<String, dynamic>.from(message['state'] as Map),
+            revision: revision is num ? revision.toInt() : null,
           );
         } else if (message['type'] == 'chat' &&
             message['playerId'] is String &&
@@ -216,6 +219,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 () => _disconnectedOnlinePlayerIds.remove(restoredPlayerId));
           }
           gameNotifier.resumeTurnTimer();
+          webSocketService.requestCurrentGameState();
         } else if (message['type'] == 'connection_failed' && mounted) {
           gameNotifier.pauseTurnTimer();
         } else if (message['type'] == 'match_finished' && mounted) {
@@ -233,6 +237,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
           });
         }
       });
+      webSocketService.requestCurrentGameState();
       final initialState = ref.read(gameControllerProvider);
       _lastOnlineTurnPlayerId =
           initialState.players.isEmpty ? null : initialState.currentPlayer.id;
