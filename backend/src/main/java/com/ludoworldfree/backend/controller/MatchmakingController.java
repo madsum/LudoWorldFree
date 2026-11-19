@@ -33,17 +33,21 @@ public class MatchmakingController {
 
     @GetMapping("/status")
     public ResponseEntity<MatchmakingResponseDto> checkStatus(
-            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId) {
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
+            @RequestParam int playerCount,
+            @RequestParam String sessionId) {
         UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
-        MatchmakingResponseDto response = matchmakingService.checkStatus(playerId);
+        MatchmakingResponseDto response = matchmakingService.checkStatus(
+                playerId, playerCount, sessionId);
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/cancel")
     public ResponseEntity<?> cancelQueue(
-            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId) {
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
+            @RequestParam(required = false) String sessionId) {
         UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
-        matchmakingService.cancelQueue(playerId);
+        matchmakingService.cancelQueue(playerId, sessionId);
         return ResponseEntity.ok(Map.of("success", true, "message", "Matchmaking cancelled."));
     }
 }

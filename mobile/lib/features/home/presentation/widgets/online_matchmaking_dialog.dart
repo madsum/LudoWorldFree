@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
@@ -59,6 +60,8 @@ class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
 class _OnlineMatchmakingDialogState
     extends ConsumerState<OnlineMatchmakingDialog>
     with TickerProviderStateMixin {
+  late final String _matchmakingSessionId = _createSessionId();
+
   late final AnimationController _vsGlowController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
@@ -88,6 +91,14 @@ class _OnlineMatchmakingDialogState
   String? _opponentFlag;
   dynamic _matchPlayers;
 
+  String _createSessionId() {
+    final random = math.Random.secure();
+    return List.generate(
+      4,
+      (_) => random.nextInt(1 << 32).toRadixString(16).padLeft(8, '0'),
+    ).join();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -113,6 +124,7 @@ class _OnlineMatchmakingDialogState
       'entryFee': 500,
       'playerCount': widget.playerCount,
       'selectedColor': widget.selectedColor.name,
+      'sessionId': _matchmakingSessionId,
     };
 
     _isQueueRequestRunning = true;
@@ -153,6 +165,10 @@ class _OnlineMatchmakingDialogState
               )
             : await dio.get(
                 '/matchmaking/status',
+                queryParameters: {
+                  'playerCount': widget.playerCount,
+                  'sessionId': _matchmakingSessionId,
+                },
                 options: Options(headers: {'X-Player-ID': user?.id}),
               );
         if (statusResponse.data != null) {
@@ -221,6 +237,12 @@ class _OnlineMatchmakingDialogState
 
   void _handleMatchFoundResponse(dynamic data) {
     if (_isMatchFound) return;
+    final matchedPlayerCount = (data['playerCount'] as num?)?.toInt();
+    if (matchedPlayerCount != widget.playerCount) {
+      _failMatchedRoom(
+          'The room did not match your selected player count. Please search again.');
+      return;
+    }
     _pollingTimer?.cancel();
     _countdownTimer?.cancel();
 
@@ -258,6 +280,7 @@ class _OnlineMatchmakingDialogState
     final connected = await ref.read(webSocketServiceProvider).connectToRoom(
           roomId: roomId,
           playerId: localPlayerId,
+          matchmakingSessionId: _matchmakingSessionId,
         );
     if (!connected || !mounted) {
       _failMatchedRoom(
@@ -374,6 +397,7 @@ class _OnlineMatchmakingDialogState
       final user = ref.read(authControllerProvider).user;
       await dio.post(
         '/matchmaking/cancel',
+        queryParameters: {'sessionId': _matchmakingSessionId},
         options: Options(headers: {'X-Player-ID': user?.id}),
       );
     } catch (_) {}

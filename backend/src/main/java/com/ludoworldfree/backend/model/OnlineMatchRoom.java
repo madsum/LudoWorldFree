@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -16,6 +17,8 @@ import java.util.UUID;
 @Entity
 @Table(name = "online_match_rooms")
 public class OnlineMatchRoom {
+    private static final Duration CONNECTION_LEASE = Duration.ofSeconds(45);
+
     public enum Status { MATCHED, READY, FINISHED, CANCELLED }
     public enum RematchStatus { NONE, REQUESTED, DECLINED, ACCEPTED }
 
@@ -78,6 +81,15 @@ public class OnlineMatchRoom {
     @Column(name = "player_count", nullable = false)
     private int playerCount = 2;
 
+    @Column(name = "player_a_session_id", length = 64)
+    private String playerASessionId;
+    @Column(name = "player_b_session_id", length = 64)
+    private String playerBSessionId;
+    @Column(name = "player_c_session_id", length = 64)
+    private String playerCSessionId;
+    @Column(name = "player_d_session_id", length = 64)
+    private String playerDSessionId;
+
     @Column(name = "entry_fee", nullable = false)
     private long entryFee;
 
@@ -93,6 +105,15 @@ public class OnlineMatchRoom {
     private boolean playerCConnected;
     @Column(name = "player_d_connected", nullable = false)
     private boolean playerDConnected;
+
+    @Column(name = "player_a_last_seen_at")
+    private Instant playerALastSeenAt;
+    @Column(name = "player_b_last_seen_at")
+    private Instant playerBLastSeenAt;
+    @Column(name = "player_c_last_seen_at")
+    private Instant playerCLastSeenAt;
+    @Column(name = "player_d_last_seen_at")
+    private Instant playerDLastSeenAt;
 
     @Column(name = "turn_owner_id")
     private UUID turnOwnerId;
@@ -167,11 +188,13 @@ public class OnlineMatchRoom {
         MatchmakingTicket playerB = tickets.get(1);
         this.roomId = roomId;
         this.playerAId = playerA.getPlayerId();
+        this.playerASessionId = playerA.getSessionId();
         this.playerAName = playerA.getDisplayName();
         this.playerAAvatar = playerA.getAvatarUrl();
         this.playerACountry = playerA.getCountry();
         this.playerAFlag = playerA.getCountryFlag();
         this.playerBId = playerB.getPlayerId();
+        this.playerBSessionId = playerB.getSessionId();
         this.playerBName = playerB.getDisplayName();
         this.playerBAvatar = playerB.getAvatarUrl();
         this.playerBCountry = playerB.getCountry();
@@ -184,9 +207,11 @@ public class OnlineMatchRoom {
             playerCId = playerC.getPlayerId(); playerCName = playerC.getDisplayName();
             playerCAvatar = playerC.getAvatarUrl(); playerCCountry = playerC.getCountry();
             playerCFlag = playerC.getCountryFlag(); playerCColor = assignedColors.get(2);
+            playerCSessionId = playerC.getSessionId();
             playerDId = playerD.getPlayerId(); playerDName = playerD.getDisplayName();
             playerDAvatar = playerD.getAvatarUrl(); playerDCountry = playerD.getCountry();
             playerDFlag = playerD.getCountryFlag(); playerDColor = assignedColors.get(3);
+            playerDSessionId = playerD.getSessionId();
         }
         this.entryFee = entryFee;
     }
@@ -247,6 +272,14 @@ public class OnlineMatchRoom {
 
     public boolean contains(UUID playerId) { return getPlayerIds().contains(playerId); }
 
+    public String sessionIdOf(UUID playerId) {
+        if (playerAId.equals(playerId)) return playerASessionId;
+        if (playerBId.equals(playerId)) return playerBSessionId;
+        if (playerCId != null && playerCId.equals(playerId)) return playerCSessionId;
+        if (playerDId != null && playerDId.equals(playerId)) return playerDSessionId;
+        return null;
+    }
+
     public UUID opponentOf(UUID playerId) {
         List<UUID> ids = getPlayerIds(); int i = ids.indexOf(playerId);
         return i < 0 ? null : ids.get((i + 1) % ids.size());
@@ -269,32 +302,94 @@ public class OnlineMatchRoom {
     }
 
     public boolean isConnected(UUID playerId) {
-        if (playerAId.equals(playerId)) return playerAConnected;
-        if (playerBId.equals(playerId)) return playerBConnected;
-        if (playerCId != null && playerCId.equals(playerId)) return playerCConnected;
-        return playerDId != null && playerDId.equals(playerId) && playerDConnected;
+        if (playerAId.equals(playerId)) return isFresh(playerAConnected, playerALastSeenAt);
+        if (playerBId.equals(playerId)) return isFresh(playerBConnected, playerBLastSeenAt);
+        if (playerCId != null && playerCId.equals(playerId)) return isFresh(playerCConnected, playerCLastSeenAt);
+        return playerDId != null && playerDId.equals(playerId)
+                && isFresh(playerDConnected, playerDLastSeenAt);
     }
 
     public void connect(UUID playerId) {
-        if (playerAId.equals(playerId)) playerAConnected = true;
-        else if (playerBId.equals(playerId)) playerBConnected = true;
-        else if (playerCId != null && playerCId.equals(playerId)) playerCConnected = true;
-        else if (playerDId != null && playerDId.equals(playerId)) playerDConnected = true;
+        Instant now = Instant.now();
+        expireStaleConnections(now);
+        if (playerAId.equals(playerId)) {
+            playerAConnected = true;
+            playerALastSeenAt = now;
+        } else if (playerBId.equals(playerId)) {
+            playerBConnected = true;
+            playerBLastSeenAt = now;
+        } else if (playerCId != null && playerCId.equals(playerId)) {
+            playerCConnected = true;
+            playerCLastSeenAt = now;
+        } else if (playerDId != null && playerDId.equals(playerId)) {
+            playerDConnected = true;
+            playerDLastSeenAt = now;
+        }
         if (getPlayerIds().stream().allMatch(this::isConnected)) {
             status = Status.READY;
             if (turnOwnerId == null) {
                 turnOwnerId = getPlayerIds().stream().min((a,b) -> a.toString().compareTo(b.toString())).orElse(playerAId);
             }
+        } else if (latestStateJson == null) {
+            status = Status.MATCHED;
         }
         touch();
     }
 
     public void disconnect(UUID playerId) {
-        if (playerAId.equals(playerId)) playerAConnected = false;
-        else if (playerBId.equals(playerId)) playerBConnected = false;
-        else if (playerCId != null && playerCId.equals(playerId)) playerCConnected = false;
-        else if (playerDId != null && playerDId.equals(playerId)) playerDConnected = false;
+        if (playerAId.equals(playerId)) {
+            playerAConnected = false;
+            playerALastSeenAt = null;
+        } else if (playerBId.equals(playerId)) {
+            playerBConnected = false;
+            playerBLastSeenAt = null;
+        } else if (playerCId != null && playerCId.equals(playerId)) {
+            playerCConnected = false;
+            playerCLastSeenAt = null;
+        } else if (playerDId != null && playerDId.equals(playerId)) {
+            playerDConnected = false;
+            playerDLastSeenAt = null;
+        }
+        if (latestStateJson == null) status = Status.MATCHED;
         touch();
+    }
+
+    public void touchPlayer(UUID playerId) {
+        Instant now = Instant.now();
+        if (playerAId.equals(playerId) && playerAConnected) playerALastSeenAt = now;
+        else if (playerBId.equals(playerId) && playerBConnected) playerBLastSeenAt = now;
+        else if (playerCId != null && playerCId.equals(playerId) && playerCConnected) playerCLastSeenAt = now;
+        else if (playerDId != null && playerDId.equals(playerId) && playerDConnected) playerDLastSeenAt = now;
+        touch();
+    }
+
+    private boolean isFresh(boolean connected, Instant lastSeenAt) {
+        return connected && lastSeenAt != null
+                && lastSeenAt.isAfter(Instant.now().minus(CONNECTION_LEASE));
+    }
+
+    private void expireStaleConnections(Instant now) {
+        if (!isFreshAt(playerAConnected, playerALastSeenAt, now)) {
+            playerAConnected = false;
+            playerALastSeenAt = null;
+        }
+        if (!isFreshAt(playerBConnected, playerBLastSeenAt, now)) {
+            playerBConnected = false;
+            playerBLastSeenAt = null;
+        }
+        if (playerCId != null && !isFreshAt(playerCConnected, playerCLastSeenAt, now)) {
+            playerCConnected = false;
+            playerCLastSeenAt = null;
+        }
+        if (playerDId != null && !isFreshAt(playerDConnected, playerDLastSeenAt, now)) {
+            playerDConnected = false;
+            playerDLastSeenAt = null;
+        }
+    }
+
+    private boolean isFreshAt(boolean connected, Instant lastSeenAt, Instant now) {
+        return connected && lastSeenAt != null
+                && lastSeenAt.isAfter(now.minus(CONNECTION_LEASE));
     }
 
     public void touch() { updatedAt = Instant.now(); }

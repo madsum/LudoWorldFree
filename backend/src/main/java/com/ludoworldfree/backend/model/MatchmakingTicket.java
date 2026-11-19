@@ -33,6 +33,9 @@ public class MatchmakingTicket {
     @Column(name = "player_count", nullable = false)
     private int playerCount = 2;
 
+    @Column(name = "session_id", length = 64)
+    private String sessionId;
+
     @Column(name = "selected_color", nullable = false, length = 8)
     private String selectedColor = "red";
 
@@ -46,7 +49,7 @@ public class MatchmakingTicket {
 
     public MatchmakingTicket(UUID playerId, String displayName, String avatarUrl,
                              String country, String countryFlag, long entryFee,
-                             int playerCount, String selectedColor) {
+                             int playerCount, String selectedColor, String sessionId) {
         this.playerId = playerId;
         this.displayName = displayName;
         this.avatarUrl = avatarUrl;
@@ -55,13 +58,15 @@ public class MatchmakingTicket {
         this.entryFee = entryFee;
         this.playerCount = playerCount;
         this.selectedColor = selectedColor;
+        this.sessionId = sessionId;
         this.queuedAt = Instant.now();
         this.lastSeenAt = this.queuedAt;
     }
 
     public MatchmakingTicket(UUID playerId, String displayName, String avatarUrl,
                              String country, String countryFlag, long entryFee) {
-        this(playerId, displayName, avatarUrl, country, countryFlag, entryFee, 2, "red");
+        this(playerId, displayName, avatarUrl, country, countryFlag, entryFee,
+                2, "red", null);
     }
 
     public UUID getPlayerId() { return playerId; }
@@ -71,6 +76,7 @@ public class MatchmakingTicket {
     public String getCountryFlag() { return countryFlag; }
     public long getEntryFee() { return entryFee; }
     public int getPlayerCount() { return playerCount; }
+    public String getSessionId() { return sessionId; }
     public String getSelectedColor() { return selectedColor; }
     public Instant getQueuedAt() { return queuedAt; }
     public Instant getLastSeenAt() { return lastSeenAt; }

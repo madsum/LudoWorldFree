@@ -40,6 +40,7 @@ class GameState {
   final String? localPlayerId;
   final int currentTurnIndex;
   final int? diceValue;
+  final int? lastRolledDiceValue;
   final Map<String, int> playerDiceValues;
   final GameTurnPhase turnPhase;
   final int consecutiveSixes;
@@ -60,6 +61,7 @@ class GameState {
     this.localPlayerId,
     this.currentTurnIndex = 0,
     this.diceValue,
+    this.lastRolledDiceValue,
     this.playerDiceValues = const {},
     this.turnPhase = GameTurnPhase.rollDice,
     this.consecutiveSixes = 0,
@@ -98,6 +100,7 @@ class GameState {
         'players': players.map(_playerToJson).toList(growable: false),
         'currentTurnIndex': currentTurnIndex,
         'diceValue': diceValue,
+        'lastRolledDiceValue': lastRolledDiceValue,
         'playerDiceValues': playerDiceValues,
         'turnPhase': turnPhase.name,
         'consecutiveSixes': consecutiveSixes,
@@ -167,6 +170,8 @@ class GameState {
       currentTurnIndex:
           players.isEmpty ? 0 : turnIndex.clamp(0, players.length - 1),
       diceValue: (json['diceValue'] as num?)?.toInt(),
+      lastRolledDiceValue: (json['lastRolledDiceValue'] as num?)?.toInt() ??
+          (json['diceValue'] as num?)?.toInt(),
       playerDiceValues: playerDiceValues,
       turnPhase: GameTurnPhase.values.firstWhere(
         (phase) => phase.name == json['turnPhase'],
@@ -288,6 +293,7 @@ class GameState {
     bool clearLocalPlayerId = false,
     int? currentTurnIndex,
     int? diceValue,
+    int? lastRolledDiceValue,
     Map<String, int>? playerDiceValues,
     bool clearDiceValue = false,
     GameTurnPhase? turnPhase,
@@ -311,6 +317,7 @@ class GameState {
           clearLocalPlayerId ? null : (localPlayerId ?? this.localPlayerId),
       currentTurnIndex: currentTurnIndex ?? this.currentTurnIndex,
       diceValue: clearDiceValue ? null : (diceValue ?? this.diceValue),
+      lastRolledDiceValue: lastRolledDiceValue ?? this.lastRolledDiceValue,
       playerDiceValues: playerDiceValues ?? this.playerDiceValues,
       turnPhase: turnPhase ?? this.turnPhase,
       consecutiveSixes: consecutiveSixes ?? this.consecutiveSixes,

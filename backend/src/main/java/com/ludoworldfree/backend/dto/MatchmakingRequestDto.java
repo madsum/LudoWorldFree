@@ -11,6 +11,7 @@ public class MatchmakingRequestDto {
     private long entryFee = 500L;
     private int playerCount = 2;
     private String selectedColor = "red";
+    private String sessionId;
 
     public MatchmakingRequestDto() {}
 
@@ -39,4 +40,6 @@ public class MatchmakingRequestDto {
     public void setPlayerCount(int playerCount) { this.playerCount = playerCount; }
     public String getSelectedColor() { return selectedColor; }
     public void setSelectedColor(String selectedColor) { this.selectedColor = selectedColor; }
+    public String getSessionId() { return sessionId; }
+    public void setSessionId(String sessionId) { this.sessionId = sessionId; }
 }

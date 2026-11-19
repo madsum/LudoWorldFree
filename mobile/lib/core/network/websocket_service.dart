@@ -22,6 +22,7 @@ class WebSocketService {
   int? _pendingDiceRollOpportunityId;
   String? _roomId;
   String? _playerId;
+  String? _matchmakingSessionId;
   Timer? _reconnectTimer;
   Timer? _heartbeatTimer;
   DateTime _lastPongAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -36,10 +37,12 @@ class WebSocketService {
   Future<bool> connectToRoom({
     required String roomId,
     required String playerId,
+    required String matchmakingSessionId,
   }) async {
     await leaveRoom();
     _roomId = roomId;
     _playerId = playerId;
+    _matchmakingSessionId = matchmakingSessionId;
     _shouldReconnect = true;
     final baseUri = Uri.parse(AppConstants.defaultWebSocketUrl);
     final readyCompleter = Completer<bool>();
@@ -60,10 +63,20 @@ class WebSocketService {
   Future<void> _openSocket(Uri baseUri) async {
     final roomId = _roomId;
     final playerId = _playerId;
-    if (!_shouldReconnect || roomId == null || playerId == null) return;
+    final matchmakingSessionId = _matchmakingSessionId;
+    if (!_shouldReconnect ||
+        roomId == null ||
+        playerId == null ||
+        matchmakingSessionId == null) {
+      return;
+    }
     final wsUrl = baseUri.replace(
       path: '/ws/game',
-      queryParameters: {'roomId': roomId, 'playerId': playerId},
+      queryParameters: {
+        'roomId': roomId,
+        'playerId': playerId,
+        'sessionId': matchmakingSessionId,
+      },
     );
     final channel = WebSocketChannel.connect(wsUrl);
     _channel = channel;
@@ -303,6 +316,7 @@ class WebSocketService {
     _channel = null;
     _roomId = null;
     _playerId = null;
+    _matchmakingSessionId = null;
     _hasConnectedToRoom = false;
     final readyCompleter = _roomReadyCompleter;
     _roomReadyCompleter = null;

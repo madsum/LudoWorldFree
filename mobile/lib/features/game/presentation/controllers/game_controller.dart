@@ -363,6 +363,7 @@ class GameNotifier extends StateNotifier<GameState> {
         localPlayerId: _onlineLocalPlayerId,
         currentTurnIndex: snapshot?.currentTurnIndex ?? state.currentTurnIndex,
         diceValue: diceResult,
+        lastRolledDiceValue: diceResult,
         playerDiceValues: Map<String, int>.unmodifiable({
           ...state.playerDiceValues,
           currentPlayerId: diceResult,
@@ -390,6 +391,7 @@ class GameNotifier extends StateNotifier<GameState> {
     if (movable.isEmpty) {
       state = state.copyWith(
         diceValue: diceResult,
+        lastRolledDiceValue: diceResult,
         playerDiceValues: {
           ...state.playerDiceValues,
           state.currentPlayer.id: diceResult,
@@ -419,6 +421,7 @@ class GameNotifier extends StateNotifier<GameState> {
     } else {
       state = state.copyWith(
         diceValue: diceResult,
+        lastRolledDiceValue: diceResult,
         playerDiceValues: {
           ...state.playerDiceValues,
           state.currentPlayer.id: diceResult,
@@ -692,6 +695,7 @@ class GameNotifier extends StateNotifier<GameState> {
 
     state = state.copyWith(
       rollOpportunityId: state.rollOpportunityId + 1,
+      clearDiceValue: true,
       turnTimerPaused: _turnTimerPaused,
       turnTimerDisabled: _turnTimerDisabled,
       turnTimerRemainingMilliseconds: _activeTurnDuration.inMilliseconds,

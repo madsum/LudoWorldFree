@@ -21,7 +21,7 @@ class DiceRollerWidget extends StatelessWidget {
         gameState.turnPhase == GameTurnPhase.rollDice &&
         !gameState.isGameOver;
 
-    final diceVal = gameState.diceValue;
+    final diceVal = gameState.lastRolledDiceValue ?? gameState.diceValue;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

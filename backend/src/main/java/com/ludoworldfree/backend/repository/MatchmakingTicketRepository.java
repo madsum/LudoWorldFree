@@ -17,7 +17,7 @@ import java.time.Instant;
 
 public interface MatchmakingTicketRepository extends JpaRepository<MatchmakingTicket, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select t from MatchmakingTicket t where t.entryFee = :entryFee and t.playerCount = :playerCount and t.lastSeenAt >= :activeAfter and t.playerId <> :playerId "
+    @Query("select t from MatchmakingTicket t where t.entryFee = :entryFee and t.playerCount = :playerCount and t.sessionId is not null and t.lastSeenAt >= :activeAfter and t.playerId <> :playerId "
             + "and not exists (select r.roomId from OnlineMatchRoom r where "
             + "(r.playerAId = t.playerId or r.playerBId = t.playerId or r.playerCId = t.playerId or r.playerDId = t.playerId) "
             + "and r.status in :activeStatuses) order by t.queuedAt asc")

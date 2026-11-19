@@ -51,8 +51,10 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         URI uri = session.getUri();
         String roomId = queryParameter(uri, "roomId");
         UUID playerId = resolvePlayerId(queryParameter(uri, "playerId"));
+        String matchmakingSessionId = queryParameter(uri, "sessionId");
         if (roomId == null || playerId == null
-                || !matchmakingService.isPlayerInRoom(playerId, roomId)) {
+                || !matchmakingService.isPlayerInRoom(
+                        playerId, roomId, matchmakingSessionId)) {
             sendError(session, "MATCH_NOT_FOUND", "This player is not part of that match.");
             session.close(CloseStatus.POLICY_VIOLATION);
             return;

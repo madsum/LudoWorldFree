@@ -348,8 +348,13 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
 
                                 // Player Die
                                 _PlayerDie(
-                                  value: widget.gameState
-                                      .playerDiceValues[widget.player.id],
+                                  value: widget.isCurrentTurn
+                                      ? widget.gameState.lastRolledDiceValue ??
+                                          widget.gameState.diceValue ??
+                                          widget.gameState.playerDiceValues[
+                                              widget.player.id]
+                                      : widget.gameState
+                                          .playerDiceValues[widget.player.id],
                                   isRolling: isRolling,
                                   isActive: widget.isCurrentTurn &&
                                       widget.gameState.turnPhase ==
@@ -633,7 +638,7 @@ class SharedDiceButton extends StatelessWidget {
         !gameState.currentPlayer.isEliminated &&
         !gameState.isGameOver;
     return _PlayerDie(
-      value: gameState.diceValue,
+      value: gameState.lastRolledDiceValue ?? gameState.diceValue,
       isRolling: gameState.isDiceRolling,
       isActive: isActive,
       canRoll: canRoll,
@@ -716,6 +721,8 @@ class _PlayerDie extends StatefulWidget {
 
 class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
   static const _turnHighlight = Color(0xFFFA02A3);
+  final math.Random _visualRandom = math.Random.secure();
+  List<int> _rollFaces = const [];
 
   late final AnimationController _rollController = AnimationController(
     vsync: this,
@@ -747,6 +754,11 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
 
   void _syncRolling() {
     if (widget.isRolling) {
+      final startingFace = widget.value ?? 1;
+      _rollFaces = [
+        startingFace,
+        for (var i = 0; i < 17; i++) _visualRandom.nextInt(6) + 1,
+      ];
       _rollController.forward(from: 0);
     } else {
       _rollController.stop();
@@ -779,10 +791,15 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
         builder: (context, _) {
           final flashPhase = _flashController.value;
           final rollPhase = _rollController.value;
+          final previousValue = widget.value ?? 1;
+          final rollingValue = _rollFaces.isEmpty
+              ? previousValue
+              : _rollFaces[(rollPhase * (_rollFaces.length - 1))
+                  .floor()
+                  .clamp(0, _rollFaces.length - 1)
+                  .toInt()];
           final value = widget.isRolling
-              ? (rollPhase < 0.98
-                  ? (_rollController.value * 6).floor().clamp(0, 5).toInt() + 1
-                  : (widget.value ?? 6))
+              ? (rollPhase < 0.98 ? rollingValue : previousValue)
               : widget.value;
           final hopHeight = widget.isRolling
               ? math.sin(rollPhase * math.pi) * widget.size * 0.32
