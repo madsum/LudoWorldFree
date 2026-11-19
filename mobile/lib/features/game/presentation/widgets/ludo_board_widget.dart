@@ -715,6 +715,13 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     staticTileOccupants.forEach((tileKey, occupantList) {
       final totalOnTile = occupantList.length;
 
+      // Paint eligible pawns last so they remain visible and receive taps when
+      // another player's pawn occupies the same safe tile.
+      occupantList.sort((a, b) =>
+          (a['isMovable'] as bool ? 1 : 0) - (b['isMovable'] as bool ? 1 : 0));
+      final promoteMovablePawn = totalOnTile == 2 &&
+          occupantList.any((item) => item['isMovable'] as bool);
+
       for (int i = 0; i < totalOnTile; i++) {
         final item = occupantList[i];
         final PawnModel pawn = item['pawn'];
@@ -727,8 +734,14 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
         double pawnScale = 0.82;
 
         if (totalOnTile == 2) {
-          pawnScale = 0.58;
-          offsetX = (i == 0 ? -0.18 : 0.18) * tileSize;
+          if (promoteMovablePawn) {
+            // Lift and enlarge the active pawn above the other token.
+            pawnScale = isMovable ? 0.76 : 0.55;
+            offsetY = (isMovable ? -0.22 : 0.22) * tileSize;
+          } else {
+            pawnScale = 0.58;
+            offsetX = (i == 0 ? -0.18 : 0.18) * tileSize;
+          }
         } else if (totalOnTile >= 3) {
           pawnScale = 0.50;
           final row = i ~/ 2;
@@ -742,15 +755,18 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
         final top =
             (pos.y * tileSize) + (tileSize * (1.0 - pawnScale) / 2) + offsetY;
         final size = tileSize * pawnScale;
+        final hitTargetSize =
+            promoteMovablePawn && isMovable ? tileSize * 1.05 : size;
 
         widgets.add(
           Positioned(
             key: ValueKey('static_${pawn.color.name}_${pawn.id}'),
-            left: left,
-            top: top,
-            width: size,
-            height: size,
+            left: left + (size - hitTargetSize) / 2,
+            top: top + (size - hitTargetSize) / 2,
+            width: hitTargetSize,
+            height: hitTargetSize,
             child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () {
                 // If pawn is eligible for pair creation or selection, toggle pair selection
                 if (!pawn.isPaired &&
@@ -770,12 +786,18 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                   widget.onPawnTap(pawn);
                 }
               },
-              child: _PawnTileWidget(
-                color: pawn.color,
-                isMovable: isMovable,
-                isPaired: pawn.isPaired,
-                isPairSelected: pawn.isPairSelected,
-                size: size,
+              child: Center(
+                child: SizedBox(
+                  width: size,
+                  height: size,
+                  child: _PawnTileWidget(
+                    color: pawn.color,
+                    isMovable: isMovable,
+                    isPaired: pawn.isPaired,
+                    isPairSelected: pawn.isPairSelected,
+                    size: size,
+                  ),
+                ),
               ),
             ),
           ),
