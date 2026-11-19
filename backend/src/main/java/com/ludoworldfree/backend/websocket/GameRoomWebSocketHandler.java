@@ -32,6 +32,9 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
     private static final int MAX_MESSAGE_CHARS = 64_000;
     private static final String ROOM_ATTRIBUTE = "gameRoomId";
     private static final String PLAYER_ATTRIBUTE = "gamePlayerId";
+    private static final Set<String> GAME_EMOJIS = Set.of(
+            "😀", "😂", "😎", "😡", "😭", "👑", "💣", "🎲", "👍", "🌵",
+            "🤔", "😮", "❤️", "😘", "💋", "🔪", "🎉", "🥳", "😴", "👏");
 
     private final ObjectMapper objectMapper;
     private final MatchmakingService matchmakingService;
@@ -136,6 +139,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                     session, localRoom, roomId, playerId, payload);
             case "chat" -> relayChatMessage(session, localRoom, playerId, payload);
             case "chat_typing" -> relayChatTyping(session, localRoom, playerId, payload);
+            case "emoji_reaction" -> relayEmojiReaction(session, localRoom, playerId, payload);
             case "dice_timer_stop_request" -> requestDiceTimerStop(
                     session, localRoom, playerId, payload);
             case "dice_timer_stop_response" -> respondToDiceTimerStop(
@@ -195,6 +199,29 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
             if (sender == null || sender.session != session) return;
             onlineMatchChatService.saveTypingStatus(localRoom.id, playerId, isTyping);
             relayChatEvents(localRoom);
+        }
+    }
+
+    private void relayEmojiReaction(WebSocketSession session, LocalRoom localRoom,
+                                    UUID playerId, JsonNode payload) {
+        String emoji = payload.path("emoji").asText("");
+        UUID targetPlayerId = parsePlayerId(payload.path("targetPlayerId").asText(null));
+        if (!GAME_EMOJIS.contains(emoji) || targetPlayerId == null ||
+                targetPlayerId.equals(playerId)) {
+            sendError(session, "INVALID_EMOJI", "Choose an emoji and a valid opponent.");
+            return;
+        }
+        synchronized (localRoom) {
+            LocalConnection sender = localRoom.sessions.get(playerId);
+            if (sender == null || sender.session != session) return;
+            LocalConnection target = localRoom.sessions.get(targetPlayerId);
+            if (target == null) return;
+            Map<String, Object> reaction = Map.of(
+                    "type", "emoji_reaction",
+                    "playerId", playerId.toString(),
+                    "targetPlayerId", targetPlayerId.toString(),
+                    "emoji", emoji);
+            send(target.session, reaction);
         }
     }
 

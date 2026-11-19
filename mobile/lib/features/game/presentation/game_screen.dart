@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -22,6 +23,7 @@ import '../domain/models/player_model.dart';
 import 'services/voice_call_service.dart';
 import 'controllers/game_controller.dart';
 import 'widgets/exit_game_dialog.dart';
+import 'widgets/emoji_picker_dialog.dart';
 import 'widgets/ludo_board_widget.dart';
 import 'widgets/online_chat_panel.dart';
 import '../../home/presentation/widgets/incoming_buddy_request_dialog.dart';
@@ -71,6 +73,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
   final Set<String> _startedRematchRounds = <String>{};
   final Set<String> _disconnectedOnlinePlayerIds = <String>{};
   final Set<String> _existingBuddyOrRequestPlayerIds = <String>{};
+  final Map<String, GlobalKey> _playerCardKeys = <String, GlobalKey>{};
+  final Set<OverlayEntry> _emojiFlights = <OverlayEntry>{};
   late final VoiceCallService _voiceCallService;
 
   @override
@@ -128,6 +132,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
             });
           });
           if (mounted) setState(() {});
+        } else if (message['type'] == 'emoji_reaction' &&
+            message['playerId'] is String &&
+            message['emoji'] is String &&
+            message['targetPlayerId'] == gameNotifier.onlineLocalPlayerId) {
+          final senderId = message['playerId'] as String;
+          final localId = gameNotifier.onlineLocalPlayerId;
+          if (localId != null && senderId != localId) {
+            _playEmojiFlight(senderId, localId, message['emoji'] as String);
+          }
         } else if (message['type'] == 'chat_typing' &&
             message['playerId'] is String &&
             message['playerId'] != gameNotifier.onlineLocalPlayerId) {
@@ -466,6 +479,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _opponentDisconnectTimer?.cancel();
     unawaited(_bellAudioPlayer.dispose());
     _chatMessages.dispose();
+    for (final entry in _emojiFlights.toList()) {
+      entry.remove();
+      entry.dispose();
+    }
+    _emojiFlights.clear();
     _onlineSubscription?.cancel();
     _removeOnlineStateListener?.call();
     final gameNotifier = _onlineGameNotifier;
@@ -1296,13 +1314,112 @@ class _GameScreenState extends ConsumerState<GameScreen>
       ],
     );
 
+    final playerCard = Stack(
+      key: _playerCardKeys.putIfAbsent(
+        playerId,
+        () => GlobalKey(debugLabel: 'player-card-$playerId'),
+      ),
+      clipBehavior: Clip.none,
+      children: [
+        card,
+        if (playerId != gameNotifier.onlineLocalPlayerId)
+          Positioned(
+            top: 0,
+            bottom: 0,
+            right: -21,
+            child: Center(
+              child: Material(
+                color: const Color(0xFF073D22),
+                shape: const CircleBorder(),
+                child: InkWell(
+                  onTap: () => _openEmojiPicker(playerId),
+                  customBorder: const CircleBorder(),
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF35F26B),
+                        width: 2.5,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0xAA24EA59),
+                          blurRadius: 12,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.emoji_emotions_rounded,
+                      color: Color(0xFF49F478),
+                      size: 27,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: placeAboveCard
-          ? [Align(alignment: Alignment.center, child: controls), card]
-          : [card, Align(alignment: Alignment.center, child: controls)],
+          ? [Align(alignment: Alignment.center, child: controls), playerCard]
+          : [playerCard, Align(alignment: Alignment.center, child: controls)],
     );
+  }
+
+  Future<void> _openEmojiPicker(String targetPlayerId) async {
+    final emoji = await EmojiPickerDialog.show(context);
+    if (emoji == null || !mounted) return;
+    final localPlayerId = _onlineGameNotifier?.onlineLocalPlayerId;
+    if (localPlayerId == null) return;
+    ref.read(webSocketServiceProvider).sendEmojiReaction(
+          emoji: emoji,
+          targetPlayerId: targetPlayerId,
+        );
+    _playEmojiFlight(localPlayerId, targetPlayerId, emoji);
+  }
+
+  void _playEmojiFlight(String fromPlayerId, String toPlayerId, String emoji) {
+    final fromContext = _playerCardKeys[fromPlayerId]?.currentContext;
+    final toContext = _playerCardKeys[toPlayerId]?.currentContext;
+    if (fromContext == null || toContext == null) return;
+    final overlay = Overlay.of(context, rootOverlay: true);
+    final overlayBox = overlay.context.findRenderObject() as RenderBox?;
+    final fromBox = fromContext.findRenderObject() as RenderBox?;
+    final toBox = toContext.findRenderObject() as RenderBox?;
+    if (overlayBox == null || fromBox == null || toBox == null) return;
+
+    final start = fromBox.localToGlobal(
+      fromBox.size.center(Offset.zero),
+      ancestor: overlayBox,
+    );
+    final end = toBox.localToGlobal(
+      toBox.size.center(Offset.zero),
+      ancestor: overlayBox,
+    );
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => Positioned.fill(
+        child: _EmojiFlightAnimation(
+          emoji: emoji,
+          start: start,
+          end: end,
+          onComplete: () {
+            if (!_emojiFlights.remove(entry)) return;
+            entry.remove();
+            entry.dispose();
+          },
+        ),
+      ),
+    );
+    _emojiFlights.add(entry);
+    overlay.insert(entry);
   }
 
   void _openOnlineChat(BuildContext context) {
@@ -1554,6 +1671,106 @@ class _GameScreenState extends ConsumerState<GameScreen>
     gameNotifier.clearOnlineMatch();
     if (mounted) context.go('/home');
   }
+}
+
+class _EmojiFlightAnimation extends StatefulWidget {
+  const _EmojiFlightAnimation({
+    required this.emoji,
+    required this.start,
+    required this.end,
+    required this.onComplete,
+  });
+
+  final String emoji;
+  final Offset start;
+  final Offset end;
+  final VoidCallback onComplete;
+
+  @override
+  State<_EmojiFlightAnimation> createState() => _EmojiFlightAnimationState();
+}
+
+class _EmojiFlightAnimationState extends State<_EmojiFlightAnimation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 3),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) widget.onComplete();
+    });
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+        child: SizedBox.expand(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              final t = Curves.easeInOutCubic.transform(_controller.value);
+              final control = Offset(
+                (widget.start.dx + widget.end.dx) / 2,
+                (widget.start.dy + widget.end.dy) / 2 - 72,
+              );
+              final inverse = 1 - t;
+              final point = Offset(
+                inverse * inverse * widget.start.dx +
+                    2 * inverse * t * control.dx +
+                    t * t * widget.end.dx,
+                inverse * inverse * widget.start.dy +
+                    2 * inverse * t * control.dy +
+                    t * t * widget.end.dy,
+              );
+              final scale = .72 + math.sin(t * math.pi) * .45;
+              final opacity = (1.0 -
+                  Curves.easeIn.transform(
+                    ((t - .84) / .16).clamp(0.0, 1.0).toDouble(),
+                  ));
+              return Stack(
+                children: [
+                  Positioned(
+                    left: point.dx - 34,
+                    top: point.dy - 34,
+                    child: Opacity(
+                      opacity: opacity,
+                      child: Transform.rotate(
+                        angle: math.sin(t * math.pi * 2) * .12,
+                        child: Transform.scale(
+                          scale: scale,
+                          child: Text(
+                            widget.emoji,
+                            style: const TextStyle(
+                              fontSize: 56,
+                              shadows: [
+                                Shadow(
+                                  color: Color(0xFFFFD54F),
+                                  blurRadius: 20,
+                                ),
+                                Shadow(color: Colors.black87, blurRadius: 8),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      );
 }
 
 class _CompactBackButton extends StatelessWidget {

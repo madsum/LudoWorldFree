@@ -212,6 +212,15 @@ class WebSocketService {
     _send({'type': 'chat', 'text': message});
   }
 
+  void sendEmojiReaction(
+      {required String emoji, required String targetPlayerId}) {
+    _send({
+      'type': 'emoji_reaction',
+      'emoji': emoji,
+      'targetPlayerId': targetPlayerId,
+    });
+  }
+
   void sendChatTyping(bool isTyping) {
     if (!isConnected) return;
     _send({'type': 'chat_typing', 'isTyping': isTyping});
