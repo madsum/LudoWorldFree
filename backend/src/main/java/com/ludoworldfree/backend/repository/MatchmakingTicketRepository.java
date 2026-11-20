@@ -29,6 +29,19 @@ public interface MatchmakingTicketRepository extends JpaRepository<MatchmakingTi
             @Param("activeStatuses") List<OnlineMatchRoom.Status> activeStatuses,
             Pageable pageable);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from MatchmakingTicket t where t.entryFee < :entryFee and t.playerCount = :playerCount and t.sessionId is not null and t.lastSeenAt >= :activeAfter and t.playerId <> :playerId "
+            + "and not exists (select r.roomId from OnlineMatchRoom r where "
+            + "(r.playerAId = t.playerId or r.playerBId = t.playerId or r.playerCId = t.playerId or r.playerDId = t.playerId) "
+            + "and r.status in :activeStatuses) order by t.entryFee desc, t.queuedAt asc")
+    List<MatchmakingTicket> findLowerStakeCandidatesForUpdate(
+            @Param("entryFee") long entryFee,
+            @Param("playerCount") int playerCount,
+            @Param("activeAfter") Instant activeAfter,
+            @Param("playerId") UUID playerId,
+            @Param("activeStatuses") List<OnlineMatchRoom.Status> activeStatuses,
+            Pageable pageable);
+
     // Status polling can overlap the queue-join request for the same player.
     // Lock the ticket before touching last_seen_at so Hibernate doesn't flush
     // a stale update after another request has already changed/deleted it.

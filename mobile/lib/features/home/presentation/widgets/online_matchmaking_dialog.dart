@@ -17,6 +17,7 @@ import '../../../game/domain/models/player_model.dart';
 
 class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
   final int playerCount;
+  final int entryFee;
   final LudoColor selectedColor;
   final void Function(
     List<PlayerModel> players,
@@ -27,6 +28,7 @@ class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
   const OnlineMatchmakingDialog({
     super.key,
     required this.playerCount,
+    required this.entryFee,
     required this.selectedColor,
     required this.onMatchFound,
   });
@@ -34,6 +36,7 @@ class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
   static void show(
     BuildContext context, {
     required int playerCount,
+    required int entryFee,
     required LudoColor selectedColor,
     required void Function(
       List<PlayerModel> players,
@@ -46,6 +49,7 @@ class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
       barrierDismissible: false,
       builder: (context) => OnlineMatchmakingDialog(
         playerCount: playerCount,
+        entryFee: entryFee,
         selectedColor: selectedColor,
         onMatchFound: onMatchFound,
       ),
@@ -60,7 +64,7 @@ class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
 class _OnlineMatchmakingDialogState
     extends ConsumerState<OnlineMatchmakingDialog>
     with TickerProviderStateMixin {
-  late final String _matchmakingSessionId = _createSessionId();
+  late String _matchmakingSessionId = _createSessionId();
 
   late final AnimationController _vsGlowController = AnimationController(
     vsync: this,
@@ -74,10 +78,13 @@ class _OnlineMatchmakingDialogState
 
   Timer? _countdownTimer;
   Timer? _pollingTimer;
-  int _secondsWaiting = 0;
+  int _secondsRemaining = 60;
+  int _selectedEntryFee = 250;
 
+  bool _hasStartedSearch = false;
   bool _isMatchFound = false;
   bool _searchFailed = false;
+  bool _offerDialogShowing = false;
   String? _searchFailureMessage;
   bool _isQueueRequestRunning = false;
   String? _queueNotice;
@@ -102,6 +109,8 @@ class _OnlineMatchmakingDialogState
   @override
   void initState() {
     super.initState();
+    _selectedEntryFee = widget.entryFee;
+    _hasStartedSearch = true;
     _startCountdown();
     _startMatchmakingQueue();
   }
@@ -109,8 +118,29 @@ class _OnlineMatchmakingDialogState
   void _startCountdown() {
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
-      setState(() => _secondsWaiting++);
+      if (_secondsRemaining <= 1) {
+        timer.cancel();
+        setState(() => _secondsRemaining = 0);
+        unawaited(_finishSearch());
+      } else {
+        setState(() => _secondsRemaining--);
+      }
     });
+  }
+
+  void _beginSearch() {
+    if (_hasStartedSearch && !_searchFailed) return;
+    _matchmakingSessionId = _createSessionId();
+    setState(() {
+      _hasStartedSearch = true;
+      _searchFailed = false;
+      _searchFailureMessage = null;
+      _queueNotice = null;
+      _secondsRemaining = 60;
+      _queuePollCount = 0;
+    });
+    _startCountdown();
+    _startMatchmakingQueue();
   }
 
   void _startMatchmakingQueue() async {
@@ -121,7 +151,7 @@ class _OnlineMatchmakingDialogState
       'avatarUrl': user?.avatarUrl ?? 'assets/images/black-mask.webp',
       'country': user?.country ?? 'World',
       'countryFlag': user?.countryFlag ?? '🌐',
-      'entryFee': 500,
+      'entryFee': _selectedEntryFee,
       'playerCount': widget.playerCount,
       'selectedColor': widget.selectedColor.name,
       'sessionId': _matchmakingSessionId,
@@ -151,9 +181,17 @@ class _OnlineMatchmakingDialogState
       _isQueueRequestRunning = false;
     }
 
+    if (!mounted || !_hasStartedSearch || _offerDialogShowing) return;
+
     // Recheck the persisted queue slot so players can join at different times.
     _pollingTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
-      if (!mounted || _isMatchFound || _isQueueRequestRunning) return;
+      if (!mounted ||
+          _isMatchFound ||
+          _searchFailed ||
+          _offerDialogShowing ||
+          _isQueueRequestRunning) {
+        return;
+      }
       _isQueueRequestRunning = true;
       _queuePollCount++;
       try {
@@ -181,6 +219,125 @@ class _OnlineMatchmakingDialogState
         _isQueueRequestRunning = false;
       }
     });
+  }
+
+  Future<void> _finishSearch() async {
+    _pollingTimer?.cancel();
+    if (!mounted ||
+        !_hasStartedSearch ||
+        _isMatchFound ||
+        _offerDialogShowing) {
+      return;
+    }
+    if (_isQueueRequestRunning) {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      if (mounted) unawaited(_finishSearch());
+      return;
+    }
+
+    _isQueueRequestRunning = true;
+    try {
+      final user = ref.read(authControllerProvider).user;
+      final response = await ref.read(apiClientProvider).get(
+            '/matchmaking/status',
+            queryParameters: {
+              'playerCount': widget.playerCount,
+              'sessionId': _matchmakingSessionId,
+            },
+            options: Options(headers: {'X-Player-ID': user?.id}),
+          );
+      if (response.data != null) _handleQueueResponse(response.data);
+    } catch (_) {
+      // Give the same clear timeout result if the final status check fails.
+    } finally {
+      _isQueueRequestRunning = false;
+    }
+
+    if (!mounted || _isMatchFound || _offerDialogShowing || _searchFailed) {
+      return;
+    }
+    _finishWithoutMatch();
+  }
+
+  void _finishWithoutMatch() {
+    _pollingTimer?.cancel();
+    _countdownTimer?.cancel();
+    unawaited(_cancelServerQueue());
+    if (!mounted) return;
+    setState(() {
+      _hasStartedSearch = false;
+      _searchFailed = true;
+      _searchFailureMessage =
+          'No player found who is playing with $_selectedEntryFee coins.';
+    });
+  }
+
+  Future<void> _showLowerStakeOffer(int lowerEntryFee) async {
+    if (_offerDialogShowing || !mounted) return;
+    _offerDialogShowing = true;
+    _pollingTimer?.cancel();
+    _countdownTimer?.cancel();
+    final requestedEntryFee = _selectedEntryFee;
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF142547),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: AppColors.gold, width: 1.5),
+        ),
+        title: Text(
+          'No $requestedEntryFee-coin match yet',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        content: Text(
+          'A player is available at $lowerEntryFee coins. Would you like to join at that amount?',
+          style: GoogleFonts.poppins(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              'NO',
+              style: GoogleFonts.poppins(color: Colors.white70),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.gold,
+              foregroundColor: Colors.black87,
+            ),
+            child: Text(
+              'JOIN FOR $lowerEntryFee',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    _offerDialogShowing = false;
+    if (!mounted) return;
+    if (accepted == true) {
+      setState(() {
+        _selectedEntryFee = lowerEntryFee;
+        _secondsRemaining = 60;
+        _searchFailed = false;
+        _searchFailureMessage = null;
+        _queueNotice = null;
+      });
+      _startCountdown();
+      _startMatchmakingQueue();
+      return;
+    }
+
+    _finishWithoutMatch();
   }
 
   bool _isConnectionFailure(DioException error) =>
@@ -213,6 +370,13 @@ class _OnlineMatchmakingDialogState
     if (data is! Map) return;
     if (data['matchFound'] == true) {
       _handleMatchFoundResponse(data);
+      return;
+    }
+    final lowerEntryFee = data['lowerEntryFee'];
+    if (lowerEntryFee is num && lowerEntryFee.toInt() < _selectedEntryFee) {
+      if (!_offerDialogShowing) {
+        unawaited(_showLowerStakeOffer(lowerEntryFee.toInt()));
+      }
       return;
     }
     final message = data['message']?.toString().trim();
@@ -321,6 +485,8 @@ class _OnlineMatchmakingDialogState
           avatarUrl: raw['avatarUrl']?.toString(),
           country: raw['country']?.toString() ?? 'World',
           countryFlag: raw['countryFlag']?.toString() ?? '🌐',
+          coins: (raw['coins'] as num?)?.toInt() ?? 0,
+          diamonds: (raw['diamonds'] as num?)?.toInt() ?? 0,
           color: color.first,
           isBot: false,
         ));
@@ -340,6 +506,8 @@ class _OnlineMatchmakingDialogState
       avatarUrl: user.avatarUrl ?? 'assets/images/black-mask.webp',
       country: user.country,
       countryFlag: user.countryFlag,
+      coins: user.coins,
+      diamonds: user.diamonds,
       color: widget.selectedColor,
       isBot: false,
     );
@@ -426,8 +594,8 @@ class _OnlineMatchmakingDialogState
     final myName = user?.name ?? 'madsum1984';
     final myAvatar = user?.avatarUrl ?? 'assets/images/black-mask.webp';
 
-    final minutes = (_secondsWaiting ~/ 60).toString().padLeft(2, '0');
-    final seconds = (_secondsWaiting % 60).toString().padLeft(2, '0');
+    final minutes = (_secondsRemaining ~/ 60).toString().padLeft(2, '0');
+    final seconds = (_secondsRemaining % 60).toString().padLeft(2, '0');
 
     return Scaffold(
       backgroundColor: const Color(0xEB8B0000), // Dark Red Ludo King Background
@@ -545,16 +713,18 @@ class _OnlineMatchmakingDialogState
                                 ),
                                 const SizedBox(height: 2),
                                 Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     const Icon(Icons.monetization_on_rounded,
                                         color: AppColors.coinGold, size: 16),
                                     const SizedBox(width: 4),
                                     Text(
-                                      '500',
+                                      '$_selectedEntryFee',
                                       style: GoogleFonts.poppins(
-                                          color: Colors.white,
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w900),
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w900,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -563,6 +733,32 @@ class _OnlineMatchmakingDialogState
                           ],
                         ),
                       ),
+
+                      if (_searchFailed) ...[
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _beginSearch,
+                            icon: const Icon(Icons.search_rounded),
+                            label: Text(
+                              'SEARCH AGAIN',
+                              style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFFD700),
+                              foregroundColor: const Color(0xFF3D0909),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
 
                       const SizedBox(height: 24),
 
@@ -583,7 +779,9 @@ class _OnlineMatchmakingDialogState
                               _PlayerCardBox(
                                 name: 'Player $seat',
                                 borderColor: const Color(0xFF1E88E5),
-                                isSearching: !_isMatchFound,
+                                isSearching: _hasStartedSearch &&
+                                    !_isMatchFound &&
+                                    !_searchFailed,
                                 size: 76,
                               ),
                           ],
@@ -650,7 +848,9 @@ class _OnlineMatchmakingDialogState
                                   : '???',
                               avatarUrl: _isMatchFound ? _opponentAvatar : null,
                               borderColor: const Color(0xFF1E88E5),
-                              isSearching: !_isMatchFound && !_searchFailed,
+                              isSearching: _hasStartedSearch &&
+                                  !_isMatchFound &&
+                                  !_searchFailed,
                             ),
                           ],
                         ),
@@ -711,8 +911,10 @@ class _OnlineMatchmakingDialogState
                                         : _searchFailed
                                             ? (_searchFailureMessage ??
                                                 'NO LIVE MATCH AVAILABLE. TRY AGAIN.')
-                                            : (_queueNotice ??
-                                                'SEARCHING FOR ${widget.playerCount} HUMAN PLAYERS...'),
+                                            : !_hasStartedSearch
+                                                ? 'SELECT A COIN AMOUNT AND START SEARCHING'
+                                                : (_queueNotice ??
+                                                    'SEARCHING FOR ${widget.playerCount} HUMAN PLAYERS...'),
                                     textAlign: TextAlign.center,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,

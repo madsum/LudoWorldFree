@@ -15,9 +15,11 @@ public class MatchmakingResponseDto {
     private String message;
     private List<MatchPlayerDto> players = List.of();
     private int playerCount;
+    private Long lowerEntryFee;
 
     public record MatchPlayerDto(UUID id, String name, String avatarUrl,
-                                 String country, String countryFlag, String color) {}
+                                 String country, String countryFlag, String color,
+                                 long coins, long diamonds) {}
 
     public MatchmakingResponseDto() {}
 
@@ -54,4 +56,6 @@ public class MatchmakingResponseDto {
     public void setPlayers(List<MatchPlayerDto> players) { this.players = players; }
     public int getPlayerCount() { return playerCount; }
     public void setPlayerCount(int playerCount) { this.playerCount = playerCount; }
+    public Long getLowerEntryFee() { return lowerEntryFee; }
+    public void setLowerEntryFee(Long lowerEntryFee) { this.lowerEntryFee = lowerEntryFee; }
 }

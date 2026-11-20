@@ -15,7 +15,8 @@ class ModeConfigDialog extends StatefulWidget {
   final int coins;
   final int diamonds;
   final void Function(List<PlayerModel> players) onStartGame;
-  final void Function(int playerCount, LudoColor color)? onStartOnlineMatch;
+  final void Function(int playerCount, LudoColor color, int entryFee)?
+      onStartOnlineMatch;
 
   const ModeConfigDialog({
     super.key,
@@ -44,7 +45,8 @@ class ModeConfigDialog extends StatefulWidget {
     int coins = 0,
     int diamonds = 0,
     required void Function(List<PlayerModel> players) onStartGame,
-    void Function(int playerCount, LudoColor color)? onStartOnlineMatch,
+    void Function(int playerCount, LudoColor color, int entryFee)?
+        onStartOnlineMatch,
   }) {
     showDialog(
       context: context,
@@ -69,8 +71,22 @@ class ModeConfigDialog extends StatefulWidget {
 }
 
 class _ModeConfigDialogState extends State<ModeConfigDialog> {
+  static const List<int> _onlineEntryFees = [
+    250,
+    500,
+    1000,
+    2000,
+    4000,
+    8000,
+    16000,
+    25000,
+    50000,
+    100000,
+  ];
+
   int _playerCount = 4; // 2 or 4 players
   LudoColor _selectedColor = LudoColor.red;
+  int _selectedEntryFee = 250;
 
   List<PlayerModel> _buildPlayers() {
     final players = <PlayerModel>[];
@@ -240,6 +256,59 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
             ],
           ),
 
+          if (widget.isOnline) ...[
+            const SizedBox(height: 16),
+            Text(
+              'SELECT ENTRY COINS',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: AppColors.bgCard,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.gold.withValues(alpha: .7)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.monetization_on_rounded,
+                      color: AppColors.coinGold, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        value: _selectedEntryFee,
+                        isExpanded: true,
+                        dropdownColor: AppColors.bgNavy,
+                        iconEnabledColor: AppColors.gold,
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        items: _onlineEntryFees
+                            .map((entryFee) => DropdownMenuItem<int>(
+                                  value: entryFee,
+                                  child: Text('$entryFee coins'),
+                                ))
+                            .toList(growable: false),
+                        onChanged: (entryFee) {
+                          if (entryFee == null) return;
+                          setState(() => _selectedEntryFee = entryFee);
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           const SizedBox(height: 16),
 
           // Color Choice (For Vs Computer Mode)
@@ -302,7 +371,11 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
           onPressed: () {
             Navigator.of(context).pop();
             if (widget.isOnline && widget.onStartOnlineMatch != null) {
-              widget.onStartOnlineMatch!(_playerCount, _selectedColor);
+              widget.onStartOnlineMatch!(
+                _playerCount,
+                _selectedColor,
+                _selectedEntryFee,
+              );
             } else {
               widget.onStartGame(_buildPlayers());
             }

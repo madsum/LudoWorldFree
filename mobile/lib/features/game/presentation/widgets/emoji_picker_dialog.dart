@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'mjolnir_icon.dart';
+
 class EmojiPickerDialog extends StatelessWidget {
   const EmojiPickerDialog({super.key});
 
@@ -21,6 +23,7 @@ class EmojiPickerDialog extends StatelessWidget {
     '😘',
     '💋',
     '🔪',
+    'mjolnir',
     '🎉',
     '🥳',
     '😴',
@@ -132,20 +135,68 @@ class _EmojiTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(13),
           child: Ink(
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xFF074A9C), Color(0xFF061D4D)],
+              gradient: const RadialGradient(
+                center: Alignment(-0.35, -0.72),
+                radius: 1.45,
+                colors: [
+                  Color(0xFF3E9BFA),
+                  Color(0xFF1269C2),
+                  Color(0xFF07336F),
+                ],
               ),
               borderRadius: BorderRadius.circular(13),
               border: Border.all(color: const Color(0xFFFFD45A), width: 1.7),
               boxShadow: const [
                 BoxShadow(
-                    color: Colors.black38, blurRadius: 5, offset: Offset(0, 3)),
+                  color: Color(0xAA000000),
+                  blurRadius: 6,
+                  offset: Offset(0, 3),
+                ),
+                BoxShadow(
+                  color: Color(0x553AA9FF),
+                  blurRadius: 12,
+                  spreadRadius: 1,
+                ),
               ],
             ),
-            child: Center(
-              child: Text(emoji, style: const TextStyle(fontSize: 37)),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned(
+                  top: 9,
+                  left: 11,
+                  child: IgnorePointer(
+                    child: Container(
+                      width: 26,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.white.withValues(alpha: 0.22),
+                            blurRadius: 8,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (emoji == 'mjolnir')
+                  const MjolnirIcon(size: 44)
+                else
+                  Text(
+                    emoji,
+                    style: const TextStyle(
+                      fontSize: 39,
+                      shadows: [
+                        Shadow(color: Color(0xCCFFFFFF), blurRadius: 12),
+                        Shadow(color: Color(0x88FFD54F), blurRadius: 18),
+                        Shadow(color: Color(0x99000000), blurRadius: 4),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
         ),

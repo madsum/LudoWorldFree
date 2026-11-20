@@ -409,7 +409,15 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                         width: tileSize * 0.62,
                         height: tileSize * 0.62,
                         child: Material(
-                          color: Colors.transparent,
+                          color: const Color(0xFF075B36),
+                          elevation: 4,
+                          shadowColor: const Color(0xFF00F078),
+                          shape: const CircleBorder(
+                            side: BorderSide(
+                              color: Color(0xFF55FF9B),
+                              width: 1.5,
+                            ),
+                          ),
                           child: InkWell(
                             customBorder: const CircleBorder(),
                             onTap: () {
@@ -453,27 +461,56 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                         ),
                       ),
                     ),
-                  Text(
-                    player.name,
-                    maxLines: 1,
-                    style: GoogleFonts.poppins(
-                      fontSize: tileSize * 0.38,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                      shadows: const [
-                        Shadow(
-                          color: Colors.black,
-                          blurRadius: 5,
-                          offset: Offset(0, 1.5),
+                  if (widget.onBuddyRequestTap != null &&
+                      !player.isBot &&
+                      player.id != widget.localPlayerId)
+                    InkWell(
+                      onTap: () => widget.onBuddyRequestTap!(player.id),
+                      borderRadius: BorderRadius.circular(3),
+                      child: Text(
+                        player.name,
+                        maxLines: 1,
+                        style: GoogleFonts.poppins(
+                          fontSize: tileSize * 0.38,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          shadows: const [
+                            Shadow(
+                              color: Colors.black,
+                              blurRadius: 5,
+                              offset: Offset(0, 1.5),
+                            ),
+                            Shadow(
+                              color: Colors.black87,
+                              blurRadius: 2,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
                         ),
-                        Shadow(
-                          color: Colors.black87,
-                          blurRadius: 2,
-                          offset: Offset(0, 1),
-                        ),
-                      ],
+                      ),
+                    )
+                  else
+                    Text(
+                      player.name,
+                      maxLines: 1,
+                      style: GoogleFonts.poppins(
+                        fontSize: tileSize * 0.38,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        shadows: const [
+                          Shadow(
+                            color: Colors.black,
+                            blurRadius: 5,
+                            offset: Offset(0, 1.5),
+                          ),
+                          Shadow(
+                            color: Colors.black87,
+                            blurRadius: 2,
+                            offset: Offset(0, 1),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
@@ -870,48 +907,103 @@ class _PawnTileWidget extends StatelessWidget {
             ),
           ),
 
-        // 3D Sphere Token Body with Person Silhouette
+        // Dark lower lip gives the token a visible side and lifts it off the
+        // board without increasing its footprint.
+        Transform.translate(
+          offset: Offset(0, size * 0.075),
+          child: Container(
+            width: size * 0.86,
+            height: size * 0.86,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color.lerp(baseColor, Colors.black, 0.38),
+              border: Border.all(
+                color: Color.lerp(baseColor, Colors.black, 0.52)!,
+                width: size * 0.075,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.58),
+                  blurRadius: size * 0.20,
+                  offset: Offset(0, size * 0.09),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Glossy raised face with a thicker colored rim and a bright bevel.
         Container(
-          width: size * 0.88,
-          height: size * 0.88,
+          width: size * 0.86,
+          height: size * 0.86,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: RadialGradient(
-              center: const Alignment(-0.42, -0.60),
-              radius: 1.15,
+              center: const Alignment(-0.48, -0.62),
+              radius: 1.18,
               colors: [
-                Colors.white,
-                Color.lerp(Colors.white, color.lightColor, 0.22)!,
-                Color.lerp(Colors.white, baseColor, 0.08)!,
+                Color.lerp(baseColor, Colors.white, 0.72)!,
+                Color.lerp(baseColor, Colors.white, 0.34)!,
+                baseColor,
+                Color.lerp(baseColor, Colors.black, 0.28)!,
               ],
-              stops: const [0, 0.6, 1],
+              stops: const [0, 0.30, 0.72, 1],
             ),
             border: Border.all(
-              color: isPaired ? AppColors.gold : baseColor,
-              width: isPaired ? 2.5 : 2.0,
+              color: isPaired
+                  ? AppColors.gold
+                  : Color.lerp(baseColor, Colors.black, 0.48)!,
+              width: isPaired ? size * 0.09 : size * 0.075,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black45,
-                blurRadius: size * 0.12,
-                offset: Offset(0, size * 0.06),
+                color: Colors.black.withValues(alpha: 0.42),
+                blurRadius: size * 0.16,
+                offset: Offset(0, size * 0.055),
               ),
               BoxShadow(
-                color: color.lightColor.withValues(alpha: 0.38),
-                blurRadius: size * 0.12,
-                offset: Offset(-size * 0.04, -size * 0.04),
+                color: color.lightColor.withValues(alpha: 0.48),
+                blurRadius: size * 0.13,
+                offset: Offset(-size * 0.07, -size * 0.075),
               ),
             ],
           ),
-          child: Center(
-            child: isPaired
-                ? const Icon(Icons.link_rounded,
-                    color: AppColors.gold, size: 14)
-                : Icon(
-                    Icons.accessibility_new_rounded,
-                    color: baseColor,
-                    size: size * 0.58,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (!isPaired)
+                Positioned(
+                  top: size * 0.14,
+                  left: size * 0.29,
+                  child: Container(
+                    width: size * 0.22,
+                    height: size * 0.065,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.62),
+                      borderRadius: BorderRadius.circular(size),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.white.withValues(alpha: 0.35),
+                          blurRadius: size * 0.06,
+                        ),
+                      ],
+                    ),
                   ),
+                ),
+              Center(
+                child: isPaired
+                    ? Icon(
+                        Icons.link_rounded,
+                        color: AppColors.gold,
+                        size: size * 0.42,
+                      )
+                    : Icon(
+                        Icons.accessibility_new_rounded,
+                        color: Color.lerp(baseColor, Colors.black, 0.42)!,
+                        size: size * 0.56,
+                      ),
+              ),
+            ],
           ),
         ),
       ],

@@ -34,7 +34,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
     private static final String PLAYER_ATTRIBUTE = "gamePlayerId";
     private static final Set<String> GAME_EMOJIS = Set.of(
             "😀", "😂", "😎", "😡", "😭", "👑", "💣", "🎲", "👍", "🌵",
-            "🤔", "😮", "❤️", "😘", "💋", "🔪", "🎉", "🥳", "😴", "👏");
+            "🤔", "😮", "❤️", "😘", "💋", "🔪", "mjolnir", "🎉", "🥳", "😴", "👏");
 
     private final ObjectMapper objectMapper;
     private final MatchmakingService matchmakingService;
@@ -249,8 +249,8 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                         "requesterName", requesterName,
                         "expiresAt", System.currentTimeMillis() + 60_000));
                 onlineMatchChatService.saveControlEvent(localRoom.id, playerId, request);
-                relayChatEvents(localRoom);
                 send(sender.session, Map.of("type", "dice_timer_stop_request_sent"));
+                relayChatEvents(localRoom);
             } catch (Exception exception) {
                 sendError(session, "DICE_TIMER_REQUEST_FAILED",
                         "The dice timer stop request could not be sent.");

@@ -1154,10 +1154,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     coins: user?.coins ?? 0,
                                     diamonds: user?.diamonds ?? 0,
                                     onStartGame: (_) {},
-                                    onStartOnlineMatch: (playerCount, color) {
+                                    onStartOnlineMatch:
+                                        (playerCount, color, entryFee) {
                                       OnlineMatchmakingDialog.show(
                                         context,
                                         playerCount: playerCount,
+                                        entryFee: entryFee,
                                         selectedColor: color,
                                         onMatchFound:
                                             (players, roomId, playerId) {

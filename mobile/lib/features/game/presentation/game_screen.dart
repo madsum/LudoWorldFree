@@ -25,6 +25,7 @@ import 'controllers/game_controller.dart';
 import 'widgets/exit_game_dialog.dart';
 import 'widgets/emoji_picker_dialog.dart';
 import 'widgets/ludo_board_widget.dart';
+import 'widgets/mjolnir_icon.dart';
 import 'widgets/online_chat_panel.dart';
 import '../../home/presentation/widgets/incoming_buddy_request_dialog.dart';
 import 'widgets/player_info_card.dart';
@@ -60,6 +61,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
   bool _buddyRequestPollInFlight = false;
   bool _buddyRequestDialogShowing = false;
   bool _stopTimerRequestDialogShowing = false;
+  bool _requesterStopTimerDialogShowing = false;
+  bool _stopTimerRequestPending = false;
+  bool _stopTimerRequestAcknowledged = false;
+  String? _pendingStopTimerResultMessage;
   final Set<String> _seenBuddyRequestIds = <String>{};
   final List<Map<String, dynamic>> _pendingBuddyRequests = [];
   bool _onlineStateSyncQueued = false;
@@ -73,6 +78,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   final Set<String> _startedRematchRounds = <String>{};
   final Set<String> _disconnectedOnlinePlayerIds = <String>{};
   final Set<String> _existingBuddyOrRequestPlayerIds = <String>{};
+  final Map<String, String> _outgoingBuddyRequests = <String, String>{};
   final Map<String, GlobalKey> _playerCardKeys = <String, GlobalKey>{};
   final Set<OverlayEntry> _emojiFlights = <OverlayEntry>{};
   late final VoiceCallService _voiceCallService;
@@ -163,18 +169,25 @@ class _GameScreenState extends ConsumerState<GameScreen>
           unawaited(_showIncomingDiceTimerStopRequest(message, gameNotifier));
         } else if (message['type'] == 'dice_timer_stop_accepted') {
           gameNotifier.disableTurnTimerForFriendlyChat();
-          if (_stopTimerRequestDialogShowing && mounted) {
-            Navigator.of(context).maybePop();
-          }
           if (mounted) {
             final requesterId = message['requesterPlayerId']?.toString();
-            _showVoiceCallMessage(requesterId ==
-                    gameNotifier.onlineLocalPlayerId
-                ? 'Your dice timer stop request was accepted.'
-                : 'The dice timer is stopped. The current player can roll when ready.');
+            if (requesterId == gameNotifier.onlineLocalPlayerId) {
+              _resolveStopTimerRequest(
+                'Your dice timer stop request was accepted.',
+              );
+            } else {
+              _showVoiceCallMessage(
+                'The dice timer is stopped. The current player can roll when ready.',
+              );
+            }
           }
         } else if (message['type'] == 'dice_timer_stop_declined' && mounted) {
-          _showVoiceCallMessage('Your dice timer stop request was declined.');
+          final requesterId = message['requesterPlayerId']?.toString();
+          if (requesterId == gameNotifier.onlineLocalPlayerId) {
+            _resolveStopTimerRequest(
+              'Your dice timer stop request was declined.',
+            );
+          }
         } else if (message['type'] == 'bell_alert' &&
             message['targetPlayerId'] == gameNotifier.onlineLocalPlayerId) {
           unawaited(_handleBellAlert(message));
@@ -629,6 +642,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
           );
       final entries = response.data is Map ? response.data['entries'] : null;
       if (!mounted || entries is! List) return;
+      final pendingOutgoing = <String, String>{};
+      for (final entry in entries.whereType<Map>()) {
+        if (entry['direction']?.toString() == 'OUTGOING' &&
+            entry['status']?.toString() == 'PENDING') {
+          final id = entry['playerId']?.toString();
+          if (id != null && id.isNotEmpty) pendingOutgoing[id] = 'PENDING';
+        }
+      }
       setState(() {
         _existingBuddyOrRequestPlayerIds
           ..clear()
@@ -638,6 +659,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 (entry) => entry['playerId']?.toString() ?? '',
               )
               .where((id) => id.isNotEmpty));
+        _outgoingBuddyRequests
+          ..clear()
+          ..addAll(pendingOutgoing);
       });
     } catch (error) {
       debugPrint('Could not load buddy states for this match: $error');
@@ -662,6 +686,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
           response.data is Map ? response.data['status']?.toString() : null;
       if (!mounted) return;
       setState(() => _existingBuddyOrRequestPlayerIds.add(targetPlayerId));
+      if (status != 'ACCEPTED') {
+        _outgoingBuddyRequests[targetPlayerId] = 'PENDING';
+      }
       final player = _onlineGameNotifier?.currentState.players
           .where((candidate) => candidate.id == targetPlayerId)
           .firstOrNull;
@@ -689,6 +716,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
     _buddyRequestPollInFlight = true;
     try {
+      await _pollOutgoingBuddyRequests(playerId);
       final response = await ref.read(apiClientProvider).get(
             '/friends/incoming-requests',
             options: Options(headers: {'X-Player-ID': playerId}),
@@ -714,6 +742,46 @@ class _GameScreenState extends ConsumerState<GameScreen>
       _buddyRequestPollInFlight = false;
     }
     _showNextIncomingBuddyRequest();
+  }
+
+  Future<void> _pollOutgoingBuddyRequests(String playerId) async {
+    if (_outgoingBuddyRequests.isEmpty) return;
+    try {
+      final response = await ref.read(apiClientProvider).get(
+            '/friends',
+            options: Options(headers: {'X-Player-ID': playerId}),
+          );
+      final entries = response.data is Map ? response.data['entries'] : null;
+      if (!mounted || entries is! List) return;
+
+      final currentOutgoing = <String, String>{};
+      for (final entry in entries.whereType<Map>()) {
+        if (entry['direction']?.toString() != 'OUTGOING') continue;
+        final id = entry['playerId']?.toString();
+        final status = entry['status']?.toString();
+        if (id != null && id.isNotEmpty && status != null) {
+          currentOutgoing[id] = status;
+        }
+      }
+
+      for (final request in _outgoingBuddyRequests.entries.toList()) {
+        if (request.value != 'PENDING') continue;
+        final status = currentOutgoing[request.key];
+        if (status == 'ACCEPTED') {
+          _outgoingBuddyRequests.remove(request.key);
+        } else if (status == null) {
+          _outgoingBuddyRequests.remove(request.key);
+          final player = _onlineGameNotifier?.currentState.players
+              .where((candidate) => candidate.id == request.key)
+              .firstOrNull;
+          _showVoiceCallMessage(
+            'Your buddy request to ${player?.name ?? 'Player'} was declined.',
+          );
+        }
+      }
+    } catch (error) {
+      debugPrint('Could not check outgoing buddy requests: $error');
+    }
   }
 
   Future<void> _showNextIncomingBuddyRequest() async {
@@ -1315,47 +1383,55 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
 
     final playerCard = Stack(
-      key: _playerCardKeys.putIfAbsent(
-        playerId,
-        () => GlobalKey(debugLabel: 'player-card-$playerId'),
-      ),
       clipBehavior: Clip.none,
       children: [
-        card,
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Reserve hit-test space for the badge above the card. This keeps
+            // the badge outside visually while allowing taps on its full area.
+            const SizedBox(height: 39),
+            Stack(
+              key: _playerCardKeys.putIfAbsent(
+                playerId,
+                () => GlobalKey(debugLabel: 'player-card-$playerId'),
+              ),
+              clipBehavior: Clip.none,
+              children: [card],
+            ),
+          ],
+        ),
         if (playerId != gameNotifier.onlineLocalPlayerId)
           Positioned(
             top: 0,
-            bottom: 0,
-            right: -21,
-            child: Center(
-              child: Material(
-                color: const Color(0xFF073D22),
-                shape: const CircleBorder(),
-                child: InkWell(
-                  onTap: () => _openEmojiPicker(playerId),
-                  customBorder: const CircleBorder(),
-                  child: Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0xFF35F26B),
-                        width: 2.5,
+            right: 0,
+            child: Material(
+              color: const Color(0xFF073D22),
+              shape: const CircleBorder(),
+              child: InkWell(
+                onTap: () => _openEmojiPicker(playerId),
+                customBorder: const CircleBorder(),
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFF35F26B),
+                      width: 2.5,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0xAA24EA59),
+                        blurRadius: 12,
+                        spreadRadius: 1,
                       ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0xAA24EA59),
-                          blurRadius: 12,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.emoji_emotions_rounded,
-                      color: Color(0xFF49F478),
-                      size: 27,
-                    ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.emoji_emotions_rounded,
+                    color: Color(0xFF49F478),
+                    size: 27,
                   ),
                 ),
               ),
@@ -1443,37 +1519,73 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   void _requestDiceTimerStop() {
+    if (_stopTimerRequestPending) {
+      _showVoiceCallMessage('Waiting for the other player to respond.');
+      return;
+    }
     final gameNotifier = ref.read(gameControllerProvider.notifier);
     final localPlayerId = gameNotifier.onlineLocalPlayerId;
     final localPlayer = gameNotifier.currentState.players
         .where((player) => player.id == localPlayerId);
     if (localPlayer.isEmpty) return;
+    _stopTimerRequestPending = true;
+    _stopTimerRequestAcknowledged = false;
+    _pendingStopTimerResultMessage = null;
     final sent = ref
         .read(webSocketServiceProvider)
         .requestDiceTimerStop(localPlayer.first.name);
     if (!sent) {
+      _stopTimerRequestPending = false;
       _showVoiceCallMessage(
           'Could not send the dice timer stop request. Reconnecting…');
+    } else {
+      // Dismiss the chat sheet so the pending request and final SnackBar stay
+      // visible above the game board.
+      unawaited(Navigator.of(context).maybePop());
     }
   }
 
   void _showDiceTimerRequestSentDialog() {
-    if (!mounted) return;
+    if (!mounted || !_stopTimerRequestPending) return;
+    _stopTimerRequestAcknowledged = true;
+    final pendingResult = _pendingStopTimerResultMessage;
+    if (pendingResult != null) {
+      _pendingStopTimerResultMessage = null;
+      _stopTimerRequestPending = false;
+      _showVoiceCallMessage(pendingResult);
+      return;
+    }
+    if (_requesterStopTimerDialogShowing) return;
+    _requesterStopTimerDialogShowing = true;
     unawaited(showDialog<void>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Request sent'),
         content: const Text(
-          'Dice timer stop request sent for chat friendly Ludo game.',
+          'Waiting for the other player to accept or decline your request.',
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('OK'),
-          ),
-        ],
       ),
-    ));
+    ).whenComplete(() => _requesterStopTimerDialogShowing = false));
+  }
+
+  void _resolveStopTimerRequest(String message) {
+    if (!_stopTimerRequestPending) return;
+    if (!_requesterStopTimerDialogShowing) {
+      if (!_stopTimerRequestAcknowledged) {
+        _pendingStopTimerResultMessage = message;
+        return;
+      }
+      _stopTimerRequestPending = false;
+      _showVoiceCallMessage(message);
+      return;
+    }
+
+    _stopTimerRequestPending = false;
+    _requesterStopTimerDialogShowing = false;
+    unawaited(Navigator.of(context, rootNavigator: true)
+        .maybePop()
+        .then((_) => _showVoiceCallMessage(message)));
   }
 
   Future<void> _showIncomingDiceTimerStopRequest(
@@ -1748,19 +1860,22 @@ class _EmojiFlightAnimationState extends State<_EmojiFlightAnimation>
                         angle: math.sin(t * math.pi * 2) * .12,
                         child: Transform.scale(
                           scale: scale,
-                          child: Text(
-                            widget.emoji,
-                            style: const TextStyle(
-                              fontSize: 56,
-                              shadows: [
-                                Shadow(
-                                  color: Color(0xFFFFD54F),
-                                  blurRadius: 20,
+                          child: widget.emoji == 'mjolnir'
+                              ? const MjolnirIcon(size: 68)
+                              : Text(
+                                  widget.emoji,
+                                  style: const TextStyle(
+                                    fontSize: 56,
+                                    shadows: [
+                                      Shadow(
+                                        color: Color(0xFFFFD54F),
+                                        blurRadius: 20,
+                                      ),
+                                      Shadow(
+                                          color: Colors.black87, blurRadius: 8),
+                                    ],
+                                  ),
                                 ),
-                                Shadow(color: Colors.black87, blurRadius: 8),
-                              ],
-                            ),
-                          ),
                         ),
                       ),
                     ),

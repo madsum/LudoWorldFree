@@ -40,6 +40,9 @@ public class MatchmakingService {
     private static final List<OnlineMatchRoom.Status> ACTIVE_STATUSES =
             List.of(OnlineMatchRoom.Status.MATCHED, OnlineMatchRoom.Status.READY);
     private static final long MATCHMAKING_TICKET_TTL_SECONDS = 10;
+    private static final Set<Long> ALLOWED_ENTRY_FEES = Set.of(
+            250L, 500L, 1_000L, 2_000L, 4_000L, 8_000L,
+            16_000L, 25_000L, 50_000L, 100_000L);
 
     public record RoomSnapshot(
             String roomId,
@@ -97,8 +100,9 @@ public class MatchmakingService {
         if (playerId == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A player ID is required.");
         }
-        if (request.getEntryFee() < 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Entry fee cannot be negative.");
+        if (!ALLOWED_ENTRY_FEES.contains(request.getEntryFee())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Choose a supported online entry amount.");
         }
         if (request.getPlayerCount() != 2 && request.getPlayerCount() != 4) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose two or four players.");
@@ -167,7 +171,7 @@ public class MatchmakingService {
                     .orElseGet(() -> walletRepository.save(new PlayerWallet(playerId, 2000L)));
             if (wallet.getBalance() < request.getEntryFee()) return insufficientFunds();
             ticketRepository.save(currentTicket);
-            return searchingResponse();
+            return lowerStakeOffer(currentTicket, activeAfter);
         }
 
         List<MatchmakingTicket> allTickets = new ArrayList<>();
@@ -200,6 +204,26 @@ public class MatchmakingService {
 
     private MatchmakingResponseDto requeueCurrentTicket(MatchmakingTicket ticket) {
         ticketRepository.save(ticket);
+        return searchingResponse();
+    }
+
+    private MatchmakingResponseDto lowerStakeOffer(
+            MatchmakingTicket current, Instant activeAfter) {
+        List<MatchmakingTicket> lowerStakeCandidates =
+                ticketRepository.findLowerStakeCandidatesForUpdate(
+                        current.getEntryFee(), current.getPlayerCount(), activeAfter,
+                        current.getPlayerId(), ACTIVE_STATUSES,
+                        PageRequest.of(0, current.getPlayerCount() - 1));
+        Map<Long, Integer> candidatesByFee = new LinkedHashMap<>();
+        for (MatchmakingTicket candidate : lowerStakeCandidates) {
+            int count = candidatesByFee.merge(candidate.getEntryFee(), 1, Integer::sum);
+            if (count >= current.getPlayerCount() - 1) {
+                MatchmakingResponseDto response = searchingResponse();
+                response.setLowerEntryFee(candidate.getEntryFee());
+                response.setMessage("Players are available at a lower entry amount.");
+                return response;
+            }
+        }
         return searchingResponse();
     }
 
@@ -1067,7 +1091,7 @@ public class MatchmakingService {
         roomRepository.save(room);
     }
 
-    private static MatchmakingResponseDto responseFor(OnlineMatchRoom room, UUID playerId) {
+    private MatchmakingResponseDto responseFor(OnlineMatchRoom room, UUID playerId) {
         UUID opponentId = room.opponentOf(playerId);
         if (opponentId == null) return searchingResponse();
         MatchmakingResponseDto response = new MatchmakingResponseDto(
@@ -1076,10 +1100,14 @@ public class MatchmakingService {
                 room.countryOf(opponentId), room.flagOf(opponentId), "Match Found!");
         response.setPlayerId(playerId);
         response.setPlayerCount(room.getPlayerCount());
-        response.setPlayers(room.getPlayers().stream().map(player ->
-                new MatchmakingResponseDto.MatchPlayerDto(player.id(), player.name(),
-                        player.avatarUrl(), player.country(), player.countryFlag(),
-                        player.color())).toList());
+        response.setPlayers(room.getPlayers().stream().map(player -> {
+            PlayerWallet wallet = walletRepository.findByPlayerId(player.id()).orElse(null);
+            return new MatchmakingResponseDto.MatchPlayerDto(
+                    player.id(), player.name(), player.avatarUrl(), player.country(),
+                    player.countryFlag(), player.color(),
+                    wallet == null ? 0 : wallet.getBalance(),
+                    wallet == null ? 0 : wallet.getDiamonds());
+        }).toList());
         return response;
     }
 
