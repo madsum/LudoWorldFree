@@ -46,7 +46,7 @@ class _IncomingBuddyRequestDialogState
       if (accept) {
         await dio.post('/friends/$friendshipId/accept', options: options);
       } else {
-        await dio.delete('/friends/$friendshipId', options: options);
+        await dio.post('/friends/$friendshipId/decline', options: options);
       }
       if (mounted) Navigator.of(context).pop(accept);
     } on DioException catch (error) {

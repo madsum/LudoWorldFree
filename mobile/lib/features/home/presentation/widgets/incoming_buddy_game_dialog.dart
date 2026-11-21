@@ -39,6 +39,24 @@ class _IncomingBuddyGameDialogState
 
   String? get _playerId => ref.read(authControllerProvider).user?.id;
 
+  String _acceptErrorMessage(DioException error) {
+    final data = error.response?.data;
+    if (data is Map) {
+      for (final key in const ['message', 'detail', 'error_description']) {
+        final value = data[key]?.toString().trim();
+        if (value != null && value.isNotEmpty) return value;
+      }
+    }
+    final statusCode = error.response?.statusCode;
+    if (statusCode == 409) {
+      return 'This game request expired, a player is already in a game, or one player needs more coins.';
+    }
+    if (error.response == null) {
+      return 'Could not reach the game server. Check your connection and try again.';
+    }
+    return 'Could not accept the game request (server error $statusCode).';
+  }
+
   Future<void> _accept() async {
     final playerId = _playerId;
     final inviteId = widget.invitation['id']?.toString();
@@ -65,12 +83,7 @@ class _IncomingBuddyGameDialogState
       }
       if (mounted) Navigator.of(context, rootNavigator: true).pop(match);
     } on DioException catch (error) {
-      final message = error.response?.data is Map
-          ? error.response?.data['message']?.toString()
-          : null;
-      if (mounted)
-        setState(
-            () => _error = message ?? 'Could not accept the game request.');
+      if (mounted) setState(() => _error = _acceptErrorMessage(error));
     } catch (_) {
       if (mounted)
         setState(() => _error = 'Could not accept the game request.');

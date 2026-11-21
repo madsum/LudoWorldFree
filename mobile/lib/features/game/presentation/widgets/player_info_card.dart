@@ -19,6 +19,7 @@ class PlayerInfoCard extends StatefulWidget {
   final bool compact;
   final bool showRollArrow;
   final bool rollArrowPointsUp;
+  final VoidCallback? onBuddyRequest;
 
   const PlayerInfoCard({
     super.key,
@@ -30,6 +31,7 @@ class PlayerInfoCard extends StatefulWidget {
     this.compact = false,
     this.showRollArrow = false,
     this.rollArrowPointsUp = false,
+    this.onBuddyRequest,
   });
 
   @override
@@ -467,6 +469,22 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                 ),
               ),
             ),
+            if (widget.onBuddyRequest != null)
+              IconButton(
+                tooltip: 'Send buddy request',
+                onPressed: widget.onBuddyRequest,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 28,
+                  height: 28,
+                ),
+                icon: const Icon(
+                  Icons.person_add_alt_1_rounded,
+                  size: 18,
+                  color: Color(0xFF55FF9B),
+                ),
+              ),
           ],
         ),
         const SizedBox(height: 3),

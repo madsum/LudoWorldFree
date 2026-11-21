@@ -5,12 +5,14 @@ class BuddyGameMatch {
   const BuddyGameMatch({
     required this.players,
     required this.roomId,
+    required this.sessionId,
     required this.localPlayerId,
     required this.localColor,
   });
 
   final List<PlayerModel> players;
   final String roomId;
+  final String sessionId;
   final String localPlayerId;
   final LudoColor localColor;
 
@@ -18,8 +20,13 @@ class BuddyGameMatch {
     if (value is! Map) return null;
     final roomId = value['roomId']?.toString();
     final localPlayerId = value['playerId']?.toString();
+    final sessionId = value['sessionId']?.toString();
     final rawPlayers = value['players'];
-    if (roomId == null || localPlayerId == null || rawPlayers is! List) {
+    if (roomId == null ||
+        localPlayerId == null ||
+        sessionId == null ||
+        sessionId.isEmpty ||
+        rawPlayers is! List) {
       return null;
     }
 
@@ -51,6 +58,7 @@ class BuddyGameMatch {
     return BuddyGameMatch(
       players: players,
       roomId: roomId,
+      sessionId: sessionId,
       localPlayerId: localPlayerId,
       localColor: localPlayer.first.color,
     );

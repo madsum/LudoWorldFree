@@ -309,6 +309,17 @@ public class OnlineMatchRoom {
                 && isFresh(playerDConnected, playerDLastSeenAt);
     }
 
+    public boolean isAbandoned(Instant now) {
+        // A room that never received its first game state was never actually
+        // played. Expire it from creation time even if a client kept sending
+        // pings after failing to finish the room handshake.
+        if (latestStateJson == null && createdAt.isBefore(now.minus(CONNECTION_LEASE))) {
+            return true;
+        }
+        boolean hasLivePlayer = getPlayerIds().stream().anyMatch(this::isConnected);
+        return !hasLivePlayer && updatedAt.isBefore(now.minus(CONNECTION_LEASE));
+    }
+
     public void connect(UUID playerId) {
         Instant now = Instant.now();
         expireStaleConnections(now);

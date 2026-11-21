@@ -6,6 +6,7 @@ import java.util.UUID;
 public class MatchmakingResponseDto {
     private boolean matchFound;
     private String roomId;
+    private String sessionId;
     private UUID playerId;
     private UUID opponentId;
     private String opponentName;
@@ -38,6 +39,8 @@ public class MatchmakingResponseDto {
     public void setMatchFound(boolean matchFound) { this.matchFound = matchFound; }
     public String getRoomId() { return roomId; }
     public void setRoomId(String roomId) { this.roomId = roomId; }
+    public String getSessionId() { return sessionId; }
+    public void setSessionId(String sessionId) { this.sessionId = sessionId; }
     public UUID getPlayerId() { return playerId; }
     public void setPlayerId(UUID playerId) { this.playerId = playerId; }
     public UUID getOpponentId() { return opponentId; }

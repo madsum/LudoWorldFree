@@ -49,10 +49,12 @@ class WebSocketService {
     _roomReadyCompleter = readyCompleter;
     try {
       await _openSocket(baseUri);
-      return await readyCompleter.future.timeout(
+      final connected = await readyCompleter.future.timeout(
         const Duration(seconds: 20),
         onTimeout: () => false,
       );
+      if (!connected) await leaveRoom();
+      return connected;
     } catch (e) {
       debugPrint('[WebSocket] Could not join the game room: $e');
       await leaveRoom();

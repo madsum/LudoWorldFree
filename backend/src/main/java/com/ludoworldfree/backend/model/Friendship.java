@@ -9,7 +9,7 @@ import java.util.UUID;
 @Table(name = "friendships", uniqueConstraints =
         @UniqueConstraint(name = "uk_requester_addressee", columnNames = {"requester_id", "addressee_id"}))
 public class Friendship {
-    public enum Status { PENDING, ACCEPTED }
+    public enum Status { PENDING, ACCEPTED, REJECTED }
 
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -42,9 +42,15 @@ public class Friendship {
     public UUID getRequesterId() { return requesterId; }
     public UUID getAddresseeId() { return addresseeId; }
     public Status getStatus() { return status; }
+    public Instant getUpdatedAt() { return updatedAt; }
 
     public void accept() {
         status = Status.ACCEPTED;
+        updatedAt = Instant.now();
+    }
+
+    public void reject() {
+        status = Status.REJECTED;
         updatedAt = Instant.now();
     }
 

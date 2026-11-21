@@ -27,6 +27,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -298,10 +299,25 @@ public class MatchmakingService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Choose a valid player color.");
         }
-        if (!roomRepository.findActiveForPlayerForUpdate(requesterId, ACTIVE_STATUSES).isEmpty()
-                || !roomRepository.findActiveForPlayerForUpdate(targetId, ACTIVE_STATUSES).isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "One of these players is already in an online game.");
+        List<OnlineMatchRoom> existingRooms = new ArrayList<>();
+        existingRooms.addAll(roomRepository.findActiveForPlayerForUpdate(
+                requesterId, ACTIVE_STATUSES));
+        existingRooms.addAll(roomRepository.findActiveForPlayerForUpdate(
+                targetId, ACTIVE_STATUSES));
+        Instant now = Instant.now();
+        Set<String> processedRoomIds = new HashSet<>();
+        for (OnlineMatchRoom existingRoom : existingRooms) {
+            if (!processedRoomIds.add(existingRoom.getRoomId())) continue;
+            if (existingRoom.getLatestStateJson() == null) {
+                refundRoom(existingRoom);
+                existingRoom.cancel();
+                roomRepository.save(existingRoom);
+            } else if (existingRoom.isAbandoned(now)) {
+                cancelOrFinish(existingRoom);
+            } else {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "One of these players is already in an online game.");
+            }
         }
 
         MatchmakingTicket requesterTicket = new MatchmakingTicket(
@@ -1176,6 +1192,7 @@ public class MatchmakingService {
                 room.nameOf(opponentId), room.avatarOf(opponentId),
                 room.countryOf(opponentId), room.flagOf(opponentId), "Match Found!");
         response.setPlayerId(playerId);
+        response.setSessionId(room.sessionIdOf(playerId));
         response.setPlayerCount(room.getPlayerCount());
         response.setPlayers(room.getPlayers().stream().map(player -> {
             PlayerWallet wallet = walletRepository.findByPlayerId(player.id()).orElse(null);

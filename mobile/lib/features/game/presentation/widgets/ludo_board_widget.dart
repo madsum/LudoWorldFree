@@ -406,24 +406,16 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
 
       final nameWidth = tileSize * 5.2;
       final nameHeight = tileSize * 0.72;
-      final tabletLayout = MediaQuery.sizeOf(context).shortestSide >= 600;
-      final nameBoundsWidth = tabletLayout &&
-              widget.orientationQuarterTurns.isOdd
-          ? nameHeight
-          : nameWidth;
-      final nameBoundsHeight = tabletLayout &&
-              widget.orientationQuarterTurns.isOdd
-          ? nameWidth
-          : nameHeight;
 
       return Positioned(
         key: ValueKey('nameplate_${player.id}'),
-        left: (nameCenter.dx * tileSize) - (nameBoundsWidth / 2),
-        top: (nameCenter.dy * tileSize) - (nameBoundsHeight / 2),
-        width: nameBoundsWidth,
-        height: nameBoundsHeight,
-        child: RotatedBox(
-          quarterTurns: (4 - widget.orientationQuarterTurns % 4) % 4,
+        left: (nameCenter.dx * tileSize) - (nameWidth / 2),
+        top: (nameCenter.dy * tileSize) - (nameHeight / 2),
+        width: nameWidth,
+        height: nameHeight,
+        child: Transform.rotate(
+          angle: -widget.orientationQuarterTurns * math.pi / 2,
+          alignment: Alignment.center,
           child: Center(
             child: FittedBox(
               fit: BoxFit.scaleDown,

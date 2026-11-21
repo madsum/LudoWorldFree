@@ -60,6 +60,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _friendInboxPlayerId;
   String? _buddyGameInvitePlayerId;
   DateTime? _friendInboxCursor;
+  DateTime? _outgoingBuddyRequestCursor;
   String? _shownIncomingVoiceCallId;
   bool _buddyRequestPollInFlight = false;
   bool _friendInboxPollInFlight = false;
@@ -107,6 +108,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _friendInboxPlayerId = null;
       _buddyGameInvitePlayerId = null;
       _friendInboxCursor = null;
+      _outgoingBuddyRequestCursor = null;
       _seenBuddyRequestIds.clear();
       _pendingBuddyRequests.clear();
       _seenFriendMessageIds.clear();
@@ -162,6 +164,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (_buddyRequestPollPlayerId == playerId) return;
     _buddyRequestPollTimer?.cancel();
     _buddyRequestPollPlayerId = playerId;
+    _outgoingBuddyRequestCursor = DateTime.now().toUtc();
     _seenBuddyRequestIds.clear();
     _pendingBuddyRequests.clear();
     unawaited(Future<void>.delayed(
@@ -344,30 +347,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         context,
         invitation: invitation,
       );
-      if (match != null && mounted) _startBuddyGame(match);
+      if (match != null && mounted) await _startBuddyGame(match);
     } finally {
       _buddyGameInviteDialogShowing = false;
     }
     _showNextIncomingBuddyGameInvite();
   }
 
-  void _startBuddyGame(BuddyGameMatch match) {
+  Future<void> _startBuddyGame(BuddyGameMatch match) async {
+    final webSocketService = ref.read(webSocketServiceProvider);
+    final connected = await webSocketService.connectToRoom(
+      roomId: match.roomId,
+      playerId: match.localPlayerId,
+      matchmakingSessionId: match.sessionId,
+    );
+    if (!mounted) return;
+    if (!connected) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Could not connect to the buddy game. Please try again.'),
+      ));
+      return;
+    }
     final gameController = ref.read(gameControllerProvider.notifier);
     gameController.configureOnlineMatch(
       roomId: match.roomId,
       playerId: match.localPlayerId,
       selectedColor: match.localColor,
-      requestDiceRoll: ref.read(webSocketServiceProvider).requestDiceRoll,
+      requestDiceRoll: webSocketService.requestDiceRoll,
     );
     gameController.startNewGame(players: match.players);
-    context.push('/game');
+    await context.push('/game');
   }
 
   Future<void> _pollIncomingBuddyRequests(String playerId) async {
     if (_buddyRequestPollInFlight ||
         !mounted ||
-        ref.read(authControllerProvider).user?.id != playerId ||
-        ModalRoute.of(context)?.isCurrent != true) {
+        ref.read(authControllerProvider).user?.id != playerId) {
       return;
     }
     _buddyRequestPollInFlight = true;
@@ -391,6 +406,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           (request) => !activeRequestIds.contains(request['id']?.toString()),
         );
       }
+      final outgoingResponse = await ref.read(apiClientProvider).get(
+            '/friends/outgoing-requests',
+            queryParameters: {
+              'after': (_outgoingBuddyRequestCursor ?? DateTime.now().toUtc())
+                  .toIso8601String(),
+            },
+            options: Options(headers: {'X-Player-ID': playerId}),
+          );
+      final outgoingData = outgoingResponse.data;
+      final rawOutgoing = outgoingData is Map ? outgoingData['entries'] : null;
+      if (rawOutgoing is List) {
+        for (final raw in rawOutgoing.whereType<Map>()) {
+          final status = raw['status']?.toString();
+          final name = raw['displayName']?.toString() ?? 'Player';
+          if (status == 'ACCEPTED') {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(SnackBar(
+                content: Text('$name accepted your buddy request.'),
+              ));
+          } else if (status == 'REJECTED') {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(SnackBar(
+                content: Text('$name declined your buddy request.'),
+              ));
+          }
+        }
+      }
+      final serverCursor = outgoingData is Map
+          ? DateTime.tryParse(outgoingData['cursor']?.toString() ?? '')
+          : null;
+      _outgoingBuddyRequestCursor = serverCursor ?? DateTime.now().toUtc();
     } catch (_) {
       // Keep the lobby usable during transient API failures; the next poll retries.
     } finally {

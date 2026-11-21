@@ -683,8 +683,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
           );
       final status =
           response.data is Map ? response.data['status']?.toString() : null;
-      final alreadyBuddy = response.data is Map &&
-          response.data['alreadyBuddy'] == true;
+      final alreadyBuddy =
+          response.data is Map && response.data['alreadyBuddy'] == true;
       if (!mounted) return;
       setState(() => _existingBuddyOrRequestPlayerIds.add(targetPlayerId));
       if (status != 'ACCEPTED') {
@@ -1077,6 +1077,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                         gameState.currentPlayer.id ==
                                             twoPlayerDisplayOrder[0].id,
                                     rollArrowPointsUp: false,
+                                    onBuddyRequest: gameNotifier.isOnlineMode &&
+                                            twoPlayerDisplayOrder[0].id !=
+                                                localPlayerId
+                                        ? () => _sendBuddyRequest(
+                                            twoPlayerDisplayOrder[0].id)
+                                        : null,
                                   ),
                                 ),
                               ),
@@ -1103,6 +1109,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                     showRollArrow: isPlayerRollTurn &&
                                         gameState.currentPlayer.id ==
                                             twoPlayerDisplayOrder[1].id,
+                                    onBuddyRequest: gameNotifier.isOnlineMode &&
+                                            twoPlayerDisplayOrder[1].id !=
+                                                localPlayerId
+                                        ? () => _sendBuddyRequest(
+                                            twoPlayerDisplayOrder[1].id)
+                                        : null,
                                   ),
                                 ),
                               ),

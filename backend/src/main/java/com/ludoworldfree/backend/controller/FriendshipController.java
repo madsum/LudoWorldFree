@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.data.domain.PageRequest;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -82,6 +83,37 @@ public class FriendshipController {
         return Map.of("entries", entries);
     }
 
+    @GetMapping("/outgoing-requests")
+    public Map<String, Object> outgoingRequests(
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
+            @RequestParam(value = "after", required = false) String after) {
+        UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
+        java.time.Instant cursor = java.time.Instant.now();
+        java.time.Instant afterInstant;
+        try {
+            afterInstant = after == null ? cursor.minusSeconds(60)
+                    : java.time.Instant.parse(after);
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "A valid update cursor is required.");
+        }
+        List<Map<String, Object>> entries = new ArrayList<>();
+        for (Friendship friendship : friendshipRepository
+                .findByRequesterIdAndUpdatedAtAfterOrderByUpdatedAtAsc(
+                        playerId, afterInstant, PageRequest.of(0, 30))) {
+            PlayerProfile profile = profileRepository
+                    .findByUserId(friendship.getAddresseeId()).orElse(null);
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("id", friendship.getId().toString());
+            entry.put("playerId", friendship.getAddresseeId().toString());
+            entry.put("displayName", profile == null ? "Player" : profile.getDisplayName());
+            entry.put("status", friendship.getStatus().name());
+            entry.put("updatedAt", friendship.getUpdatedAt().toString());
+            entries.add(entry);
+        }
+        return Map.of("entries", entries, "cursor", cursor.toString());
+    }
+
     @PostMapping("/requests")
     @Transactional
     public Map<String, Object> sendRequest(
@@ -131,6 +163,22 @@ public class FriendshipController {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This request cannot be accepted.");
         }
         friendship.accept();
+        return friendshipResponse(friendshipRepository.save(friendship));
+    }
+
+    @PostMapping("/{friendshipId}/decline")
+    @Transactional
+    public Map<String, Object> decline(
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
+            @PathVariable UUID friendshipId) {
+        UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
+        Friendship friendship = findForPlayer(friendshipId, playerId);
+        if (!friendship.getAddresseeId().equals(playerId)
+                || friendship.getStatus() != Friendship.Status.PENDING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This request cannot be declined.");
+        }
+        friendship.reject();
         return friendshipResponse(friendshipRepository.save(friendship));
     }
 

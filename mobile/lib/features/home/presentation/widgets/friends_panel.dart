@@ -194,19 +194,30 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
       friendId: friendId,
       friendName: friend['displayName']?.toString() ?? 'Buddy',
     );
-    if (match != null && mounted) _startBuddyGame(match);
+    if (match != null && mounted) await _startBuddyGame(match);
   }
 
-  void _startBuddyGame(BuddyGameMatch match) {
+  Future<void> _startBuddyGame(BuddyGameMatch match) async {
+    final webSocketService = ref.read(webSocketServiceProvider);
+    final connected = await webSocketService.connectToRoom(
+      roomId: match.roomId,
+      playerId: match.localPlayerId,
+      matchmakingSessionId: match.sessionId,
+    );
+    if (!mounted) return;
+    if (!connected) {
+      _showMessage('Could not connect to the buddy game. Please try again.');
+      return;
+    }
     final gameController = ref.read(gameControllerProvider.notifier);
     gameController.configureOnlineMatch(
       roomId: match.roomId,
       playerId: match.localPlayerId,
       selectedColor: match.localColor,
-      requestDiceRoll: ref.read(webSocketServiceProvider).requestDiceRoll,
+      requestDiceRoll: webSocketService.requestDiceRoll,
     );
     gameController.startNewGame(players: match.players);
-    context.push('/game');
+    await context.push('/game');
   }
 
   void _showMessage(String message) {
