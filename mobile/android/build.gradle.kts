@@ -16,9 +16,8 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 
-// file_picker 11 skips the Kotlin Gradle Plugin on AGP 9, but this project
-// keeps built-in Kotlin disabled while other plugins migrate. Compile the
-// picker module with the app's configured Kotlin plugin in that setup.
+// file_picker 11 skips KGP on AGP 9; keep it enabled while built-in Kotlin is
+// disabled for compatibility with the other Flutter plugins.
 subprojects {
     if (name == "file_picker") {
         pluginManager.withPlugin("com.android.library") {

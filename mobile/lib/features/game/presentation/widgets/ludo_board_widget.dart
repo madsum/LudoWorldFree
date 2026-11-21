@@ -16,7 +16,6 @@ class LudoBoardWidget extends StatefulWidget {
   final int orientationQuarterTurns;
   final bool compactFrame;
   final ValueChanged<LudoColor>? onBellTap;
-  final VoidCallback? onHurryUpTap;
   final LudoColor? alertedPlayerColor;
   final Set<String> unavailableBellPlayerIds;
   final String? localPlayerId;
@@ -31,7 +30,6 @@ class LudoBoardWidget extends StatefulWidget {
     this.orientationQuarterTurns = 0,
     this.compactFrame = false,
     this.onBellTap,
-    this.onHurryUpTap,
     this.alertedPlayerColor,
     this.unavailableBellPlayerIds = const {},
     this.localPlayerId,
@@ -278,7 +276,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                     clipBehavior: Clip.none,
                     children: [
                       ..._buildPawnWidgets(tileSize),
-                      ..._buildHurryUpIcons(tileSize),
+                      ..._buildBellIcons(tileSize),
                       ..._buildBellAlertText(tileSize),
                       ..._buildPlayerNamePlates(tileSize),
                       ..._buildFinishedPlayerCrowns(tileSize),
@@ -295,29 +293,34 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     );
   }
 
-  List<Widget> _buildHurryUpIcons(double tileSize) {
+  List<Widget> _buildBellIcons(double tileSize) {
     final size = tileSize * 1.15;
-    const centers = [
-      Offset(3, 3),
-      Offset(12, 3),
-      Offset(12, 12),
-      Offset(3, 12)
-    ];
-    return centers.map((center) {
+    return widget.gameState.players.map((player) {
+      final center = switch (player.color) {
+        LudoColor.red => const Offset(3, 3),
+        LudoColor.green => const Offset(12, 3),
+        LudoColor.yellow => const Offset(12, 12),
+        LudoColor.blue => const Offset(3, 12),
+      };
+      final canRing = widget.onBellTap != null &&
+          player.id != widget.localPlayerId &&
+          !player.isBot &&
+          !player.isEliminated &&
+          !widget.unavailableBellPlayerIds.contains(player.id);
       return Positioned(
+        key: ValueKey('bell_${player.id}'),
         left: center.dx * tileSize - size / 2,
         top: center.dy * tileSize - size / 2,
         width: size,
         height: size,
-        child: RotatedBox(
-          quarterTurns: widget.orientationQuarterTurns % 4,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: widget.onHurryUpTap,
-              child: Image.asset('assets/images/hurry-up.png',
-                  fit: BoxFit.contain),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: canRing ? () => widget.onBellTap!(player.color) : null,
+            child: Image.asset(
+              'assets/images/bell.png',
+              fit: BoxFit.contain,
             ),
           ),
         ),
@@ -354,19 +357,16 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
               child: child,
             ),
           ),
-          child: RotatedBox(
-            quarterTurns: (4 - widget.orientationQuarterTurns % 4) % 4,
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                'PLAY FAST',
-                maxLines: 1,
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: tileSize * 0.62,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.3,
-                ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              'PLAY FAST',
+              maxLines: 1,
+              style: TextStyle(
+                color: Colors.black,
+                fontSize: tileSize * 0.62,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.3,
               ),
             ),
           ),

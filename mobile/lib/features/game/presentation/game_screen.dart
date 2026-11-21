@@ -517,18 +517,21 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Future<void> _handleBellAlert(Map<String, dynamic> message) async {
     final gameState = ref.read(gameControllerProvider);
     final senderId = message['senderPlayerId']?.toString();
+    final targetId = message['targetPlayerId']?.toString();
+    final localPlayerId =
+        ref.read(gameControllerProvider.notifier).onlineLocalPlayerId;
     final sender = gameState.players.where((player) => player.id == senderId);
-    if (sender.isEmpty || !mounted) return;
+    final target = gameState.players.where((player) => player.id == targetId);
+    if (sender.isEmpty ||
+        target.isEmpty ||
+        targetId != localPlayerId ||
+        !mounted) {
+      return;
+    }
 
     unawaited(_vibrateForBellAlert());
     _playBellAlertSound();
-    final localPlayer = gameState.players.where(
-      (player) =>
-          player.id ==
-          ref.read(gameControllerProvider.notifier).onlineLocalPlayerId,
-    );
-    if (localPlayer.isEmpty) return;
-    _showBellAlertText(localPlayer.first.color);
+    _showBellAlertText(target.first.color);
   }
 
   void _showBellAlertText(LudoColor playerColor) {
@@ -573,20 +576,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
     ref.read(webSocketServiceProvider).sendBellAlert(target.first.id);
     _playBellAlertSound();
     _showBellAlertText(target.first.color);
-  }
-
-  void _hurryUp(GameState gameState, GameNotifier gameNotifier) {
-    if (gameState.isGameOver) return;
-    final localId = gameNotifier.onlineLocalPlayerId;
-    final opponents = gameState.players.where((player) =>
-        player.id != localId && !player.isBot && !player.isEliminated);
-    if (opponents.isEmpty) return;
-    final target = opponents.first;
-    if (gameNotifier.isOnlineMode) {
-      ref.read(webSocketServiceProvider).sendBellAlert(target.id);
-    }
-    _playBellAlertSound();
-    _showBellAlertText(target.color);
   }
 
   String? _resolveDisconnectedPlayerId(
@@ -1030,9 +1019,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                           !gameState.isGameOver
                                       ? _ringPlayerBell
                                       : null,
-                                  onHurryUpTap: gameState.isGameOver
-                                      ? null
-                                      : () => _hurryUp(gameState, gameNotifier),
                                   alertedPlayerColor: _bellAlertedPlayerColor,
                                   unavailableBellPlayerIds:
                                       _disconnectedOnlinePlayerIds,
