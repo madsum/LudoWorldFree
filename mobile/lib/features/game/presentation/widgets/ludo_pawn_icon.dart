@@ -1,161 +1,37 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../domain/models/ludo_color.dart';
 
-/// Compact rendering of the same glossy pawn used on the game board.
+/// Compact rendering of the matching color pawn asset.
 class LudoPawnIcon extends StatelessWidget {
   final LudoColor color;
   final double size;
+  final double? width;
+  final double? height;
 
-  const LudoPawnIcon({super.key, required this.color, required this.size});
+  const LudoPawnIcon({
+    super.key,
+    required this.color,
+    required this.size,
+    this.width,
+    this.height,
+  });
+
+  static String assetFor(LudoColor color) => switch (color) {
+        LudoColor.blue => 'assets/images/pawn-blue.png',
+        LudoColor.red => 'assets/images/pawn-red.png',
+        LudoColor.green => 'assets/images/pawn-green.png',
+        LudoColor.yellow => 'assets/images/pawn-yellow.png',
+      };
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: size,
-        height: size,
-        child: CustomPaint(
-          painter: GlossyPawnPainter(
-            color: color.color,
-            highlightColor: color.lightColor,
-          ),
+        width: width ?? size,
+        height: height ?? size,
+        child: Image.asset(
+          assetFor(color),
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
         ),
       );
-}
-
-class GlossyPawnPainter extends CustomPainter {
-  final Color color;
-  final Color highlightColor;
-
-  const GlossyPawnPainter({
-    required this.color,
-    required this.highlightColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final unit = math.min(size.width, size.height);
-    final cx = size.width / 2;
-
-    // A clear upright figure: shoulders, arms, a straight torso, and two legs.
-    final body = Path()
-      ..moveTo(cx - unit * 0.08, unit * 0.34)
-      ..lineTo(cx + unit * 0.08, unit * 0.34)
-      ..lineTo(cx + unit * 0.12, unit * 0.37)
-      ..cubicTo(cx + unit * 0.22, unit * 0.39, cx + unit * 0.25, unit * 0.48,
-          cx + unit * 0.28, unit * 0.59)
-      ..lineTo(cx + unit * 0.22, unit * 0.63)
-      ..lineTo(cx + unit * 0.15, unit * 0.49)
-      ..lineTo(cx + unit * 0.14, unit * 0.70)
-      ..lineTo(cx + unit * 0.11, unit * 0.75)
-      ..lineTo(cx + unit * 0.12, unit * 0.95)
-      ..lineTo(cx + unit * 0.02, unit * 0.95)
-      ..lineTo(cx, unit * 0.77)
-      ..lineTo(cx - unit * 0.02, unit * 0.77)
-      ..lineTo(cx - unit * 0.04, unit * 0.95)
-      ..lineTo(cx - unit * 0.14, unit * 0.95)
-      ..lineTo(cx - unit * 0.13, unit * 0.70)
-      ..lineTo(cx - unit * 0.14, unit * 0.49)
-      ..lineTo(cx - unit * 0.22, unit * 0.63)
-      ..lineTo(cx - unit * 0.28, unit * 0.59)
-      ..cubicTo(cx - unit * 0.25, unit * 0.48, cx - unit * 0.22, unit * 0.39,
-          cx - unit * 0.12, unit * 0.37)
-      ..close();
-
-    final headCenter = Offset(cx, unit * 0.205);
-    final headRadius = unit * 0.16;
-    final silhouette = Path()
-      ..addPath(body, Offset.zero)
-      ..addOval(Rect.fromCircle(center: headCenter, radius: headRadius));
-
-    canvas.drawPath(
-      silhouette.shift(Offset(0, unit * 0.035)),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.50)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, unit * 0.10),
-    );
-
-    final bodyBounds = body.getBounds();
-    final bodyPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Color.lerp(highlightColor, Colors.white, 0.28)!,
-          highlightColor,
-          color,
-          Color.lerp(color, Colors.black, 0.62)!,
-        ],
-        stops: const [0, 0.22, 0.62, 1],
-      ).createShader(bodyBounds);
-    canvas.drawPath(body, bodyPaint);
-
-    final bodyOutline = Paint()
-      ..color = Color.lerp(color, Colors.black, 0.48)!
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = unit * 0.025;
-    canvas.drawPath(body, bodyOutline);
-
-    final bodyGloss = Path()
-      ..moveTo(cx - unit * 0.27, unit * 0.68)
-      ..cubicTo(cx - unit * 0.34, unit * 0.77, cx - unit * 0.32, unit * 0.91,
-          cx - unit * 0.23, unit * 0.94)
-      ..cubicTo(cx - unit * 0.18, unit * 0.95, cx - unit * 0.19, unit * 0.90,
-          cx - unit * 0.21, unit * 0.84)
-      ..cubicTo(cx - unit * 0.22, unit * 0.78, cx - unit * 0.17, unit * 0.72,
-          cx - unit * 0.13, unit * 0.66)
-      ..close();
-    canvas.drawPath(
-      bodyGloss,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withValues(alpha: 0.52),
-            Colors.white.withValues(alpha: 0.08),
-          ],
-        ).createShader(bodyBounds),
-    );
-
-    final headBounds = Rect.fromCircle(center: headCenter, radius: headRadius);
-    canvas.drawCircle(
-      headCenter,
-      headRadius,
-      Paint()
-        ..shader = RadialGradient(
-          center: const Alignment(-0.42, -0.58),
-          radius: 1.25,
-          colors: [
-            Color.lerp(highlightColor, Colors.white, 0.68)!,
-            highlightColor,
-            color,
-            Color.lerp(color, Colors.black, 0.55)!,
-          ],
-          stops: const [0, 0.22, 0.68, 1],
-        ).createShader(headBounds),
-    );
-    canvas.drawCircle(
-      headCenter,
-      headRadius,
-      Paint()
-        ..color = Color.lerp(color, Colors.black, 0.36)!
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = unit * 0.022,
-    );
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(cx - unit * 0.075, unit * 0.17),
-        width: unit * 0.13,
-        height: unit * 0.055,
-      ),
-      Paint()..color = Colors.white.withValues(alpha: 0.58),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant GlossyPawnPainter oldDelegate) =>
-      oldDelegate.color != color ||
-      oldDelegate.highlightColor != highlightColor;
 }

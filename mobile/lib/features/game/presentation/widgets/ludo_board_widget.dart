@@ -8,6 +8,7 @@ import '../../domain/models/board_position.dart';
 import '../../domain/models/game_state.dart';
 import '../../domain/models/ludo_color.dart';
 import '../../domain/models/pawn_model.dart';
+import 'ludo_pawn_icon.dart';
 
 class LudoBoardWidget extends StatefulWidget {
   final GameState gameState;
@@ -770,12 +771,9 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     staticTileOccupants.forEach((tileKey, occupantList) {
       final totalOnTile = occupantList.length;
 
-      // Paint eligible pawns last so they remain visible and receive taps when
-      // another player's pawn occupies the same safe tile.
+      // Keep movable pawns on top if their tap regions ever share a boundary.
       occupantList.sort((a, b) =>
           (a['isMovable'] as bool ? 1 : 0) - (b['isMovable'] as bool ? 1 : 0));
-      final promoteMovablePawn = totalOnTile == 2 &&
-          occupantList.any((item) => item['isMovable'] as bool);
 
       for (int i = 0; i < totalOnTile; i++) {
         final item = occupantList[i];
@@ -783,43 +781,30 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
         final BoardPosition pos = item['pos'];
         final bool isMovable = item['isMovable'];
 
-        // Sub-grid stacking offsets
-        double offsetX = 0.0;
-        double offsetY = 0.0;
-        double pawnScale = 0.82;
-
-        if (totalOnTile == 2) {
-          if (promoteMovablePawn) {
-            // Lift and enlarge the active pawn above the other token.
-            pawnScale = isMovable ? 0.76 : 0.55;
-            offsetY = (isMovable ? -0.22 : 0.22) * tileSize;
-          } else {
-            pawnScale = 0.58;
-            offsetX = (i == 0 ? -0.18 : 0.18) * tileSize;
-          }
-        } else if (totalOnTile >= 3) {
-          pawnScale = 0.50;
-          final row = i ~/ 2;
-          final col = i % 2;
-          offsetX = (col == 0 ? -0.20 : 0.20) * tileSize;
-          offsetY = (row == 0 ? -0.20 : 0.20) * tileSize;
-        }
-
-        final left =
-            (pos.x * tileSize) + (tileSize * (1.0 - pawnScale) / 2) + offsetX;
-        final top =
-            (pos.y * tileSize) + (tileSize * (1.0 - pawnScale) / 2) + offsetY;
+        // Divide occupied tiles into separate hit regions. Two pawns sit side
+        // by side; larger stacks use a 2x2 layout so each pawn can be tapped.
+        final columns = totalOnTile == 1 ? 1 : 2;
+        final rows = totalOnTile <= 2 ? 1 : 2;
+        final column = totalOnTile == 1 ? 0 : i % columns;
+        final row = totalOnTile <= 2 ? 0 : i ~/ columns;
+        final hitWidth = tileSize / columns;
+        final hitHeight = tileSize / rows;
+        final pawnScale = totalOnTile == 1
+            ? 0.82
+            : totalOnTile == 2
+                ? 0.76
+                : 0.50;
         final size = tileSize * pawnScale;
-        final hitTargetSize =
-            promoteMovablePawn && isMovable ? tileSize * 1.05 : size;
+        final left = pos.x * tileSize + column * hitWidth;
+        final top = pos.y * tileSize + row * hitHeight;
 
         widgets.add(
           Positioned(
             key: ValueKey('static_${pawn.color.name}_${pawn.id}'),
-            left: left + (size - hitTargetSize) / 2,
-            top: top + (size - hitTargetSize) / 2,
-            width: hitTargetSize,
-            height: hitTargetSize,
+            left: left,
+            top: top,
+            width: hitWidth,
+            height: hitHeight,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () {
@@ -842,16 +827,12 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                 }
               },
               child: Center(
-                child: SizedBox(
-                  width: size,
-                  height: size,
-                  child: _PawnTileWidget(
-                    color: pawn.color,
-                    isMovable: isMovable,
-                    isPaired: pawn.isPaired,
-                    isPairSelected: pawn.isPairSelected,
-                    size: size,
-                  ),
+                child: _PawnTileWidget(
+                  color: pawn.color,
+                  isMovable: isMovable,
+                  isPaired: pawn.isPaired,
+                  isPairSelected: pawn.isPairSelected,
+                  size: size,
                 ),
               ),
             ),
@@ -925,105 +906,38 @@ class _PawnTileWidget extends StatelessWidget {
             ),
           ),
 
-        // Dark lower lip gives the token a visible side and lifts it off the
-        // board without increasing its footprint.
-        Transform.translate(
-          offset: Offset(0, size * 0.075),
-          child: Container(
-            width: size * 0.86,
-            height: size * 0.86,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Color.lerp(baseColor, Colors.black, 0.38),
-              border: Border.all(
-                color: Color.lerp(baseColor, Colors.black, 0.52)!,
-                width: size * 0.075,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.58),
-                  blurRadius: size * 0.20,
-                  offset: Offset(0, size * 0.09),
-                ),
-              ],
-            ),
-          ),
+        LudoPawnIcon(
+          color: color,
+          size: size,
+          width: size * 0.52,
+          height: size,
         ),
 
-        // Glossy raised face with a thicker colored rim and a bright bevel.
-        Container(
-          width: size * 0.86,
-          height: size * 0.86,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              center: const Alignment(-0.48, -0.62),
-              radius: 1.18,
-              colors: [
-                Color.lerp(baseColor, Colors.white, 0.72)!,
-                Color.lerp(baseColor, Colors.white, 0.34)!,
-                baseColor,
-                Color.lerp(baseColor, Colors.black, 0.28)!,
-              ],
-              stops: const [0, 0.30, 0.72, 1],
-            ),
-            border: Border.all(
-              color: isPaired
-                  ? AppColors.gold
-                  : Color.lerp(baseColor, Colors.black, 0.48)!,
-              width: isPaired ? size * 0.09 : size * 0.075,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.42),
-                blurRadius: size * 0.16,
-                offset: Offset(0, size * 0.055),
-              ),
-              BoxShadow(
-                color: color.lightColor.withValues(alpha: 0.48),
-                blurRadius: size * 0.13,
-                offset: Offset(-size * 0.07, -size * 0.075),
-              ),
-            ],
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              if (!isPaired)
-                Positioned(
-                  top: size * 0.14,
-                  left: size * 0.29,
-                  child: Container(
-                    width: size * 0.22,
-                    height: size * 0.065,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.62),
-                      borderRadius: BorderRadius.circular(size),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.white.withValues(alpha: 0.35),
-                          blurRadius: size * 0.06,
-                        ),
-                      ],
-                    ),
+        if (isPaired)
+          Positioned(
+            right: size * 0.08,
+            bottom: size * 0.08,
+            child: Container(
+              width: size * 0.34,
+              height: size * 0.34,
+              decoration: BoxDecoration(
+                color: AppColors.gold,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: size * 0.035),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    blurRadius: size * 0.08,
                   ),
-                ),
-              Center(
-                child: isPaired
-                    ? Icon(
-                        Icons.link_rounded,
-                        color: AppColors.gold,
-                        size: size * 0.42,
-                      )
-                    : Icon(
-                        Icons.accessibility_new_rounded,
-                        color: Color.lerp(baseColor, Colors.black, 0.42)!,
-                        size: size * 0.56,
-                      ),
+                ],
               ),
-            ],
+              child: Icon(
+                Icons.link_rounded,
+                color: Colors.white,
+                size: size * 0.23,
+              ),
+            ),
           ),
-        ),
       ],
     );
   }
