@@ -250,6 +250,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
         } else if (message['type'] == 'connection_failed' && mounted) {
           gameNotifier.pauseTurnTimer();
         } else if (message['type'] == 'match_finished' && mounted) {
+          final finishedRoomId = message['roomId']?.toString();
+          if (webSocketService.isRoomSwitchInProgress) return;
+          if (finishedRoomId != null &&
+              finishedRoomId != webSocketService.roomId) {
+            return;
+          }
+          if (finishedRoomId != null &&
+              finishedRoomId != gameNotifier.onlineRoomId) {
+            return;
+          }
           final leavingPlayerId = message['playerId']?.toString();
           if (message['reason'] == 'opponent_left' &&
               leavingPlayerId != null &&
@@ -259,8 +269,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
           }
           unawaited(ref.read(webSocketServiceProvider).leaveRoom());
           gameNotifier.clearOnlineMatch();
-          Future<void>.delayed(const Duration(seconds: 2), () {
-            if (mounted) context.go('/home');
+          Future<void>.delayed(const Duration(seconds: 25), () {
+            if (mounted && gameNotifier.onlineRoomId == null) {
+              context.go('/home');
+            }
           });
         }
       });

@@ -355,6 +355,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _startBuddyGame(BuddyGameMatch match) async {
+    final gameController = ref.read(gameControllerProvider.notifier);
+    final gameRouteIsOpen =
+        GoRouter.of(context).routeInformationProvider.value.uri.path == '/game';
     final webSocketService = ref.read(webSocketServiceProvider);
     final connected = await webSocketService.connectToRoom(
       roomId: match.roomId,
@@ -368,7 +371,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ));
       return;
     }
-    final gameController = ref.read(gameControllerProvider.notifier);
     gameController.configureOnlineMatch(
       roomId: match.roomId,
       playerId: match.localPlayerId,
@@ -376,7 +378,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       requestDiceRoll: webSocketService.requestDiceRoll,
     );
     gameController.startNewGame(players: match.players);
-    await context.push('/game');
+    if (!gameRouteIsOpen) await context.push('/game');
   }
 
   Future<void> _pollIncomingBuddyRequests(String playerId) async {

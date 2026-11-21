@@ -29,36 +29,44 @@ class WebSocketService {
   int _reconnectAttempts = 0;
   bool _shouldReconnect = false;
   bool _hasConnectedToRoom = false;
+  bool _roomSwitchInProgress = false;
 
   Stream<Map<String, dynamic>> get messageStream =>
       _messageStreamController.stream;
   bool get isConnected => _channel != null && _channel!.closeCode == null;
+  String? get roomId => _roomId;
+  bool get isRoomSwitchInProgress => _roomSwitchInProgress;
 
   Future<bool> connectToRoom({
     required String roomId,
     required String playerId,
     required String matchmakingSessionId,
   }) async {
-    await leaveRoom();
-    _roomId = roomId;
-    _playerId = playerId;
-    _matchmakingSessionId = matchmakingSessionId;
-    _shouldReconnect = true;
-    final baseUri = Uri.parse(AppConstants.defaultWebSocketUrl);
-    final readyCompleter = Completer<bool>();
-    _roomReadyCompleter = readyCompleter;
+    _roomSwitchInProgress = true;
     try {
-      await _openSocket(baseUri);
-      final connected = await readyCompleter.future.timeout(
-        const Duration(seconds: 20),
-        onTimeout: () => false,
-      );
-      if (!connected) await leaveRoom();
-      return connected;
-    } catch (e) {
-      debugPrint('[WebSocket] Could not join the game room: $e');
       await leaveRoom();
-      return false;
+      _roomId = roomId;
+      _playerId = playerId;
+      _matchmakingSessionId = matchmakingSessionId;
+      _shouldReconnect = true;
+      final baseUri = Uri.parse(AppConstants.defaultWebSocketUrl);
+      final readyCompleter = Completer<bool>();
+      _roomReadyCompleter = readyCompleter;
+      try {
+        await _openSocket(baseUri);
+        final connected = await readyCompleter.future.timeout(
+          const Duration(seconds: 20),
+          onTimeout: () => false,
+        );
+        if (!connected) await leaveRoom();
+        return connected;
+      } catch (e) {
+        debugPrint('[WebSocket] Could not join the game room: $e');
+        await leaveRoom();
+        return false;
+      }
+    } finally {
+      _roomSwitchInProgress = false;
     }
   }
 

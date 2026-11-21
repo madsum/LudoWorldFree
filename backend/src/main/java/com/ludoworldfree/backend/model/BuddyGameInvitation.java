@@ -34,6 +34,8 @@ public class BuddyGameInvitation {
     private String targetColor;
     @Column(name = "room_id", length = 64)
     private String roomId;
+    @Column(name = "decline_reason", length = 500)
+    private String declineReason;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private Status status = Status.PENDING;
@@ -52,7 +54,7 @@ public class BuddyGameInvitation {
         this.requesterSessionId = requesterSessionId;
         this.requesterColor = requesterColor;
         this.createdAt = Instant.now();
-        this.expiresAt = this.createdAt.plusSeconds(60);
+        this.expiresAt = this.createdAt.plusSeconds(180);
     }
 
     public void accept(String targetSessionId, String targetColor, String roomId) {
@@ -62,7 +64,10 @@ public class BuddyGameInvitation {
         this.status = Status.ACCEPTED;
     }
 
-    public void decline() { this.status = Status.DECLINED; }
+    public void decline(String reason) {
+        this.declineReason = reason;
+        this.status = Status.DECLINED;
+    }
     public void expire() { this.status = Status.EXPIRED; }
     public void cancel() { this.status = Status.CANCELLED; }
 
@@ -75,6 +80,7 @@ public class BuddyGameInvitation {
     public String getTargetSessionId() { return targetSessionId; }
     public String getTargetColor() { return targetColor; }
     public String getRoomId() { return roomId; }
+    public String getDeclineReason() { return declineReason; }
     public Status getStatus() { return status; }
     public Instant getExpiresAt() { return expiresAt; }
     public Instant getCreatedAt() { return createdAt; }

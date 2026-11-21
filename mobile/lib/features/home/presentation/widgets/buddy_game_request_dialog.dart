@@ -129,7 +129,7 @@ class _BuddyGameRequestDialogState
     if (_pollInFlight || playerId == null || inviteId == null || !mounted) {
       return;
     }
-    if (DateTime.now().difference(_sentAt ?? DateTime.now()).inSeconds >= 60) {
+    if (DateTime.now().difference(_sentAt ?? DateTime.now()).inSeconds >= 180) {
       _pollTimer?.cancel();
       setState(() => _resultMessage = 'Your buddy did not respond in time.');
       return;
@@ -161,8 +161,10 @@ class _BuddyGameRequestDialogState
         }
       } else if (status == 'DECLINED') {
         _pollTimer?.cancel();
-        setState(() =>
-            _resultMessage = '${widget.friendName} declined the game request.');
+        final reason = rawEntry['declineReason']?.toString().trim();
+        setState(() => _resultMessage = reason == null || reason.isEmpty
+            ? '${widget.friendName} declined the game request.'
+            : '${widget.friendName} declined: $reason');
       } else if (status == 'EXPIRED') {
         _pollTimer?.cancel();
         setState(() => _resultMessage = 'Your buddy did not respond in time.');

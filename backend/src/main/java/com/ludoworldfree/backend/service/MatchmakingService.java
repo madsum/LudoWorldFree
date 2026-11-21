@@ -363,7 +363,8 @@ public class MatchmakingService {
     @Transactional(readOnly = true)
     public MatchmakingResponseDto responseForBuddyRoom(String roomId, UUID playerId) {
         return roomRepository.findById(roomId)
-                .filter(room -> room.contains(playerId))
+                .filter(room -> ACTIVE_STATUSES.contains(room.getStatus())
+                        && room.contains(playerId))
                 .map(room -> responseFor(room, playerId))
                 .orElse(null);
     }
@@ -374,6 +375,40 @@ public class MatchmakingService {
         return roomRepository.findById(roomId)
                 .filter(room -> ACTIVE_STATUSES.contains(room.getStatus()) && room.contains(playerId))
                 .isPresent();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isPlayerInActiveRoom(UUID playerId) {
+        Instant now = Instant.now();
+        return roomRepository.findActiveForPlayer(playerId, ACTIVE_STATUSES).stream()
+                .anyMatch(room -> room.getLatestStateJson() != null
+                        && !room.isAbandoned(now));
+    }
+
+    @Transactional
+    public void leaveActiveRoomsForBuddyGame(UUID requesterId, UUID targetId) {
+        Map<UUID, List<OnlineMatchRoom>> roomsByPlayer = new LinkedHashMap<>();
+        roomsByPlayer.put(requesterId,
+                roomRepository.findActiveForPlayerForUpdate(requesterId, ACTIVE_STATUSES));
+        if (!requesterId.equals(targetId)) {
+            roomsByPlayer.put(targetId,
+                    roomRepository.findActiveForPlayerForUpdate(targetId, ACTIVE_STATUSES));
+        }
+        Set<String> processedRoomIds = new HashSet<>();
+        for (Map.Entry<UUID, List<OnlineMatchRoom>> entry : roomsByPlayer.entrySet()) {
+            UUID leavingPlayerId = entry.getKey();
+            for (OnlineMatchRoom room : entry.getValue()) {
+                if (!processedRoomIds.add(room.getRoomId())) continue;
+                if (room.getLatestStateJson() == null
+                        || room.getStatus() == OnlineMatchRoom.Status.MATCHED) {
+                    refundRoom(room);
+                    room.cancel();
+                    roomRepository.save(room);
+                } else {
+                    forfeitPlayerLeaving(room.getRoomId(), leavingPlayerId);
+                }
+            }
+        }
     }
 
     @Transactional(readOnly = true)

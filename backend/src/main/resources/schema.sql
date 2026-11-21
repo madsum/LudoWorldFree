@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS buddy_game_invites (
     target_session_id VARCHAR(64),
     target_color VARCHAR(8),
     room_id VARCHAR(64),
+    decline_reason VARCHAR(500),
     status VARCHAR(16) NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP

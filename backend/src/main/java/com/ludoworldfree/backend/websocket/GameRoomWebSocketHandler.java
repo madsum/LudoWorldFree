@@ -171,6 +171,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         }
         closeLocalRoom(roomId, localRoom, Map.of(
                 "type", "match_finished",
+                "roomId", roomId,
                 "playerId", playerId.toString(),
                 "reason", "opponent_left"));
     }
@@ -478,14 +479,16 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
             if (snapshot == null || snapshot.status() ==
                     com.ludoworldfree.backend.model.OnlineMatchRoom.Status.CANCELLED) {
                 closeLocalRoom(roomId, localRoom, Map.of(
-                        "type", "match_finished", "reason", "room_closed"));
+                        "type", "match_finished", "roomId", roomId,
+                        "reason", "room_closed"));
                 continue;
             }
 
             if (snapshot.status() == com.ludoworldfree.backend.model.OnlineMatchRoom.Status.FINISHED) {
                 relayStateEvents(localRoom, snapshot);
                 closeLocalRoom(roomId, localRoom, Map.of(
-                        "type", "match_finished", "reason", "room_closed"));
+                        "type", "match_finished", "roomId", roomId,
+                        "reason", "room_closed"));
                 continue;
             }
 

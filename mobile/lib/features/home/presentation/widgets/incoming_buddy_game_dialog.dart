@@ -34,10 +34,18 @@ class IncomingBuddyGameDialog extends ConsumerStatefulWidget {
 
 class _IncomingBuddyGameDialogState
     extends ConsumerState<IncomingBuddyGameDialog> {
+  final _declineReasonController = TextEditingController();
   bool _working = false;
+  bool _declining = false;
   String? _error;
 
   String? get _playerId => ref.read(authControllerProvider).user?.id;
+
+  @override
+  void dispose() {
+    _declineReasonController.dispose();
+    super.dispose();
+  }
 
   String _acceptErrorMessage(DioException error) {
     final data = error.response?.data;
@@ -96,10 +104,19 @@ class _IncomingBuddyGameDialogState
     final playerId = _playerId;
     final inviteId = widget.invitation['id']?.toString();
     if (playerId == null || inviteId == null || _working) return;
+    final reason = _declineReasonController.text.trim();
+    if (reason.isEmpty) {
+      setState(() {
+        _declining = true;
+        _error = 'Please write a short reason before declining.';
+      });
+      return;
+    }
     setState(() => _working = true);
     try {
       await ref.read(apiClientProvider).post(
             '/friends/game-invites/$inviteId/decline',
+            data: {'reason': reason},
             options: Options(headers: {'X-Player-ID': playerId}),
           );
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
@@ -122,6 +139,7 @@ class _IncomingBuddyGameDialogState
   Widget build(BuildContext context) {
     final name = widget.invitation['displayName']?.toString() ?? 'Your buddy';
     final amount = (widget.invitation['entryFee'] as num?)?.toInt() ?? 0;
+    final inGame = widget.invitation['inGame'] == true;
     return AlertDialog(
       backgroundColor: const Color(0xFF102447),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -140,6 +158,35 @@ class _IncomingBuddyGameDialogState
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(color: Colors.white70),
           ),
+          if (inGame) ...[
+            const SizedBox(height: 10),
+            Text(
+              'You are in another game. Accepting will forfeit that game and join this one.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                color: Colors.orangeAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          if (_declining) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _declineReasonController,
+              maxLength: 500,
+              maxLines: 3,
+              minLines: 2,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Why are you declining?',
+                hintText: 'Write a short message for your buddy',
+                border: OutlineInputBorder(),
+                counterStyle: TextStyle(color: Colors.white54),
+              ),
+              style: const TextStyle(color: Colors.white),
+            ),
+          ],
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -152,12 +199,28 @@ class _IncomingBuddyGameDialogState
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: _working ? null : _decline,
-          child: const Text('DECLINE'),
-        ),
+        if (_declining)
+          TextButton(
+            onPressed: _working
+                ? null
+                : () => setState(() {
+                      _declining = false;
+                      _error = null;
+                    }),
+            child: const Text('BACK'),
+          )
+        else
+          TextButton(
+            onPressed: _working
+                ? null
+                : () => setState(() {
+                      _declining = true;
+                      _error = null;
+                    }),
+            child: const Text('DECLINE'),
+          ),
         ElevatedButton(
-          onPressed: _working ? null : _accept,
+          onPressed: _working ? null : (_declining ? _decline : _accept),
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.gold,
             foregroundColor: Colors.black,
@@ -167,7 +230,7 @@ class _IncomingBuddyGameDialogState
                   dimension: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('ACCEPT & PLAY'),
+              : Text(_declining ? 'SEND REASON' : 'ACCEPT & PLAY'),
         ),
       ],
     );

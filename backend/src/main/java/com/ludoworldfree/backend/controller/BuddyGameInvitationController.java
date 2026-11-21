@@ -70,10 +70,6 @@ public class BuddyGameInvitationController {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Your buddy is offline right now.");
         }
-        if (!voiceCallHandler.isOnline(friendId)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Your buddy is offline right now.");
-        }
 
         long entryFee = ((Number) body.getOrDefault("entryFee", 0)).longValue();
         if (!ALLOWED_ENTRY_FEES.contains(entryFee)) {
@@ -111,6 +107,7 @@ public class BuddyGameInvitationController {
             @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId) {
         UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
         Instant now = Instant.now();
+        boolean inGame = matchmakingService.isPlayerInActiveRoom(playerId);
         List<Map<String, Object>> entries = new ArrayList<>();
         for (BuddyGameInvitation invitation : invitationRepository
                 .findAllByTargetIdAndStatusAndExpiresAtAfterOrderByCreatedAtAsc(
@@ -124,6 +121,7 @@ public class BuddyGameInvitationController {
                     ? "Buddy" : requester.getDisplayName());
             entry.put("entryFee", invitation.getEntryFee());
             entry.put("expiresAt", invitation.getExpiresAt().toString());
+            entry.put("inGame", inGame);
             entries.add(entry);
         }
         return Map.of("entries", entries);
@@ -139,8 +137,19 @@ public class BuddyGameInvitationController {
         BuddyGameInvitation invitation = invitationRepository.findByIdForUpdate(inviteId)
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Game request not found."));
-        if (!invitation.getTargetId().equals(targetId)
-                || invitation.getStatus() != BuddyGameInvitation.Status.PENDING
+        if (!invitation.getTargetId().equals(targetId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "This game request belongs to another player.");
+        }
+        if (invitation.getStatus() == BuddyGameInvitation.Status.ACCEPTED) {
+            MatchmakingResponseDto existingMatch = matchmakingService.responseForBuddyRoom(
+                    invitation.getRoomId(), targetId);
+            if (existingMatch != null) {
+                return Map.of("id", invitation.getId().toString(),
+                        "status", invitation.getStatus().name(), "match", existingMatch);
+            }
+        }
+        if (invitation.getStatus() != BuddyGameInvitation.Status.PENDING
                 || invitation.getExpiresAt().isBefore(Instant.now())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "This game request is no longer available.");
@@ -160,6 +169,7 @@ public class BuddyGameInvitationController {
                 .orElseThrow(() -> new ResponseStatusException(
                         HttpStatus.NOT_FOUND, "Player profile not found."));
 
+        matchmakingService.leaveActiveRoomsForBuddyGame(invitation.getRequesterId(), targetId);
         MatchmakingResponseDto requesterMatch = matchmakingService.createBuddyRoom(
                 invitation.getRequesterId(), requester,
                 invitation.getRequesterSessionId(), invitation.getRequesterColor(),
@@ -182,7 +192,8 @@ public class BuddyGameInvitationController {
     @Transactional
     public Map<String, Object> decline(
             @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
-            @PathVariable UUID inviteId) {
+            @PathVariable UUID inviteId,
+            @RequestBody Map<String, String> body) {
         UUID targetId = PlayerIdResolver.resolve(headerPlayerId);
         BuddyGameInvitation invitation = invitationRepository.findByIdForUpdate(inviteId)
                 .orElseThrow(() -> new ResponseStatusException(
@@ -192,7 +203,13 @@ public class BuddyGameInvitationController {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "This game request is no longer available.");
         }
-        invitation.decline();
+        String reason = body == null ? null : text(body.get("reason"));
+        reason = reason == null ? "" : reason.trim();
+        if (reason.isEmpty() || reason.length() > 500) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Write a short reason for declining (up to 500 characters).");
+        }
+        invitation.decline(reason);
         invitationRepository.save(invitation);
         return Map.of("id", invitation.getId().toString(), "status", "DECLINED");
     }
@@ -234,6 +251,9 @@ public class BuddyGameInvitationController {
             }
             entry.put("status", status);
             entry.put("entryFee", invitation.getEntryFee());
+            if (invitation.getStatus() == BuddyGameInvitation.Status.DECLINED) {
+                entry.put("declineReason", invitation.getDeclineReason());
+            }
             if (invitation.getStatus() == BuddyGameInvitation.Status.ACCEPTED) {
                 entry.put("match", matchmakingService.responseForBuddyRoom(
                         invitation.getRoomId(), requesterId));

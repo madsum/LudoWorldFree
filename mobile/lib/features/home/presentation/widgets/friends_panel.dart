@@ -198,6 +198,9 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
   }
 
   Future<void> _startBuddyGame(BuddyGameMatch match) async {
+    final gameController = ref.read(gameControllerProvider.notifier);
+    final gameRouteIsOpen =
+        GoRouter.of(context).routeInformationProvider.value.uri.path == '/game';
     final webSocketService = ref.read(webSocketServiceProvider);
     final connected = await webSocketService.connectToRoom(
       roomId: match.roomId,
@@ -209,7 +212,6 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
       _showMessage('Could not connect to the buddy game. Please try again.');
       return;
     }
-    final gameController = ref.read(gameControllerProvider.notifier);
     gameController.configureOnlineMatch(
       roomId: match.roomId,
       playerId: match.localPlayerId,
@@ -217,7 +219,7 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
       requestDiceRoll: webSocketService.requestDiceRoll,
     );
     gameController.startNewGame(players: match.players);
-    await context.push('/game');
+    if (!gameRouteIsOpen) await context.push('/game');
   }
 
   void _showMessage(String message) {
