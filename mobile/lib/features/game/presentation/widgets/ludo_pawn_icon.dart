@@ -21,7 +21,7 @@ class LudoPawnIcon extends StatelessWidget {
         LudoColor.blue => 'assets/images/pawn-blue.png',
         LudoColor.red => 'assets/images/pawn-red.png',
         LudoColor.green => 'assets/images/pawn-green.png',
-        LudoColor.yellow => 'assets/images/pawn-yellow.png',
+        LudoColor.yellow => 'assets/images/pawn-orange.webp',
       };
 
   @override

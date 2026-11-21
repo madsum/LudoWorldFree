@@ -391,7 +391,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                                       !widget.player.isEliminated &&
                                       !widget.gameState.isGameOver,
                                   canRoll: canRoll,
-                                  color: widget.player.color.color,
+                                  playerColor: widget.player.color,
                                   size: widget.compact ? 24 : 28,
                                   onTap: widget.onRoll,
                                 ),
@@ -692,7 +692,7 @@ class SharedDiceButton extends StatelessWidget {
       isRolling: gameState.isDiceRolling,
       isActive: isActive,
       canRoll: canRoll,
-      color: gameState.currentPlayer.color.color,
+      playerColor: gameState.currentPlayer.color,
       size: 56,
       onTap: onRoll,
     );
@@ -810,7 +810,7 @@ class _PlayerDie extends StatefulWidget {
   final bool isRolling;
   final bool isActive;
   final bool canRoll;
-  final Color color;
+  final LudoColor playerColor;
   final double size;
   final VoidCallback onTap;
 
@@ -819,7 +819,7 @@ class _PlayerDie extends StatefulWidget {
     required this.isRolling,
     required this.isActive,
     required this.canRoll,
-    required this.color,
+    required this.playerColor,
     this.size = 34,
     required this.onTap,
   });
@@ -829,7 +829,6 @@ class _PlayerDie extends StatefulWidget {
 }
 
 class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
-  static const _turnHighlight = Color(0xFFFA02A3);
   final math.Random _visualRandom = math.Random.secure();
   List<int> _rollFaces = const [];
 
@@ -852,8 +851,15 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _precacheDiceFaces();
+  }
+
+  @override
   void didUpdateWidget(covariant _PlayerDie oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.playerColor != widget.playerColor) _precacheDiceFaces();
     if (oldWidget.isRolling != widget.isRolling) _syncRolling();
     if (oldWidget.canRoll != widget.canRoll ||
         oldWidget.isRolling != widget.isRolling) {
@@ -891,6 +897,21 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  String get _assetColor => switch (widget.playerColor) {
+        LudoColor.red => 'red',
+        LudoColor.green => 'green',
+        LudoColor.yellow => 'orange',
+        LudoColor.blue => 'blue',
+      };
+
+  String _assetPath(int value) => 'assets/images/dice-$_assetColor-$value.webp';
+
+  void _precacheDiceFaces() {
+    for (var value = 1; value <= 6; value++) {
+      precacheImage(AssetImage(_assetPath(value)), context);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -910,28 +931,29 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
           final value = widget.isRolling
               ? (rollPhase < 0.98 ? rollingValue : previousValue)
               : widget.value;
+          final easedRoll = Curves.easeInOutCubic.transform(rollPhase);
           final hopHeight = widget.isRolling
-              ? math.sin(rollPhase * math.pi) * widget.size * 0.32
+              ? math.sin(rollPhase * math.pi * 2).abs() * widget.size * 0.15
               : 0.0;
-          final rotationX = widget.isRolling
-              ? rollPhase * math.pi * 4 +
-                  math.sin(rollPhase * math.pi * 4) * 0.22
-              : -0.08;
-          final rotationY = widget.isRolling
-              ? rollPhase * math.pi * 5 +
-                  math.sin(rollPhase * math.pi * 3) * 0.18
-              : 0.08;
-          final rotationZ = widget.isRolling ? rollPhase * math.pi * 4 : -0.035;
+          final rollOffsetX = widget.isRolling
+              ? math.sin(rollPhase * math.pi * 3) * widget.size * 0.12
+              : 0.0;
+          final rotationX = widget.isRolling ? easedRoll * math.pi * 4 : 0.0;
+          final rotationY = widget.isRolling ? easedRoll * math.pi * 6 : 0.0;
+          final rotationZ = widget.isRolling
+              ? easedRoll * math.pi * 8 +
+                  math.sin(rollPhase * math.pi * 4) * 0.10 * (1 - rollPhase)
+              : -0.025;
           final landingSquash = widget.isRolling && rollPhase > 0.82
               ? 1 - math.sin((rollPhase - 0.82) / 0.18 * math.pi) * 0.08
               : 1.0;
 
           return Transform.translate(
-            offset: Offset(0, -hopHeight),
+            offset: Offset(rollOffsetX, -hopHeight),
             child: Transform(
               alignment: Alignment.center,
               transform: Matrix4.identity()
-                ..setEntry(3, 2, 0.004)
+                ..setEntry(3, 2, 0.012)
                 ..rotateX(rotationX)
                 ..rotateY(rotationY)
                 ..rotateZ(rotationZ),
@@ -939,99 +961,39 @@ class _PlayerDieState extends State<_PlayerDie> with TickerProviderStateMixin {
                 scale: (1 + hopHeight / 180) *
                     landingSquash *
                     (widget.canRoll ? 1 + flashPhase * 0.07 : 1),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
+                child: Container(
                   width: widget.size,
                   height: widget.size,
-                  padding: EdgeInsets.all(widget.size * 0.12),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Colors.white,
-                        Color(0xFFF9FBFF),
-                        Color(0xFFE5EBF3),
-                        Color(0xFFB8C3D2),
-                      ],
-                      stops: [0, 0.32, 0.76, 1],
-                    ),
-                    borderRadius: BorderRadius.circular(widget.size * 0.26),
-                    border: Border.all(
-                      color: widget.isActive || widget.isRolling
-                          ? Color.lerp(
-                              _turnHighlight,
-                              Colors.white,
-                              widget.canRoll ? flashPhase : 0,
-                            )!
-                          : Colors.white,
-                      width: widget.isActive || widget.isRolling
-                          ? (widget.canRoll ? 1.5 + flashPhase * 1.7 : 1.7)
-                          : 1.2,
-                    ),
-                    boxShadow: [
-                      const BoxShadow(
-                        color: Color(0x77000000),
-                        blurRadius: 7,
-                        offset: Offset(1.5, 3),
-                      ),
-                      const BoxShadow(
-                        color: Color(0xCCFFFFFF),
-                        blurRadius: 2,
-                        offset: Offset(-1, -1),
-                      ),
-                      if (widget.isRolling || widget.isActive)
-                        BoxShadow(
-                          color: _turnHighlight.withValues(
-                            alpha: widget.isRolling
-                                ? 0.65
-                                : widget.canRoll
-                                    ? 0.25 + flashPhase * 0.60
-                                    : 0.32,
-                          ),
-                          blurRadius: widget.isRolling
-                              ? 11
-                              : widget.canRoll
-                                  ? 5 + flashPhase * 12
-                                  : 7,
-                          spreadRadius: widget.isRolling
-                              ? 1.5
-                              : widget.canRoll
-                                  ? 0.5 + flashPhase * 2.5
-                                  : 0.5,
-                        ),
-                    ],
-                  ),
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        left: widget.size * 0.09,
-                        top: widget.size * 0.06,
-                        width: widget.size * 0.62,
-                        height: widget.size * 0.24,
-                        child: IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.white.withValues(alpha: 0.88),
-                                  Colors.white.withValues(alpha: 0.12),
-                                ],
+                    boxShadow: widget.isActive || widget.isRolling
+                        ? [
+                            BoxShadow(
+                              color: widget.playerColor.color.withValues(
+                                alpha: widget.isRolling
+                                    ? 0.6
+                                    : widget.canRoll
+                                        ? 0.2 + flashPhase * 0.5
+                                        : 0.28,
                               ),
+                              blurRadius: widget.isRolling
+                                  ? 17
+                                  : widget.canRoll
+                                      ? 7 + flashPhase * 12
+                                      : 9,
+                              spreadRadius: widget.isRolling
+                                  ? 2
+                                  : widget.canRoll
+                                      ? flashPhase * 2
+                                      : 1,
                             ),
-                          ),
-                        ),
-                      ),
-                      Center(
-                        child: value == null
-                            ? Icon(Icons.casino_rounded,
-                                color: widget.color, size: widget.size * 0.70)
-                            : _DicePips(value: value, size: widget.size),
-                      ),
-                    ],
+                          ]
+                        : const [],
+                  ),
+                  child: Image.asset(
+                    _assetPath(value ?? 1),
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.medium,
+                    gaplessPlayback: true,
                   ),
                 ),
               ),
@@ -1092,68 +1054,4 @@ class _TurnTimerBorderPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _TurnTimerBorderPainter oldDelegate) =>
       oldDelegate.progress != progress;
-}
-
-class _DicePips extends StatelessWidget {
-  final int value;
-  final double size;
-
-  const _DicePips({required this.value, required this.size});
-
-  static const _pipPositions = <Alignment>[
-    Alignment(-0.72, -0.72),
-    Alignment(0.72, -0.72),
-    Alignment(-0.72, 0),
-    Alignment(0.72, 0),
-    Alignment(-0.72, 0.72),
-    Alignment(0.72, 0.72),
-    Alignment(0, 0),
-  ];
-
-  static const _visiblePips = <int, List<int>>{
-    1: [6],
-    2: [0, 5],
-    3: [0, 6, 5],
-    4: [0, 1, 4, 5],
-    5: [0, 1, 4, 5, 6],
-    6: [0, 1, 2, 3, 4, 5],
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        for (final index in _visiblePips[value]!)
-          Align(
-            alignment: _pipPositions[index],
-            child: Container(
-              width: size * 0.16,
-              height: size * 0.16,
-              decoration: BoxDecoration(
-                gradient: const RadialGradient(
-                  center: Alignment(-0.42, -0.5),
-                  colors: [
-                    Color(0xFF8996A8),
-                    Color(0xFF344154),
-                    Color(0xFF0B111B),
-                  ],
-                  stops: [0, 0.42, 1],
-                ),
-                shape: BoxShape.circle,
-                border: Border.fromBorderSide(
-                  BorderSide(color: Colors.white54, width: 0.45),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.25),
-                    blurRadius: 1,
-                    offset: const Offset(0.5, 0.7),
-                  ),
-                ],
-              ),
-            ),
-          ),
-      ],
-    );
-  }
 }
