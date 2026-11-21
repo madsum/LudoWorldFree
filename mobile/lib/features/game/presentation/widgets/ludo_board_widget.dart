@@ -318,9 +318,14 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: canRing ? () => widget.onBellTap!(player.color) : null,
-            child: Image.asset(
-              'assets/images/bell.png',
-              fit: BoxFit.contain,
+            child: RotatedBox(
+              // The board is rotated for the local player's perspective.
+              // Counter-rotate the bell so its artwork stays upright.
+              quarterTurns: (4 - widget.orientationQuarterTurns % 4) % 4,
+              child: Image.asset(
+                'assets/images/bell.png',
+                fit: BoxFit.contain,
+              ),
             ),
           ),
         ),
@@ -340,14 +345,22 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
     };
     final textWidth = tileSize * 5.2;
     final textHeight = tileSize * 1.1;
+    final isQuarterTurn = widget.orientationQuarterTurns.isOdd;
+    // RotatedBox swaps its child's constraints. Swap the positioned bounds too,
+    // so the upright text keeps its full width after the board rotates.
+    final boundsWidth = isQuarterTurn ? textHeight : textWidth;
+    final boundsHeight = isQuarterTurn ? textWidth : textHeight;
+    final fontSize = tileSize < 30
+        ? math.max(tileSize * 0.9, 18.0).toDouble()
+        : tileSize * 0.62;
 
     return [
       Positioned(
         key: ValueKey('play_fast_${alertColor.name}'),
-        left: anchor.dx * tileSize - textWidth / 2,
-        top: anchor.dy * tileSize - textHeight / 2,
-        width: textWidth,
-        height: textHeight,
+        left: anchor.dx * tileSize - boundsWidth / 2,
+        top: anchor.dy * tileSize - boundsHeight / 2,
+        width: boundsWidth,
+        height: boundsHeight,
         child: AnimatedBuilder(
           animation: _bellAlertController,
           builder: (context, child) => Opacity(
@@ -357,16 +370,21 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
               child: child,
             ),
           ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              'PLAY FAST',
-              maxLines: 1,
-              style: TextStyle(
-                color: Colors.black,
-                fontSize: tileSize * 0.62,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.3,
+          child: RotatedBox(
+            // Keep the alert label readable after the board's perspective
+            // rotation, like the player nameplates.
+            quarterTurns: (4 - widget.orientationQuarterTurns % 4) % 4,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                'PLAY FAST',
+                maxLines: 1,
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.3,
+                ),
               ),
             ),
           ),
