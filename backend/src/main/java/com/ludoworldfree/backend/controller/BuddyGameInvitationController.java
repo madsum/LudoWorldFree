@@ -120,6 +120,7 @@ public class BuddyGameInvitationController {
             entry.put("displayName", requester == null
                     ? "Buddy" : requester.getDisplayName());
             entry.put("entryFee", invitation.getEntryFee());
+            entry.put("requesterColor", invitation.getRequesterColor());
             entry.put("expiresAt", invitation.getExpiresAt().toString());
             entry.put("inGame", inGame);
             entries.add(entry);

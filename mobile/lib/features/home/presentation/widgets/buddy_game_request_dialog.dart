@@ -58,6 +58,7 @@ class _BuddyGameRequestDialogState
   ];
 
   int _entryFee = 250;
+  LudoColor _playerColor = LudoColor.red;
   bool _sending = false;
   bool _cancelling = false;
   String? _inviteId;
@@ -83,7 +84,6 @@ class _BuddyGameRequestDialogState
       _sending = true;
       _error = null;
     });
-    final color = LudoColor.values[math.Random.secure().nextInt(4)];
     final sessionId =
         '${DateTime.now().microsecondsSinceEpoch}_${math.Random.secure().nextInt(1 << 32)}';
     try {
@@ -91,7 +91,7 @@ class _BuddyGameRequestDialogState
             '/friends/${widget.friendId}/game-invites',
             data: {
               'entryFee': _entryFee,
-              'selectedColor': color.name,
+              'selectedColor': _playerColor.name,
               'sessionId': sessionId,
             },
             options: Options(headers: {'X-Player-ID': playerId}),
@@ -262,6 +262,36 @@ class _BuddyGameRequestDialogState
                       if (amount != null) setState(() => _entryFee = amount);
                     },
             ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<LudoColor>(
+              value: _playerColor,
+              dropdownColor: const Color(0xFF102447),
+              style: GoogleFonts.poppins(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Your player color',
+                labelStyle: TextStyle(color: Colors.white70),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: AppColors.gold),
+                ),
+              ),
+              items: LudoColor.values
+                  .map((color) => DropdownMenuItem(
+                        value: color,
+                        child: Row(
+                          children: [
+                            Icon(Icons.circle, size: 15, color: color.color),
+                            const SizedBox(width: 8),
+                            Text(color.displayName),
+                          ],
+                        ),
+                      ))
+                  .toList(growable: false),
+              onChanged: _sending
+                  ? null
+                  : (color) {
+                      if (color != null) setState(() => _playerColor = color);
+                    },
+            ),
           ],
           if (waiting) ...[
             const Center(
@@ -269,7 +299,7 @@ class _BuddyGameRequestDialogState
             ),
             const SizedBox(height: 12),
             Text(
-              'Waiting for ${widget.friendName} to accept at $_entryFee coins…',
+              'Waiting for ${widget.friendName} to accept at $_entryFee coins. You will play ${_playerColor.displayName}…',
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(color: Colors.white70),
             ),

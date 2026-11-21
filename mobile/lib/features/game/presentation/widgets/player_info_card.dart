@@ -293,11 +293,20 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                             ),
                             const SizedBox(height: 3),
 
-                            // Line 2: wallet balances.
+                            // Line 2: player name and wallet balances.
                             Row(
                               children: [
                                 Expanded(
-                                  child: const SizedBox.shrink(),
+                                  child: Text(
+                                    widget.player.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: widget.compact ? 8.5 : 10,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                    ),
+                                  ),
                                 ),
                                 Icon(
                                   Icons.diamond_rounded,
@@ -333,7 +342,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                             ),
                             const SizedBox(height: 3),
 
-                            // Line 3: larger avatar, name, die, captures, and missed rolls.
+                            // Line 3: avatar, die, capture counts, and missed rolls.
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
@@ -360,20 +369,6 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                                   ),
                                 ),
                                 const SizedBox(width: 4),
-
-                                Flexible(
-                                  child: Text(
-                                    widget.player.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.poppins(
-                                      fontSize: widget.compact ? 7.5 : 9,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 3),
 
                                 // Player Die
                                 _PlayerDie(
@@ -471,7 +466,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
 
   /// 2-Player Profile Card Layout
   /// First Line: Flag & Full Country Name
-  /// Second line: player balances. Third line: avatar, name, and captures.
+  /// Second line: player name and balances. Third line: avatar and captures.
   Widget _buildTwoPlayerProfile({
     required Color avatarBorderColor,
     required bool timerVisible,
@@ -505,10 +500,21 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
         ),
         const SizedBox(height: 3),
 
-        // Second Line: diamonds and gold.
+        // Second Line: name, diamonds, and gold.
         Row(
           children: [
-            const Spacer(),
+            Expanded(
+              child: Text(
+                widget.player.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+            ),
             const Icon(
               Icons.diamond_rounded,
               color: AppColors.diamondBlue,
@@ -542,7 +548,7 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
         ),
         const SizedBox(height: 3),
 
-        // Third Line: profile image, name, captured-token counts, and missed rolls.
+        // Third Line: profile image, captured-token counts, and missed rolls.
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -560,19 +566,6 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: _buildAvatar(),
-              ),
-            ),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                widget.player.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.poppins(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                ),
               ),
             ),
             const SizedBox(width: 4),

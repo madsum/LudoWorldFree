@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
+import '../../../game/domain/models/ludo_color.dart';
 import 'buddy_game_match.dart';
 
 class IncomingBuddyGameDialog extends ConsumerStatefulWidget {
@@ -139,6 +140,16 @@ class _IncomingBuddyGameDialogState
   Widget build(BuildContext context) {
     final name = widget.invitation['displayName']?.toString() ?? 'Your buddy';
     final amount = (widget.invitation['entryFee'] as num?)?.toInt() ?? 0;
+    final inviterColor = LudoColor.values.firstWhere(
+      (color) => color.name == widget.invitation['requesterColor']?.toString(),
+      orElse: () => LudoColor.red,
+    );
+    final yourColor = switch (inviterColor) {
+      LudoColor.red => LudoColor.yellow,
+      LudoColor.green => LudoColor.blue,
+      LudoColor.yellow => LudoColor.red,
+      LudoColor.blue => LudoColor.green,
+    };
     final inGame = widget.invitation['inGame'] == true;
     return AlertDialog(
       backgroundColor: const Color(0xFF102447),
@@ -154,7 +165,7 @@ class _IncomingBuddyGameDialogState
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '$name invited you to a two-player game for $amount coins. Both players will use this entry amount.',
+            '$name invited you to a two-player game for $amount coins. They chose ${inviterColor.displayName}; you will play ${yourColor.displayName}. Both players use the same entry amount.',
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(color: Colors.white70),
           ),
