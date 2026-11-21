@@ -969,6 +969,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                             _chatAttachedToPlayerCard(
                               playerId: gameState.players[0].id,
                               placeAboveCard: false,
+                              onBuddyRequest:
+                                  _buddyRequestFor(gameState.players[0].id),
                               card: PlayerInfoCard(
                                 player: gameState.players[0],
                                 gameState: gameState,
@@ -978,12 +980,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 showRollArrow: isPlayerRollTurn &&
                                     gameState.currentTurnIndex == 0,
                                 rollArrowPointsUp: true,
+                                onBuddyRequest:
+                                    _buddyRequestFor(gameState.players[0].id),
                               ),
                             ),
                           if (gameState.players.length > 1)
                             _chatAttachedToPlayerCard(
                               playerId: gameState.players[1].id,
                               placeAboveCard: false,
+                              onBuddyRequest:
+                                  _buddyRequestFor(gameState.players[1].id),
                               card: PlayerInfoCard(
                                 player: gameState.players[1],
                                 gameState: gameState,
@@ -993,6 +999,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 showRollArrow: isPlayerRollTurn &&
                                     gameState.currentTurnIndex == 1,
                                 rollArrowPointsUp: true,
+                                onBuddyRequest:
+                                    _buddyRequestFor(gameState.players[1].id),
                               ),
                             ),
                         ],
@@ -1005,31 +1013,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   // Main Interactive Ludo Board
                   Expanded(
                     child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final missedTurnIndicators = <Widget>[];
-                        for (final player in gameState.players) {
-                          final boardCorner =
-                              (player.color.index + boardQuarterTurns) % 4;
-                          final isLeftSide =
-                              boardCorner == 0 || boardCorner == 3;
-                          final isTopSide =
-                              boardCorner == 0 || boardCorner == 1;
-                          final indicatorTop = (constraints.maxHeight *
-                                      (isTopSide ? 0.25 : 0.75) -
-                                  25)
-                              .clamp(0.0, constraints.maxHeight - 50)
-                              .toDouble();
-
-                          missedTurnIndicators.add(
-                            Positioned(
-                              left: isLeftSide ? 7 : null,
-                              right: isLeftSide ? null : 7,
-                              top: indicatorTop,
-                              child: _BoardMissedTurnIndicator(player: player),
-                            ),
-                          );
-                        }
-
+                      builder: (context, _) {
                         return Stack(
                           children: [
                             Center(
@@ -1058,7 +1042,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 ),
                               ),
                             ),
-                            ...missedTurnIndicators,
                           ],
                         );
                       },
@@ -1078,6 +1061,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 child: _chatAttachedToPlayerCard(
                                   playerId: twoPlayerDisplayOrder[0].id,
                                   placeAboveCard: true,
+                                  showChatButton: true,
+                                  onBuddyRequest: _buddyRequestFor(
+                                      twoPlayerDisplayOrder[0].id),
                                   card: PlayerInfoCard(
                                     player: twoPlayerDisplayOrder[0],
                                     gameState: gameState,
@@ -1089,12 +1075,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                         gameState.currentPlayer.id ==
                                             twoPlayerDisplayOrder[0].id,
                                     rollArrowPointsUp: false,
-                                    onBuddyRequest: gameNotifier.isOnlineMode &&
-                                            twoPlayerDisplayOrder[0].id !=
-                                                localPlayerId
-                                        ? () => _sendBuddyRequest(
-                                            twoPlayerDisplayOrder[0].id)
-                                        : null,
+                                    onBuddyRequest: _buddyRequestFor(
+                                        twoPlayerDisplayOrder[0].id),
                                   ),
                                 ),
                               ),
@@ -1111,6 +1093,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 child: _chatAttachedToPlayerCard(
                                   playerId: twoPlayerDisplayOrder[1].id,
                                   placeAboveCard: true,
+                                  onBuddyRequest: _buddyRequestFor(
+                                      twoPlayerDisplayOrder[1].id),
                                   card: PlayerInfoCard(
                                     player: twoPlayerDisplayOrder[1],
                                     gameState: gameState,
@@ -1121,12 +1105,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                     showRollArrow: isPlayerRollTurn &&
                                         gameState.currentPlayer.id ==
                                             twoPlayerDisplayOrder[1].id,
-                                    onBuddyRequest: gameNotifier.isOnlineMode &&
-                                            twoPlayerDisplayOrder[1].id !=
-                                                localPlayerId
-                                        ? () => _sendBuddyRequest(
-                                            twoPlayerDisplayOrder[1].id)
-                                        : null,
+                                    onBuddyRequest: _buddyRequestFor(
+                                        twoPlayerDisplayOrder[1].id),
                                   ),
                                 ),
                               ),
@@ -1139,6 +1119,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 _chatAttachedToPlayerCard(
                                   playerId: gameState.players[3].id,
                                   placeAboveCard: true,
+                                  showChatButton: true,
+                                  onBuddyRequest:
+                                      _buddyRequestFor(gameState.players[3].id),
                                   card: PlayerInfoCard(
                                     player: gameState.players[3],
                                     gameState: gameState,
@@ -1146,6 +1129,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                         gameState.currentTurnIndex == 3,
                                     onRoll: () => gameNotifier.rollDice(),
                                     compact: true,
+                                    onBuddyRequest: _buddyRequestFor(
+                                        gameState.players[3].id),
                                     showRollArrow: isPlayerRollTurn &&
                                         gameState.currentTurnIndex == 3,
                                   ),
@@ -1154,6 +1139,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 _chatAttachedToPlayerCard(
                                   playerId: gameState.players[2].id,
                                   placeAboveCard: true,
+                                  onBuddyRequest:
+                                      _buddyRequestFor(gameState.players[2].id),
                                   card: PlayerInfoCard(
                                     player: gameState.players[2],
                                     gameState: gameState,
@@ -1161,6 +1148,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                         gameState.currentTurnIndex == 2,
                                     onRoll: () => gameNotifier.rollDice(),
                                     compact: true,
+                                    onBuddyRequest: _buddyRequestFor(
+                                        gameState.players[2].id),
                                     showRollArrow: isPlayerRollTurn &&
                                         gameState.currentTurnIndex == 2,
                                   ),
@@ -1172,18 +1161,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   const SizedBox(height: 4),
                 ],
               ),
-
-              if (gameNotifier.isOnlineMode &&
-                  !gameState.isGameOver &&
-                  gameNotifier.onlineLocalPlayerId != null)
-                Positioned(
-                  left: 18,
-                  bottom: isTwoPlayerMode ? 102 : 94,
-                  child: OnlineChatButton(
-                    compact: true,
-                    onPressed: () => _openOnlineChat(context),
-                  ),
-                ),
 
               Positioned.fill(
                 child: IgnorePointer(
@@ -1375,6 +1352,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
     required Widget card,
     required String playerId,
     required bool placeAboveCard,
+    bool showChatButton = false,
+    VoidCallback? onBuddyRequest,
   }) {
     final gameNotifier = ref.read(gameControllerProvider.notifier);
     if (!gameNotifier.isOnlineMode || gameNotifier.currentState.isGameOver) {
@@ -1423,7 +1402,16 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 () => GlobalKey(debugLabel: 'player-card-$playerId'),
               ),
               clipBehavior: Clip.none,
-              children: [card],
+              children: [
+                if (onBuddyRequest == null)
+                  card
+                else
+                  Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: (_) => onBuddyRequest(),
+                    child: card,
+                  ),
+              ],
             ),
           ],
         ),
@@ -1463,6 +1451,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
             ),
           ),
+        if (showChatButton && gameNotifier.onlineLocalPlayerId != null)
+          Positioned(
+            left: 0,
+            top: 1,
+            child: OnlineChatButton(
+              compact: true,
+              onPressed: () => _openOnlineChat(context),
+            ),
+          ),
       ],
     );
 
@@ -1473,6 +1470,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
           ? [Align(alignment: Alignment.center, child: controls), playerCard]
           : [playerCard, Align(alignment: Alignment.center, child: controls)],
     );
+  }
+
+  VoidCallback? _buddyRequestFor(String playerId) {
+    final gameNotifier = ref.read(gameControllerProvider.notifier);
+    if (!gameNotifier.isOnlineMode ||
+        playerId == gameNotifier.onlineLocalPlayerId ||
+        gameNotifier.currentState.players
+                .where((player) => player.id == playerId)
+                .firstOrNull
+                ?.isBot ==
+            true) {
+      return null;
+    }
+    return () => unawaited(_sendBuddyRequest(playerId));
   }
 
   Future<void> _openEmojiPicker(String targetPlayerId) async {
@@ -1942,65 +1953,6 @@ class _CompactBackButton extends StatelessWidget {
               color: Colors.white,
               size: 19,
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BoardMissedTurnIndicator extends StatelessWidget {
-  const _BoardMissedTurnIndicator({required this.player});
-
-  final PlayerModel player;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: '${player.name}: ${player.missedTurns} missed turns',
-      child: Semantics(
-        label: '${player.name}, ${player.missedTurns} missed turns',
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
-          decoration: BoxDecoration(
-            color: const Color(0xEE05070C),
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(
-              color: player.color.color.withValues(alpha: 0.85),
-              width: 1,
-            ),
-            boxShadow: const [
-              BoxShadow(color: Color(0x77000000), blurRadius: 5),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var index = 0;
-                  index < GameNotifier.maxMissedTurns;
-                  index++) ...[
-                if (index > 0) const SizedBox(height: 2),
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: index < player.missedTurns
-                        ? const Color(0xFFFF3B30)
-                        : const Color(0xFF20E878),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: index < player.missedTurns
-                          ? const Color(0xFFFFB3AE)
-                          : const Color(0xFFB9FFD3),
-                      width: 0.7,
-                    ),
-                    boxShadow: const [
-                      BoxShadow(color: Color(0x8820E878), blurRadius: 3),
-                    ],
-                  ),
-                ),
-              ],
-            ],
           ),
         ),
       ),
