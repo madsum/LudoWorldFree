@@ -11,6 +11,8 @@ import '../../../auth/presentation/controllers/auth_controller.dart';
 import '../../../game/presentation/services/voice_call_service.dart';
 
 class FriendChatDialog extends ConsumerStatefulWidget {
+  static final Set<String> openFriendIds = <String>{};
+
   final String friendId;
   final String friendName;
 
@@ -27,6 +29,7 @@ class FriendChatDialog extends ConsumerStatefulWidget {
   }) =>
       showDialog<void>(
         context: context,
+        useRootNavigator: true,
         builder: (_) =>
             FriendChatDialog(friendId: friendId, friendName: friendName),
       );
@@ -52,6 +55,7 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
   @override
   void initState() {
     super.initState();
+    FriendChatDialog.openFriendIds.add(widget.friendId);
     ref.read(voiceCallServiceProvider).addListener(_handleVoiceCallChanged);
     _loadMessages();
     _refreshTimer = Timer.periodic(
@@ -62,6 +66,7 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
 
   @override
   void dispose() {
+    FriendChatDialog.openFriendIds.remove(widget.friendId);
     ref.read(voiceCallServiceProvider).removeListener(_handleVoiceCallChanged);
     _refreshTimer?.cancel();
     _messageController.dispose();

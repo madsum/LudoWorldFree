@@ -5,6 +5,7 @@ import com.ludoworldfree.backend.model.PlayerProfile;
 import com.ludoworldfree.backend.repository.FriendshipRepository;
 import com.ludoworldfree.backend.repository.PlayerProfileRepository;
 import com.ludoworldfree.backend.util.PlayerIdResolver;
+import com.ludoworldfree.backend.websocket.VoiceCallWebSocketHandler;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -21,11 +22,14 @@ import java.util.UUID;
 public class FriendshipController {
     private final FriendshipRepository friendshipRepository;
     private final PlayerProfileRepository profileRepository;
+    private final VoiceCallWebSocketHandler voiceCallHandler;
 
     public FriendshipController(FriendshipRepository friendshipRepository,
-                                PlayerProfileRepository profileRepository) {
+                                PlayerProfileRepository profileRepository,
+                                VoiceCallWebSocketHandler voiceCallHandler) {
         this.friendshipRepository = friendshipRepository;
         this.profileRepository = profileRepository;
+        this.voiceCallHandler = voiceCallHandler;
     }
 
     @GetMapping
@@ -44,6 +48,7 @@ public class FriendshipController {
             entry.put("displayName", profile == null ? "Player" : profile.getDisplayName());
             entry.put("avatarUrl", profile == null ? null : profile.getAvatarUrl());
             entry.put("countryFlag", profile == null ? "🌐" : profile.getCountryFlag());
+            entry.put("online", voiceCallHandler.isOnline(otherId));
             entry.put("status", friendship.getStatus().name());
             entry.put("direction", friendship.getRequesterId().equals(playerId)
                     ? "OUTGOING" : "INCOMING");
@@ -92,15 +97,26 @@ public class FriendshipController {
         }
 
         var existing = friendshipRepository.findByRequesterIdAndAddresseeId(playerId, targetId);
-        if (existing.isPresent()) return friendshipResponse(existing.get());
+        if (existing.isPresent()) {
+            Friendship friendship = existing.get();
+            Map<String, Object> response = new LinkedHashMap<>(friendshipResponse(friendship));
+            response.put("alreadyBuddy", friendship.getStatus() == Friendship.Status.ACCEPTED);
+            return response;
+        }
 
         var incoming = friendshipRepository.findByRequesterIdAndAddresseeId(targetId, playerId);
         if (incoming.isPresent()) {
             Friendship friendship = incoming.get();
             friendship.accept();
-            return friendshipResponse(friendshipRepository.save(friendship));
+            Map<String, Object> response = new LinkedHashMap<>(
+                    friendshipResponse(friendshipRepository.save(friendship)));
+            response.put("alreadyBuddy", false);
+            return response;
         }
-        return friendshipResponse(friendshipRepository.save(new Friendship(playerId, targetId)));
+        Map<String, Object> response = new LinkedHashMap<>(
+                friendshipResponse(friendshipRepository.save(new Friendship(playerId, targetId))));
+        response.put("alreadyBuddy", false);
+        return response;
     }
 
     @PostMapping("/{friendshipId}/accept")

@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.time.Instant;
 import java.util.UUID;
 
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> {
@@ -19,4 +20,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> 
     List<ChatMessage> findConversation(@Param("playerId") UUID playerId,
                                        @Param("friendId") UUID friendId,
                                        Pageable pageable);
+
+    List<ChatMessage> findByRecipientIdAndCreatedAtAfterOrderByCreatedAtAsc(
+            UUID recipientId, Instant createdAt, Pageable pageable);
 }

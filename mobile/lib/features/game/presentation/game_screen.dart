@@ -78,6 +78,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   final Set<String> _startedRematchRounds = <String>{};
   final Set<String> _disconnectedOnlinePlayerIds = <String>{};
   final Set<String> _existingBuddyOrRequestPlayerIds = <String>{};
+  final Set<String> _buddyPlayerIds = <String>{};
   final Map<String, String> _outgoingBuddyRequests = <String, String>{};
   final Map<String, GlobalKey> _playerCardKeys = <String, GlobalKey>{};
   final Set<OverlayEntry> _emojiFlights = <OverlayEntry>{};
@@ -632,7 +633,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
       final entries = response.data is Map ? response.data['entries'] : null;
       if (!mounted || entries is! List) return;
       final pendingOutgoing = <String, String>{};
+      final buddies = <String>{};
       for (final entry in entries.whereType<Map>()) {
+        if (entry['status']?.toString() == 'ACCEPTED') {
+          final id = entry['playerId']?.toString();
+          if (id != null && id.isNotEmpty) buddies.add(id);
+        }
         if (entry['direction']?.toString() == 'OUTGOING' &&
             entry['status']?.toString() == 'PENDING') {
           final id = entry['playerId']?.toString();
@@ -651,6 +657,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _outgoingBuddyRequests
           ..clear()
           ..addAll(pendingOutgoing);
+        _buddyPlayerIds
+          ..clear()
+          ..addAll(buddies);
       });
     } catch (error) {
       debugPrint('Could not load buddy states for this match: $error');
@@ -661,8 +670,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final playerId = _onlineGameNotifier?.onlineLocalPlayerId;
     if (playerId == null) return;
     if (_existingBuddyOrRequestPlayerIds.contains(targetPlayerId)) {
-      _showVoiceCallMessage(
-          'A buddy request is already pending, or you are buddies.');
+      _showVoiceCallMessage(_buddyPlayerIds.contains(targetPlayerId)
+          ? 'Both of you are already buddy.'
+          : 'A buddy request is already pending.');
       return;
     }
     try {
@@ -673,17 +683,23 @@ class _GameScreenState extends ConsumerState<GameScreen>
           );
       final status =
           response.data is Map ? response.data['status']?.toString() : null;
+      final alreadyBuddy = response.data is Map &&
+          response.data['alreadyBuddy'] == true;
       if (!mounted) return;
       setState(() => _existingBuddyOrRequestPlayerIds.add(targetPlayerId));
       if (status != 'ACCEPTED') {
         _outgoingBuddyRequests[targetPlayerId] = 'PENDING';
+      } else {
+        _buddyPlayerIds.add(targetPlayerId);
       }
       final player = _onlineGameNotifier?.currentState.players
           .where((candidate) => candidate.id == targetPlayerId)
           .firstOrNull;
       final name = player?.name ?? 'Player';
       _showVoiceCallMessage(status == 'ACCEPTED'
-          ? 'You and $name are buddies now.'
+          ? alreadyBuddy
+              ? 'Both of you are already buddy.'
+              : 'You and $name are buddies now.'
           : 'Buddy request sent to $name.');
     } on DioException catch (error) {
       final message = error.response?.data is Map

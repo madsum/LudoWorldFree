@@ -39,6 +39,11 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
         this.profileRepository = profileRepository;
     }
 
+    public boolean isOnline(UUID playerId) {
+        WebSocketSession session = sessions.get(playerId);
+        return session != null && session.isOpen();
+    }
+
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws IOException {
         URI uri = session.getUri();

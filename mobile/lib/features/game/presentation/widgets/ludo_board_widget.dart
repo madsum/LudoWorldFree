@@ -406,13 +406,22 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
 
       final nameWidth = tileSize * 5.2;
       final nameHeight = tileSize * 0.72;
+      final tabletLayout = MediaQuery.sizeOf(context).shortestSide >= 600;
+      final nameBoundsWidth = tabletLayout &&
+              widget.orientationQuarterTurns.isOdd
+          ? nameHeight
+          : nameWidth;
+      final nameBoundsHeight = tabletLayout &&
+              widget.orientationQuarterTurns.isOdd
+          ? nameWidth
+          : nameHeight;
 
       return Positioned(
         key: ValueKey('nameplate_${player.id}'),
-        left: (nameCenter.dx * tileSize) - (nameWidth / 2),
-        top: (nameCenter.dy * tileSize) - (nameHeight / 2),
-        width: nameWidth,
-        height: nameHeight,
+        left: (nameCenter.dx * tileSize) - (nameBoundsWidth / 2),
+        top: (nameCenter.dy * tileSize) - (nameBoundsHeight / 2),
+        width: nameBoundsWidth,
+        height: nameBoundsHeight,
         child: RotatedBox(
           quarterTurns: (4 - widget.orientationQuarterTurns % 4) % 4,
           child: Center(
@@ -689,6 +698,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                 isPaired: pawn.isPaired,
                 isPairSelected: false,
                 size: size,
+                orientationQuarterTurns: widget.orientationQuarterTurns,
               ),
             ),
           );
@@ -739,6 +749,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                     isPaired: pawn.isPaired,
                     isPairSelected: pawn.isPairSelected,
                     size: size,
+                    orientationQuarterTurns: widget.orientationQuarterTurns,
                   ),
                 );
               },
@@ -783,10 +794,18 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
 
         // Divide occupied tiles into separate hit regions. Two pawns sit side
         // by side; larger stacks use a 2x2 layout so each pawn can be tapped.
-        final columns = totalOnTile == 1 ? 1 : 2;
-        final rows = totalOnTile <= 2 ? 1 : 2;
+        final splitPairsVertically = widget.orientationQuarterTurns.isOdd;
+        final columns =
+            totalOnTile == 1 || (totalOnTile == 2 && splitPairsVertically)
+                ? 1
+                : 2;
+        final rows = totalOnTile == 1
+            ? 1
+            : totalOnTile == 2
+                ? (splitPairsVertically ? 2 : 1)
+                : 2;
         final column = totalOnTile == 1 ? 0 : i % columns;
-        final row = totalOnTile <= 2 ? 0 : i ~/ columns;
+        final row = i ~/ columns;
         final hitWidth = tileSize / columns;
         final hitHeight = tileSize / rows;
         final pawnScale = totalOnTile == 1
@@ -827,12 +846,19 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
                 }
               },
               child: Center(
-                child: _PawnTileWidget(
-                  color: pawn.color,
-                  isMovable: isMovable,
-                  isPaired: pawn.isPaired,
-                  isPairSelected: pawn.isPairSelected,
-                  size: size,
+                child: OverflowBox(
+                  minWidth: size,
+                  maxWidth: size,
+                  minHeight: size,
+                  maxHeight: size,
+                  child: _PawnTileWidget(
+                    color: pawn.color,
+                    isMovable: isMovable,
+                    isPaired: pawn.isPaired,
+                    isPairSelected: pawn.isPairSelected,
+                    size: size,
+                    orientationQuarterTurns: widget.orientationQuarterTurns,
+                  ),
                 ),
               ),
             ),
@@ -845,13 +871,14 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
   }
 }
 
-/// 3D Styled Pawn Token Widget with Person Silhouette Artwork
+/// Pawn image with selection and paired-state overlays.
 class _PawnTileWidget extends StatelessWidget {
   final LudoColor color;
   final bool isMovable;
   final bool isPaired;
   final bool isPairSelected;
   final double size;
+  final int orientationQuarterTurns;
 
   const _PawnTileWidget({
     required this.color,
@@ -859,6 +886,7 @@ class _PawnTileWidget extends StatelessWidget {
     this.isPaired = false,
     this.isPairSelected = false,
     required this.size,
+    required this.orientationQuarterTurns,
   });
 
   @override
@@ -906,38 +934,54 @@ class _PawnTileWidget extends StatelessWidget {
             ),
           ),
 
-        LudoPawnIcon(
-          color: color,
-          size: size,
-          width: size * 0.52,
-          height: size,
-        ),
-
-        if (isPaired)
-          Positioned(
-            right: size * 0.08,
-            bottom: size * 0.08,
-            child: Container(
-              width: size * 0.34,
-              height: size * 0.34,
-              decoration: BoxDecoration(
-                color: AppColors.gold,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: size * 0.035),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    blurRadius: size * 0.08,
+        Transform.rotate(
+          // The board rotates into the active player's perspective. Counter-
+          // rotate the pawn artwork so each piece remains upright on screen.
+          angle: ((4 - orientationQuarterTurns % 4) % 4) * math.pi / 2,
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                LudoPawnIcon(
+                  color: color,
+                  size: size,
+                  width: size * 0.52,
+                  height: size,
+                ),
+                if (isPaired)
+                  Positioned(
+                    right: size * 0.08,
+                    bottom: size * 0.08,
+                    child: Container(
+                      width: size * 0.34,
+                      height: size * 0.34,
+                      decoration: BoxDecoration(
+                        color: AppColors.gold,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white,
+                          width: size * 0.035,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            blurRadius: size * 0.08,
+                          ),
+                        ],
+                      ),
+                      child: Icon(
+                        Icons.link_rounded,
+                        color: Colors.white,
+                        size: size * 0.23,
+                      ),
+                    ),
                   ),
-                ],
-              ),
-              child: Icon(
-                Icons.link_rounded,
-                color: Colors.white,
-                size: size * 0.23,
-              ),
+              ],
             ),
           ),
+        ),
       ],
     );
   }

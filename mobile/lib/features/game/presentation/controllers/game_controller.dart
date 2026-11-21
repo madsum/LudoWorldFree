@@ -673,10 +673,20 @@ class GameNotifier extends StateNotifier<GameState> {
   }
 
   int? _findNextActivePlayer(List<PlayerModel> players, int currentIndex) {
-    for (var offset = 1; offset <= players.length; offset++) {
-      final index = (currentIndex + offset) % players.length;
-      final player = players[index];
-      if (!player.isEliminated && !player.hasAllPawnsHome) return index;
+    if (players.isEmpty) return null;
+
+    // Board colors are ordered clockwise: red (top-left), green (top-right),
+    // yellow (bottom-right), blue (bottom-left). Use seat order rather than
+    // the wire/list order, which can vary between online players.
+    final currentPlayer = players[currentIndex % players.length];
+    for (var offset = 1; offset <= LudoColor.values.length; offset++) {
+      final nextColor = LudoColor.values[
+          (currentPlayer.color.index + offset) % LudoColor.values.length];
+      final index = players.indexWhere((player) =>
+          player.color == nextColor &&
+          !player.isEliminated &&
+          !player.hasAllPawnsHome);
+      if (index >= 0) return index;
     }
     return null;
   }

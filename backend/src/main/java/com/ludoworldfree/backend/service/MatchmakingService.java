@@ -10,6 +10,7 @@ import com.ludoworldfree.backend.model.GoldTransaction;
 import com.ludoworldfree.backend.model.MatchmakingTicket;
 import com.ludoworldfree.backend.model.OnlineMatchRoom;
 import com.ludoworldfree.backend.model.OnlineMatchStateEvent;
+import com.ludoworldfree.backend.model.PlayerProfile;
 import com.ludoworldfree.backend.model.PlayerWallet;
 import com.ludoworldfree.backend.repository.GoldTransactionRepository;
 import com.ludoworldfree.backend.repository.MatchmakingTicketRepository;
@@ -273,6 +274,82 @@ public class MatchmakingService {
             return joinQueue(retry);
         }
         return searchingResponse();
+    }
+
+    @Transactional
+    public MatchmakingResponseDto createBuddyRoom(
+            UUID requesterId, PlayerProfile requester, String requesterSessionId,
+            String requesterColor, UUID targetId, PlayerProfile target,
+            String targetSessionId, long entryFee) {
+        if (!ALLOWED_ENTRY_FEES.contains(entryFee)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Choose a supported online entry amount.");
+        }
+        if (requesterSessionId == null || requesterSessionId.isBlank()
+                || requesterSessionId.length() > 64
+                || targetSessionId == null || targetSessionId.isBlank()
+                || targetSessionId.length() > 64) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "A valid game session is required.");
+        }
+        List<String> colors = List.of("red", "green", "yellow", "blue");
+        String color = requesterColor == null ? "red" : requesterColor.toLowerCase();
+        if (!colors.contains(color)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Choose a valid player color.");
+        }
+        if (!roomRepository.findActiveForPlayerForUpdate(requesterId, ACTIVE_STATUSES).isEmpty()
+                || !roomRepository.findActiveForPlayerForUpdate(targetId, ACTIVE_STATUSES).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "One of these players is already in an online game.");
+        }
+
+        MatchmakingTicket requesterTicket = new MatchmakingTicket(
+                requesterId, requester.getDisplayName(), requester.getAvatarUrl(),
+                requester.getCountry(), requester.getCountryFlag(), entryFee, 2,
+                color, requesterSessionId);
+        String targetColor = switch (color) {
+            case "red" -> "yellow";
+            case "green" -> "blue";
+            case "yellow" -> "red";
+            default -> "green";
+        };
+        MatchmakingTicket targetTicket = new MatchmakingTicket(
+                targetId, target.getDisplayName(), target.getAvatarUrl(),
+                target.getCountry(), target.getCountryFlag(), entryFee, 2,
+                targetColor, targetSessionId);
+
+        MatchmakingTicket requesterQueueTicket = ticketRepository
+                .findByPlayerIdForUpdate(requesterId).orElse(null);
+        MatchmakingTicket targetQueueTicket = ticketRepository
+                .findByPlayerIdForUpdate(targetId).orElse(null);
+        Map<UUID, PlayerWallet> wallets = lockWallets(List.of(requesterId, targetId));
+        if (wallets.get(requesterId).getBalance() < entryFee
+                || wallets.get(targetId).getBalance() < entryFee) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Both buddies need enough coins for this entry amount.");
+        }
+
+        if (requesterQueueTicket != null) ticketRepository.delete(requesterQueueTicket);
+        if (targetQueueTicket != null) ticketRepository.delete(targetQueueTicket);
+
+        String roomId = UUID.randomUUID().toString();
+        deductEntryFee(wallets.get(requesterId), entryFee, roomId);
+        deductEntryFee(wallets.get(targetId), entryFee, roomId);
+        transactionRepository.flush();
+
+        OnlineMatchRoom room = new OnlineMatchRoom(
+                roomId, List.of(requesterTicket, targetTicket), entryFee);
+        roomRepository.saveAndFlush(room);
+        return responseFor(room, requesterId);
+    }
+
+    @Transactional(readOnly = true)
+    public MatchmakingResponseDto responseForBuddyRoom(String roomId, UUID playerId) {
+        return roomRepository.findById(roomId)
+                .filter(room -> room.contains(playerId))
+                .map(room -> responseFor(room, playerId))
+                .orElse(null);
     }
 
     @Transactional(readOnly = true)

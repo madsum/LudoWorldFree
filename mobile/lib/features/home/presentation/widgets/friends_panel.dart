@@ -3,12 +3,17 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/network/websocket_service.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
+import '../../../game/presentation/controllers/game_controller.dart';
 import '../../../game/presentation/services/voice_call_service.dart';
+import 'buddy_game_match.dart';
+import 'buddy_game_request_dialog.dart';
 import 'friend_chat_dialog.dart';
 
 class FriendsPanel extends ConsumerStatefulWidget {
@@ -181,6 +186,29 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
     }
   }
 
+  Future<void> _requestBuddyGame(Map<String, dynamic> friend) async {
+    final friendId = friend['playerId']?.toString() ?? '';
+    if (friendId.isEmpty) return;
+    final match = await BuddyGameRequestDialog.show(
+      context,
+      friendId: friendId,
+      friendName: friend['displayName']?.toString() ?? 'Buddy',
+    );
+    if (match != null && mounted) _startBuddyGame(match);
+  }
+
+  void _startBuddyGame(BuddyGameMatch match) {
+    final gameController = ref.read(gameControllerProvider.notifier);
+    gameController.configureOnlineMatch(
+      roomId: match.roomId,
+      playerId: match.localPlayerId,
+      selectedColor: match.localColor,
+      requestDiceRoll: ref.read(webSocketServiceProvider).requestDiceRoll,
+    );
+    gameController.startNewGame(players: match.players);
+    context.push('/game');
+  }
+
   void _showMessage(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -280,6 +308,8 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                               final status = friend['status']?.toString();
                               final incoming = status == 'PENDING' &&
                                   friend['direction'] == 'INCOMING';
+                              final isOnline = status == 'ACCEPTED' &&
+                                  friend['online'] == true;
                               final friendshipId =
                                   friend['id']?.toString() ?? '';
                               return ListTile(
@@ -297,12 +327,35 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                         await _loadFriends();
                                       }
                                     : null,
-                                leading: CircleAvatar(
-                                  backgroundColor: const Color(0xFF19345F),
-                                  child: Text(
-                                    friend['countryFlag']?.toString() ?? '🌐',
-                                    style: const TextStyle(fontSize: 19),
-                                  ),
+                                leading: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: const Color(0xFF19345F),
+                                      child: Text(
+                                        friend['countryFlag']?.toString() ??
+                                            '🌐',
+                                        style: const TextStyle(fontSize: 19),
+                                      ),
+                                    ),
+                                    if (isOnline)
+                                      Positioned(
+                                        right: -1,
+                                        bottom: -1,
+                                        child: Container(
+                                          width: 13,
+                                          height: 13,
+                                          decoration: BoxDecoration(
+                                            color: Colors.greenAccent,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: const Color(0xFF08122C),
+                                              width: 2,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                                 title: Text(
                                   friend['displayName']?.toString() ?? 'Player',
@@ -356,6 +409,21 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                   Icons
                                                       .chat_bubble_outline_rounded,
                                                   color: AppColors.gold,
+                                                ),
+                                              ),
+                                              IconButton(
+                                                tooltip: isOnline
+                                                    ? 'Play a game with this buddy'
+                                                    : 'Buddy is offline',
+                                                onPressed: isOnline
+                                                    ? () => _requestBuddyGame(
+                                                        friend)
+                                                    : null,
+                                                icon: Icon(
+                                                  Icons.sports_esports_rounded,
+                                                  color: isOnline
+                                                      ? Colors.greenAccent
+                                                      : Colors.white24,
                                                 ),
                                               ),
                                               IconButton(

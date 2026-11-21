@@ -12,6 +12,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/network/websocket_service.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/network/websocket_service.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
 import '../../../core/ads/rewarded_ad_service.dart';
 import '../../../shared/widgets/flying_coin_overlay.dart';
@@ -30,6 +31,9 @@ import 'widgets/daily_bonus_dialog.dart';
 import 'widgets/social_hub_dialog.dart';
 import 'widgets/incoming_buddy_request_dialog.dart';
 import 'widgets/incoming_voice_call_dialog.dart';
+import 'widgets/friend_chat_dialog.dart';
+import 'widgets/incoming_buddy_game_dialog.dart';
+import 'widgets/buddy_game_match.dart';
 import '../../game/presentation/services/voice_call_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -45,17 +49,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Timer? _dailyBonusStartupTimer;
   Timer? _dailyBonusStartupPoll;
   Timer? _buddyRequestPollTimer;
+  Timer? _friendInboxPollTimer;
+  Timer? _buddyGameInvitePollTimer;
   int _currentNavIndex = 0;
   bool _isClaimingReward = false;
   bool _isClaimingDailyBonus = false;
   bool _dailyBonusDialogShowing = false;
   String? _dailyBonusPopupPlayerId;
   String? _buddyRequestPollPlayerId;
+  String? _friendInboxPlayerId;
+  String? _buddyGameInvitePlayerId;
+  DateTime? _friendInboxCursor;
   String? _shownIncomingVoiceCallId;
   bool _buddyRequestPollInFlight = false;
+  bool _friendInboxPollInFlight = false;
+  bool _buddyGameInvitePollInFlight = false;
   bool _buddyRequestDialogShowing = false;
+  bool _friendChatDialogShowing = false;
+  bool _buddyGameInviteDialogShowing = false;
   final Set<String> _seenBuddyRequestIds = <String>{};
+  final Set<String> _seenFriendMessageIds = <String>{};
+  final Set<String> _seenBuddyGameInviteIds = <String>{};
   final List<Map<String, dynamic>> _pendingBuddyRequests = [];
+  final Map<String, Map<String, dynamic>> _pendingFriendChats = {};
+  final List<Map<String, dynamic>> _pendingBuddyGameInvites = [];
   final GlobalKey _walletKey = GlobalKey();
 
   @override
@@ -84,15 +101,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (user == null) {
       _dailyBonusStartupTimer?.cancel();
       _buddyRequestPollTimer?.cancel();
+      _friendInboxPollTimer?.cancel();
+      _buddyGameInvitePollTimer?.cancel();
       _buddyRequestPollPlayerId = null;
+      _friendInboxPlayerId = null;
+      _buddyGameInvitePlayerId = null;
+      _friendInboxCursor = null;
       _seenBuddyRequestIds.clear();
       _pendingBuddyRequests.clear();
+      _seenFriendMessageIds.clear();
+      _pendingFriendChats.clear();
+      _seenBuddyGameInviteIds.clear();
+      _pendingBuddyGameInvites.clear();
       _dailyBonusPopupPlayerId = null;
       unawaited(_voiceCallService.disconnect());
       return;
     }
     unawaited(_voiceCallService.connect(user.id));
     _startBuddyRequestPolling(user.id);
+    _startFriendInboxPolling(user.id);
+    _startBuddyGameInvitePolling(user.id);
     _dailyBonusStartupPoll?.cancel();
     _dailyBonusStartupPoll = null;
     if (_dailyBonusPopupPlayerId == user.id) return;
@@ -114,11 +142,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         }
         showDialog<void>(
           context: context,
+          useRootNavigator: true,
           barrierDismissible: false,
           builder: (_) => IncomingVoiceCallDialog(
             voiceCallService: _voiceCallService,
           ),
-        );
+        ).then((_) => _showNextIncomingFriendChat());
       });
     }
     final error = _voiceCallService.takeLastError();
@@ -143,6 +172,195 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       const Duration(seconds: 4),
       (_) => unawaited(_pollIncomingBuddyRequests(playerId)),
     );
+  }
+
+  void _startFriendInboxPolling(String playerId) {
+    if (_friendInboxPlayerId == playerId) return;
+    _friendInboxPollTimer?.cancel();
+    _friendInboxPlayerId = playerId;
+    _friendInboxCursor = null;
+    _seenFriendMessageIds.clear();
+    _pendingFriendChats.clear();
+    unawaited(Future<void>.delayed(
+      const Duration(seconds: 1),
+      () => _pollIncomingFriendMessages(playerId),
+    ));
+    _friendInboxPollTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => unawaited(_pollIncomingFriendMessages(playerId)),
+    );
+  }
+
+  Future<void> _pollIncomingFriendMessages(String playerId) async {
+    if (_friendInboxPollInFlight ||
+        !mounted ||
+        ref.read(authControllerProvider).user?.id != playerId) {
+      return;
+    }
+    _friendInboxPollInFlight = true;
+    try {
+      final cursor = _friendInboxCursor;
+      final response = await ref.read(apiClientProvider).get(
+            '/friends/inbox',
+            queryParameters: cursor == null
+                ? null
+                : {
+                    'after': cursor
+                        .subtract(const Duration(seconds: 5))
+                        .toUtc()
+                        .toIso8601String(),
+                  },
+            options: Options(headers: {'X-Player-ID': playerId}),
+          );
+      final data = response.data;
+      if (data is! Map) return;
+      final serverCursor = DateTime.tryParse(data['cursor']?.toString() ?? '');
+      if (serverCursor != null) _friendInboxCursor = serverCursor.toUtc();
+      final rawMessages = data['messages'];
+      if (rawMessages is! List) return;
+      for (final raw in rawMessages.whereType<Map>()) {
+        final message = Map<String, dynamic>.from(raw);
+        final messageId = message['id']?.toString();
+        final senderId = message['senderId']?.toString();
+        if (messageId == null ||
+            senderId == null ||
+            !_seenFriendMessageIds.add(messageId)) {
+          continue;
+        }
+        if (_seenFriendMessageIds.length > 2000) {
+          _seenFriendMessageIds.clear();
+          _seenFriendMessageIds.add(messageId);
+        }
+        if (FriendChatDialog.openFriendIds.contains(senderId)) continue;
+        _pendingFriendChats[senderId] = {
+          'friendId': senderId,
+          'friendName': message['senderName']?.toString() ?? 'Buddy',
+        };
+      }
+    } catch (_) {
+      // Retry on the next inbox poll without interrupting the active screen.
+    } finally {
+      _friendInboxPollInFlight = false;
+    }
+    _showNextIncomingFriendChat();
+  }
+
+  Future<void> _showNextIncomingFriendChat() async {
+    if (!mounted ||
+        _friendChatDialogShowing ||
+        _buddyRequestDialogShowing ||
+        _dailyBonusDialogShowing ||
+        _voiceCallService.call != null ||
+        _pendingFriendChats.isEmpty) {
+      return;
+    }
+    final entry = _pendingFriendChats.entries.first;
+    _pendingFriendChats.remove(entry.key);
+    if (FriendChatDialog.openFriendIds.contains(entry.key)) {
+      _showNextIncomingFriendChat();
+      return;
+    }
+    _friendChatDialogShowing = true;
+    try {
+      await FriendChatDialog.show(
+        context,
+        friendId: entry.value['friendId'] as String,
+        friendName: entry.value['friendName'] as String,
+      );
+    } finally {
+      _friendChatDialogShowing = false;
+    }
+    _showNextIncomingFriendChat();
+    _showNextIncomingBuddyGameInvite();
+  }
+
+  void _startBuddyGameInvitePolling(String playerId) {
+    if (_buddyGameInvitePlayerId == playerId) return;
+    _buddyGameInvitePollTimer?.cancel();
+    _buddyGameInvitePlayerId = playerId;
+    _seenBuddyGameInviteIds.clear();
+    _pendingBuddyGameInvites.clear();
+    unawaited(Future<void>.delayed(
+      const Duration(seconds: 1),
+      () => _pollIncomingBuddyGameInvites(playerId),
+    ));
+    _buddyGameInvitePollTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => unawaited(_pollIncomingBuddyGameInvites(playerId)),
+    );
+  }
+
+  Future<void> _pollIncomingBuddyGameInvites(String playerId) async {
+    if (_buddyGameInvitePollInFlight ||
+        !mounted ||
+        ref.read(authControllerProvider).user?.id != playerId) {
+      return;
+    }
+    _buddyGameInvitePollInFlight = true;
+    try {
+      final response = await ref.read(apiClientProvider).get(
+            '/friends/game-invites/incoming',
+            options: Options(headers: {'X-Player-ID': playerId}),
+          );
+      final rawEntries = response.data is Map ? response.data['entries'] : null;
+      if (rawEntries is List) {
+        final activeIds = <String>{};
+        for (final raw in rawEntries.whereType<Map>()) {
+          final invitation = Map<String, dynamic>.from(raw);
+          final invitationId = invitation['id']?.toString();
+          if (invitationId == null) continue;
+          activeIds.add(invitationId);
+          if (_seenBuddyGameInviteIds.add(invitationId)) {
+            _pendingBuddyGameInvites.add(invitation);
+          }
+        }
+        _pendingBuddyGameInvites.removeWhere(
+          (invitation) => !activeIds.contains(invitation['id']?.toString()),
+        );
+      }
+    } catch (_) {
+      // Retry the invitation poll without interrupting the active screen.
+    } finally {
+      _buddyGameInvitePollInFlight = false;
+    }
+    _showNextIncomingBuddyGameInvite();
+  }
+
+  Future<void> _showNextIncomingBuddyGameInvite() async {
+    if (!mounted ||
+        _buddyGameInviteDialogShowing ||
+        _buddyRequestDialogShowing ||
+        _friendChatDialogShowing ||
+        _pendingFriendChats.isNotEmpty ||
+        _dailyBonusDialogShowing ||
+        _voiceCallService.call != null ||
+        _pendingBuddyGameInvites.isEmpty) {
+      return;
+    }
+    final invitation = _pendingBuddyGameInvites.removeAt(0);
+    _buddyGameInviteDialogShowing = true;
+    try {
+      final match = await IncomingBuddyGameDialog.show(
+        context,
+        invitation: invitation,
+      );
+      if (match != null && mounted) _startBuddyGame(match);
+    } finally {
+      _buddyGameInviteDialogShowing = false;
+    }
+    _showNextIncomingBuddyGameInvite();
+  }
+
+  void _startBuddyGame(BuddyGameMatch match) {
+    final gameController = ref.read(gameControllerProvider.notifier);
+    gameController.configureOnlineMatch(
+      roomId: match.roomId,
+      playerId: match.localPlayerId,
+      selectedColor: match.localColor,
+      requestDiceRoll: ref.read(webSocketServiceProvider).requestDiceRoll,
+    );
+    gameController.startNewGame(players: match.players);
+    context.push('/game');
   }
 
   Future<void> _pollIncomingBuddyRequests(String playerId) async {
@@ -179,6 +397,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _buddyRequestPollInFlight = false;
     }
     _showNextBuddyRequest();
+    _showNextIncomingFriendChat();
+    _showNextIncomingBuddyGameInvite();
   }
 
   Future<void> _showNextBuddyRequest() async {
@@ -341,6 +561,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
       _dailyBonusDialogShowing = false;
       _showNextBuddyRequest();
+      _showNextIncomingFriendChat();
+      _showNextIncomingBuddyGameInvite();
     });
   }
 
@@ -1069,6 +1291,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _dailyBonusStartupTimer?.cancel();
     _dailyBonusStartupPoll?.cancel();
     _buddyRequestPollTimer?.cancel();
+    _friendInboxPollTimer?.cancel();
+    _buddyGameInvitePollTimer?.cancel();
     _voiceCallService.removeListener(_handleVoiceCallServiceChanged);
     unawaited(_voiceCallService.disconnect());
     _authSubscription.close();
