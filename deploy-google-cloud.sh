@@ -37,11 +37,14 @@ gcloud run deploy "$BACKEND_SERVICE" \
   --source=backend \
   --region="$REGION" \
   --platform=managed \
+  --cpu=1 \
+  --memory=1Gi \
+  --concurrency=500 \
   --min=1 \
-  --max=1 \
+  --max=100 \
   --allow-unauthenticated \
   --add-cloudsql-instances="$SQL_INSTANCE" \
-  --set-env-vars="SPRING_PROFILES_ACTIVE=prod,SPRING_DATASOURCE_URL=${JDBC_URL},APP_CORS_ALLOWED_ORIGINS=*" \
+  --set-env-vars="SPRING_PROFILES_ACTIVE=prod,SPRING_DATASOURCE_URL=${JDBC_URL},APP_CORS_ALLOWED_ORIGINS=*,DB_POOL_MAX_SIZE=5,DB_POOL_MIN_IDLE=1" \
   --set-secrets="SPRING_DATASOURCE_USERNAME=${DATABASE_USER_SECRET}:latest,SPRING_DATASOURCE_PASSWORD=${DATABASE_PASSWORD_SECRET}:latest"
 
 BACKEND_URL="$(gcloud run services describe "$BACKEND_SERVICE" \
