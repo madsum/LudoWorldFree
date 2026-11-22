@@ -29,12 +29,14 @@ public class ChatController {
     }
 
     @GetMapping
+    @Transactional
     public Map<String, Object> conversation(
             @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
             @PathVariable UUID friendId,
-            @RequestParam(defaultValue = "50") int limit) {
+            @RequestParam(defaultValue = "100") int limit) {
         UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
         requireAcceptedFriendship(playerId, friendId);
+        messageRepository.markConversationRead(playerId, friendId, java.time.Instant.now());
         int safeLimit = Math.max(1, Math.min(limit, 100));
         List<Map<String, Object>> messages = messageRepository.findConversation(
                         playerId, friendId, PageRequest.of(0, safeLimit))

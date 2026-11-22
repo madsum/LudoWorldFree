@@ -59,7 +59,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _buddyRequestPollPlayerId;
   String? _friendInboxPlayerId;
   String? _buddyGameInvitePlayerId;
-  DateTime? _friendInboxCursor;
   DateTime? _outgoingBuddyRequestCursor;
   String? _shownIncomingVoiceCallId;
   bool _buddyRequestPollInFlight = false;
@@ -107,7 +106,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _buddyRequestPollPlayerId = null;
       _friendInboxPlayerId = null;
       _buddyGameInvitePlayerId = null;
-      _friendInboxCursor = null;
       _outgoingBuddyRequestCursor = null;
       _seenBuddyRequestIds.clear();
       _pendingBuddyRequests.clear();
@@ -179,7 +177,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (_friendInboxPlayerId == playerId) return;
     _friendInboxPollTimer?.cancel();
     _friendInboxPlayerId = playerId;
-    _friendInboxCursor = null;
     _seenFriendMessageIds.clear();
     _pendingFriendChats.clear();
     unawaited(Future<void>.delayed(
@@ -200,23 +197,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     _friendInboxPollInFlight = true;
     try {
-      final cursor = _friendInboxCursor;
       final response = await ref.read(apiClientProvider).get(
             '/friends/inbox',
-            queryParameters: cursor == null
-                ? null
-                : {
-                    'after': cursor
-                        .subtract(const Duration(seconds: 5))
-                        .toUtc()
-                        .toIso8601String(),
-                  },
             options: Options(headers: {'X-Player-ID': playerId}),
           );
       final data = response.data;
       if (data is! Map) return;
-      final serverCursor = DateTime.tryParse(data['cursor']?.toString() ?? '');
-      if (serverCursor != null) _friendInboxCursor = serverCursor.toUtc();
       final rawMessages = data['messages'];
       if (rawMessages is! List) return;
       for (final raw in rawMessages.whereType<Map>()) {
@@ -1387,8 +1373,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     coins: user?.coins ?? 0,
                                     diamonds: user?.diamonds ?? 0,
                                     onStartGame: (_) {},
-                                    onStartOnlineMatch:
-                                        (playerCount, color, entryFee, gameMode) {
+                                    onStartOnlineMatch: (playerCount, color,
+                                        entryFee, gameMode) {
                                       OnlineMatchmakingDialog.show(
                                         context,
                                         playerCount: playerCount,

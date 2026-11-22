@@ -8,16 +8,11 @@ import com.ludoworldfree.backend.repository.FriendshipRepository;
 import com.ludoworldfree.backend.repository.PlayerProfileRepository;
 import com.ludoworldfree.backend.util.PlayerIdResolver;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Instant;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,11 +39,8 @@ public class FriendMessageInboxController {
 
     @GetMapping
     public Map<String, Object> incomingMessages(
-            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
-            @RequestParam(required = false) String after) {
+            @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId) {
         UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
-        Instant cursor = Instant.now();
-        Instant afterInstant = parseAfter(after, cursor);
 
         Set<UUID> acceptedBuddyIds = friendshipRepository
                 .findAllByRequesterIdOrAddresseeId(playerId, playerId)
@@ -60,8 +52,8 @@ public class FriendMessageInboxController {
 
         List<Map<String, Object>> messages = new ArrayList<>();
         for (ChatMessage message : messageRepository
-                .findByRecipientIdAndCreatedAtAfterOrderByCreatedAtAsc(
-                        playerId, afterInstant, PageRequest.of(0, 100))) {
+                .findByRecipientIdAndReadAtIsNullOrderByCreatedAtAsc(
+                        playerId, PageRequest.of(0, 100))) {
             if (!acceptedBuddyIds.contains(message.getSenderId())) continue;
             PlayerProfile sender = profileRepository
                     .findByUserId(message.getSenderId()).orElse(null);
@@ -73,16 +65,6 @@ public class FriendMessageInboxController {
             item.put("createdAt", message.getCreatedAt().toString());
             messages.add(item);
         }
-        return Map.of("cursor", cursor.toString(), "messages", messages);
-    }
-
-    private static Instant parseAfter(String value, Instant fallback) {
-        if (value == null || value.isBlank()) return fallback;
-        try {
-            return Instant.parse(value);
-        } catch (DateTimeParseException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "A valid inbox cursor is required.");
-        }
+        return Map.of("messages", messages);
     }
 }

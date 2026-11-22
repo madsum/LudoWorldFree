@@ -33,6 +33,8 @@ public class ChatMessage {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
+    @Column(name = "read_at")
+    private Instant readAt;
 
     protected ChatMessage() {}
 
@@ -48,4 +50,5 @@ public class ChatMessage {
     public String getContent() { return content; }
     public MessageType getMessageType() { return messageType; }
     public Instant getCreatedAt() { return createdAt; }
+    public Instant getReadAt() { return readAt; }
 }

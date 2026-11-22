@@ -49,6 +49,8 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
   String? _error;
 
   String? get _playerId => ref.read(authControllerProvider).user?.id;
+  String get _myDisplayName =>
+      ref.read(authControllerProvider).user?.name ?? 'You';
   Options get _playerOptions => Options(headers: {'X-Player-ID': _playerId});
   String get _messagesPath => '/friends/${widget.friendId}/messages';
 
@@ -280,11 +282,13 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
           index > 0 && _sameMessageCluster(_messages[index - 1], message);
       final nextSameCluster = index + 1 < _messages.length &&
           _sameMessageCluster(message, _messages[index + 1]);
+      final mine = message['senderId'] == playerId;
       timeline.add(
         _FriendMessageBubble(
           content: message['content']?.toString() ?? '',
           time: _timeLabel(time),
-          mine: message['senderId'] == playerId,
+          senderName: mine ? _myDisplayName : widget.friendName,
+          mine: mine,
           firstInCluster: !previousSameCluster,
           lastInCluster: !nextSameCluster,
           maxWidth: viewport.width * 0.78,
@@ -548,6 +552,7 @@ class _ChatDateDivider extends StatelessWidget {
 class _FriendMessageBubble extends StatelessWidget {
   final String content;
   final String time;
+  final String senderName;
   final bool mine;
   final bool firstInCluster;
   final bool lastInCluster;
@@ -556,6 +561,7 @@ class _FriendMessageBubble extends StatelessWidget {
   const _FriendMessageBubble({
     required this.content,
     required this.time,
+    required this.senderName,
     required this.mine,
     required this.firstInCluster,
     required this.lastInCluster,
@@ -591,6 +597,24 @@ class _FriendMessageBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Text(
+                  senderName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    color: mine
+                        ? const Color(0xFFB7F4D5)
+                        : const Color(0xFF8DD4C1),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
