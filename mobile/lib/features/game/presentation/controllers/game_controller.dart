@@ -258,6 +258,16 @@ class GameNotifier extends StateNotifier<GameState> {
           ),
         )
         .toList();
+    if (_onlineGameMode == GameMode.firstKill) {
+      for (var index = 0; index < freshPlayers.length; index++) {
+        final player = freshPlayers[index];
+        freshPlayers[index] = player.copyWith(
+          pawns: player.pawns
+              .map((pawn) => pawn.id < 2 ? pawn.copyWith(stepCount: 0) : pawn)
+              .toList(growable: false),
+        );
+      }
+    }
     final humanTurnIndex = freshPlayers.indexWhere((player) => !player.isBot);
     var startingTurnIndex = humanTurnIndex < 0 ? 0 : humanTurnIndex;
     if (isOnlineMode && freshPlayers.length >= 2) {

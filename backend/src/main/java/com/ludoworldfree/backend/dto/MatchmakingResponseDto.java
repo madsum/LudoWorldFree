@@ -16,6 +16,7 @@ public class MatchmakingResponseDto {
     private String message;
     private List<MatchPlayerDto> players = List.of();
     private int playerCount;
+    private String gameMode = "CLASSIC";
     private Long lowerEntryFee;
 
     public record MatchPlayerDto(UUID id, String name, String avatarUrl,
@@ -59,6 +60,8 @@ public class MatchmakingResponseDto {
     public void setPlayers(List<MatchPlayerDto> players) { this.players = players; }
     public int getPlayerCount() { return playerCount; }
     public void setPlayerCount(int playerCount) { this.playerCount = playerCount; }
+    public String getGameMode() { return gameMode; }
+    public void setGameMode(String gameMode) { this.gameMode = gameMode; }
     public Long getLowerEntryFee() { return lowerEntryFee; }
     public void setLowerEntryFee(Long lowerEntryFee) { this.lowerEntryFee = lowerEntryFee; }
 }

@@ -11,6 +11,7 @@ import jakarta.persistence.Version;
 import java.time.Instant;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -347,7 +348,12 @@ public class OnlineMatchRoom {
         if (getPlayerIds().stream().allMatch(this::isConnected)) {
             status = Status.READY;
             if (turnOwnerId == null) {
-                turnOwnerId = getPlayerIds().stream().min((a,b) -> a.toString().compareTo(b.toString())).orElse(playerAId);
+                // Match the clients' String.compareTo ordering exactly. UUID's
+                // natural comparator uses signed 64-bit halves and can select a
+                // different first player than lexicographic ID ordering.
+                turnOwnerId = getPlayerIds().stream()
+                        .min(Comparator.comparing(UUID::toString))
+                        .orElse(playerAId);
             }
         } else if (latestStateJson == null) {
             status = Status.MATCHED;

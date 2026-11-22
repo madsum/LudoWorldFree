@@ -28,6 +28,8 @@ public class BuddyGameInvitation {
     private String requesterSessionId;
     @Column(name = "requester_color", nullable = false, length = 8)
     private String requesterColor;
+    @Column(name = "game_mode", nullable = false, length = 16)
+    private String gameMode = "CLASSIC";
     @Column(name = "target_session_id", length = 64)
     private String targetSessionId;
     @Column(name = "target_color", length = 8)
@@ -48,11 +50,19 @@ public class BuddyGameInvitation {
 
     public BuddyGameInvitation(UUID requesterId, UUID targetId, long entryFee,
                                String requesterSessionId, String requesterColor) {
+        this(requesterId, targetId, entryFee, requesterSessionId,
+                requesterColor, "CLASSIC");
+    }
+
+    public BuddyGameInvitation(UUID requesterId, UUID targetId, long entryFee,
+                               String requesterSessionId, String requesterColor,
+                               String gameMode) {
         this.requesterId = requesterId;
         this.targetId = targetId;
         this.entryFee = entryFee;
         this.requesterSessionId = requesterSessionId;
         this.requesterColor = requesterColor;
+        this.gameMode = gameMode;
         this.createdAt = Instant.now();
         this.expiresAt = this.createdAt.plusSeconds(180);
     }
@@ -77,6 +87,7 @@ public class BuddyGameInvitation {
     public long getEntryFee() { return entryFee; }
     public String getRequesterSessionId() { return requesterSessionId; }
     public String getRequesterColor() { return requesterColor; }
+    public String getGameMode() { return gameMode == null ? "CLASSIC" : gameMode; }
     public String getTargetSessionId() { return targetSessionId; }
     public String getTargetColor() { return targetColor; }
     public String getRoomId() { return roomId; }

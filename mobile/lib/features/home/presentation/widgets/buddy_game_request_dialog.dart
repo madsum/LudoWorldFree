@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
+import '../../../game/domain/models/game_mode.dart';
 import '../../../game/domain/models/ludo_color.dart';
 import 'buddy_game_match.dart';
 
@@ -58,6 +59,7 @@ class _BuddyGameRequestDialogState
   ];
 
   int _entryFee = 250;
+  GameMode _gameMode = GameMode.classic;
   LudoColor _playerColor = LudoColor.red;
   bool _sending = false;
   bool _cancelling = false;
@@ -92,6 +94,7 @@ class _BuddyGameRequestDialogState
             data: {
               'entryFee': _entryFee,
               'selectedColor': _playerColor.name,
+              'gameMode': _gameMode.wireValue,
               'sessionId': sessionId,
             },
             options: Options(headers: {'X-Player-ID': playerId}),
@@ -263,6 +266,34 @@ class _BuddyGameRequestDialogState
                     },
             ),
             const SizedBox(height: 12),
+            DropdownButtonFormField<GameMode>(
+              value: _gameMode,
+              dropdownColor: const Color(0xFF102447),
+              style: GoogleFonts.poppins(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Game mode',
+                labelStyle: TextStyle(color: Colors.white70),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: AppColors.gold),
+                ),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: GameMode.classic,
+                  child: Text('Classic'),
+                ),
+                DropdownMenuItem(
+                  value: GameMode.firstKill,
+                  child: Text('1st Kill Win'),
+                ),
+              ],
+              onChanged: _sending
+                  ? null
+                  : (mode) {
+                      if (mode != null) setState(() => _gameMode = mode);
+                    },
+            ),
+            const SizedBox(height: 12),
             DropdownButtonFormField<LudoColor>(
               value: _playerColor,
               dropdownColor: const Color(0xFF102447),
@@ -299,7 +330,7 @@ class _BuddyGameRequestDialogState
             ),
             const SizedBox(height: 12),
             Text(
-              'Waiting for ${widget.friendName} to accept at $_entryFee coins. You will play ${_playerColor.displayName}…',
+              'Waiting for ${widget.friendName} to accept at $_entryFee coins. You will play ${_playerColor.displayName} in ${_gameMode.displayName} mode…',
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(color: Colors.white70),
             ),

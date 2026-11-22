@@ -216,6 +216,7 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
       roomId: match.roomId,
       playerId: match.localPlayerId,
       selectedColor: match.localColor,
+      gameMode: match.gameMode,
       requestDiceRoll: webSocketService.requestDiceRoll,
     );
     gameController.startNewGame(players: match.players);

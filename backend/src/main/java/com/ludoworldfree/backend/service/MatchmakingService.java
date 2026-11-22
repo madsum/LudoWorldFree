@@ -290,10 +290,14 @@ public class MatchmakingService {
     public MatchmakingResponseDto createBuddyRoom(
             UUID requesterId, PlayerProfile requester, String requesterSessionId,
             String requesterColor, UUID targetId, PlayerProfile target,
-            String targetSessionId, long entryFee) {
+            String targetSessionId, long entryFee, String gameMode) {
         if (!ALLOWED_ENTRY_FEES.contains(entryFee)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Choose a supported online entry amount.");
+        }
+        if (!Set.of("CLASSIC", "FIRST_KILL").contains(gameMode)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Choose a valid online game mode.");
         }
         if (requesterSessionId == null || requesterSessionId.isBlank()
                 || requesterSessionId.length() > 64
@@ -332,7 +336,7 @@ public class MatchmakingService {
         MatchmakingTicket requesterTicket = new MatchmakingTicket(
                 requesterId, requester.getDisplayName(), requester.getAvatarUrl(),
                 requester.getCountry(), requester.getCountryFlag(), entryFee, 2,
-                color, requesterSessionId);
+                color, requesterSessionId, gameMode);
         String targetColor = switch (color) {
             case "red" -> "yellow";
             case "green" -> "blue";
@@ -342,7 +346,7 @@ public class MatchmakingService {
         MatchmakingTicket targetTicket = new MatchmakingTicket(
                 targetId, target.getDisplayName(), target.getAvatarUrl(),
                 target.getCountry(), target.getCountryFlag(), entryFee, 2,
-                targetColor, targetSessionId);
+                targetColor, targetSessionId, gameMode);
 
         MatchmakingTicket requesterQueueTicket = ticketRepository
                 .findByPlayerIdForUpdate(requesterId).orElse(null);
@@ -852,7 +856,7 @@ public class MatchmakingService {
                         || !senderId.equals(activePlayerId(next))
                         || !hasExpectedOnlineSeats(next, room)
                         || next.path("isGameOver").asBoolean()) throw invalidState();
-                if (after.values().stream().anyMatch(step -> step != -1)) throw invalidState();
+                if (!hasExpectedInitialPawnPositions(next, room)) throw invalidState();
                 return;
             }
             if (before.size() != expectedPawns) throw invalidState();
@@ -1029,6 +1033,22 @@ public class MatchmakingService {
         }
         return playerIds.size() == room.getPlayerCount()
                 && playerColors.size() == room.getPlayerCount();
+    }
+
+    private boolean hasExpectedInitialPawnPositions(JsonNode state, OnlineMatchRoom room) {
+        boolean firstKill = "FIRST_KILL".equals(room.getGameMode());
+        for (JsonNode player : state.path("players")) {
+            JsonNode pawns = player.path("pawns");
+            if (!pawns.isArray() || pawns.size() != 4) return false;
+            for (JsonNode pawn : pawns) {
+                int pawnId = pawn.path("id").asInt(-1);
+                int expectedStep = firstKill && pawnId >= 0 && pawnId < 2 ? 0 : -1;
+                if (pawn.path("stepCount").asInt(Integer.MIN_VALUE) != expectedStep) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     private String playerIdForColor(JsonNode state, String color) {
@@ -1293,6 +1313,7 @@ public class MatchmakingService {
         response.setPlayerId(playerId);
         response.setSessionId(room.sessionIdOf(playerId));
         response.setPlayerCount(room.getPlayerCount());
+        response.setGameMode(room.getGameMode());
         response.setPlayers(room.getPlayers().stream().map(player -> {
             PlayerWallet wallet = walletRepository.findByPlayerId(player.id()).orElse(null);
             return new MatchmakingResponseDto.MatchPlayerDto(

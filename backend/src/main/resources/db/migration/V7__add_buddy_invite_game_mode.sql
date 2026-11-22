@@ -1,0 +1,2 @@
+ALTER TABLE buddy_game_invites
+    ADD COLUMN IF NOT EXISTS game_mode VARCHAR(16) NOT NULL DEFAULT 'CLASSIC';

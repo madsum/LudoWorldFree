@@ -305,7 +305,7 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
                   child: ChoiceChip(
                     label: Center(
                       child: Text(
-                        'FIRST KILL WINS',
+                        '1ST KILL WIN',
                         style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
                       ),
                     ),

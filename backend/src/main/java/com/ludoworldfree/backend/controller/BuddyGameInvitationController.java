@@ -78,11 +78,15 @@ public class BuddyGameInvitationController {
         }
         String sessionId = text(body.get("sessionId"));
         String selectedColor = text(body.get("selectedColor"));
+        String gameMode = text(body.get("gameMode"));
+        if (gameMode == null) gameMode = "CLASSIC";
+        gameMode = gameMode.strip().toUpperCase();
         if (sessionId == null || sessionId.isBlank() || sessionId.length() > 64
                 || !List.of("red", "green", "yellow", "blue")
-                        .contains(selectedColor)) {
+                        .contains(selectedColor)
+                || !List.of("CLASSIC", "FIRST_KILL").contains(gameMode)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "A valid game session and color are required.");
+                    "A valid game session, color, and game mode are required.");
         }
         Instant now = Instant.now();
         if (invitationRepository.existsByRequesterIdAndTargetIdAndStatusAndExpiresAtAfter(
@@ -95,7 +99,7 @@ public class BuddyGameInvitationController {
 
         BuddyGameInvitation invitation = invitationRepository.save(
                 new BuddyGameInvitation(requesterId, friendId, entryFee,
-                        sessionId, selectedColor));
+                        sessionId, selectedColor, gameMode));
         return Map.of("id", invitation.getId().toString(),
                 "status", invitation.getStatus().name(),
                 "expiresAt", invitation.getExpiresAt().toString());
@@ -121,6 +125,7 @@ public class BuddyGameInvitationController {
                     ? "Buddy" : requester.getDisplayName());
             entry.put("entryFee", invitation.getEntryFee());
             entry.put("requesterColor", invitation.getRequesterColor());
+            entry.put("gameMode", invitation.getGameMode());
             entry.put("expiresAt", invitation.getExpiresAt().toString());
             entry.put("inGame", inGame);
             entries.add(entry);
@@ -174,7 +179,8 @@ public class BuddyGameInvitationController {
         MatchmakingResponseDto requesterMatch = matchmakingService.createBuddyRoom(
                 invitation.getRequesterId(), requester,
                 invitation.getRequesterSessionId(), invitation.getRequesterColor(),
-                targetId, target, targetSessionId, invitation.getEntryFee());
+                targetId, target, targetSessionId, invitation.getEntryFee(),
+                invitation.getGameMode());
         MatchmakingResponseDto targetMatch = matchmakingService.responseForBuddyRoom(
                 requesterMatch.getRoomId(), targetId);
         if (targetMatch == null) {
@@ -252,6 +258,7 @@ public class BuddyGameInvitationController {
             }
             entry.put("status", status);
             entry.put("entryFee", invitation.getEntryFee());
+            entry.put("gameMode", invitation.getGameMode());
             if (invitation.getStatus() == BuddyGameInvitation.Status.DECLINED) {
                 entry.put("declineReason", invitation.getDeclineReason());
             }

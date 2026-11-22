@@ -1,3 +1,4 @@
+import '../../../game/domain/models/game_mode.dart';
 import '../../../game/domain/models/ludo_color.dart';
 import '../../../game/domain/models/player_model.dart';
 
@@ -8,6 +9,7 @@ class BuddyGameMatch {
     required this.sessionId,
     required this.localPlayerId,
     required this.localColor,
+    this.gameMode = GameMode.classic,
   });
 
   final List<PlayerModel> players;
@@ -15,6 +17,7 @@ class BuddyGameMatch {
   final String sessionId;
   final String localPlayerId;
   final LudoColor localColor;
+  final GameMode gameMode;
 
   static BuddyGameMatch? parse(dynamic value) {
     if (value is! Map) return null;
@@ -61,6 +64,7 @@ class BuddyGameMatch {
       sessionId: sessionId,
       localPlayerId: localPlayerId,
       localColor: localPlayer.first.color,
+      gameMode: GameMode.fromWireValue(value['gameMode']),
     );
   }
 }
