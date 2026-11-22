@@ -10,8 +10,6 @@ SQL_INSTANCE="${SQL_INSTANCE:-ludo-world-free3:us-central1:lodu-postgres-instanc
 DATABASE_NAME="${DATABASE_NAME:-ludo}"
 DATABASE_USER_SECRET="${DATABASE_USER_SECRET:-db-user}"
 DATABASE_PASSWORD_SECRET="${DATABASE_PASSWORD_SECRET:-db-password}"
-REALTIME_PUBSUB_TOPIC="${REALTIME_PUBSUB_TOPIC:-ludoworld-realtime-v1}"
-RUNTIME_SERVICE_ACCOUNT="${RUNTIME_SERVICE_ACCOUNT:-}"
 
 if [[ -z "$PROJECT_ID" || "$PROJECT_ID" == "(unset)" ]]; then
   echo "Set PROJECT_ID or configure a default project with gcloud config." >&2
@@ -24,28 +22,7 @@ gcloud services enable \
   cloudbuild.googleapis.com \
   artifactregistry.googleapis.com \
   secretmanager.googleapis.com \
-  pubsub.googleapis.com \
   sqladmin.googleapis.com
-
-if ! gcloud pubsub topics describe "$REALTIME_PUBSUB_TOPIC" >/dev/null 2>&1; then
-  gcloud pubsub topics create "$REALTIME_PUBSUB_TOPIC"
-fi
-
-if [[ -z "$RUNTIME_SERVICE_ACCOUNT" ]]; then
-  RUNTIME_SERVICE_ACCOUNT="$(gcloud run services describe "$BACKEND_SERVICE" \
-    --region="$REGION" \
-    --format='value(spec.template.spec.serviceAccountName)' 2>/dev/null || true)"
-fi
-if [[ -z "$RUNTIME_SERVICE_ACCOUNT" ]]; then
-  PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
-  RUNTIME_SERVICE_ACCOUNT="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
-fi
-
-# Instances create and delete their own short-lived fanout subscriptions.
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}" \
-  --role="roles/pubsub.editor" \
-  --quiet >/dev/null
 
 gcloud artifacts repositories describe "$ARTIFACT_REPOSITORY" \
   --location="$REGION" >/dev/null 2>&1 || \
@@ -60,15 +37,14 @@ gcloud run deploy "$BACKEND_SERVICE" \
   --source=backend \
   --region="$REGION" \
   --platform=managed \
-  --cpu=2 \
-  --memory=2Gi \
+  --cpu=1 \
+  --memory=1Gi \
   --concurrency=500 \
   --min=1 \
-  --max=100 \
-  --service-account="$RUNTIME_SERVICE_ACCOUNT" \
+  --max=1 \
   --allow-unauthenticated \
   --add-cloudsql-instances="$SQL_INSTANCE" \
-  --set-env-vars="SPRING_PROFILES_ACTIVE=prod,SPRING_DATASOURCE_URL=${JDBC_URL},APP_CORS_ALLOWED_ORIGINS=*,DB_POOL_MAX_SIZE=2,DB_POOL_MIN_IDLE=0,REALTIME_PUBSUB_PROJECT=${PROJECT_ID},REALTIME_PUBSUB_TOPIC=${REALTIME_PUBSUB_TOPIC}" \
+  --set-env-vars="SPRING_PROFILES_ACTIVE=prod,SPRING_DATASOURCE_URL=${JDBC_URL},APP_CORS_ALLOWED_ORIGINS=*,DB_POOL_MAX_SIZE=5,DB_POOL_MIN_IDLE=1" \
   --set-secrets="SPRING_DATASOURCE_USERNAME=${DATABASE_USER_SECRET}:latest,SPRING_DATASOURCE_PASSWORD=${DATABASE_PASSWORD_SECRET}:latest"
 
 BACKEND_URL="$(gcloud run services describe "$BACKEND_SERVICE" \

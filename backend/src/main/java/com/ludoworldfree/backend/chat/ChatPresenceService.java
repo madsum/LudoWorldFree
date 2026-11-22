@@ -22,17 +22,13 @@ public class ChatPresenceService {
     private final JdbcTemplate jdbc;
     private final ChatEventPublisher publisher;
     private final long ttlSeconds;
-    private final long persistIntervalMillis;
     private final ConcurrentMap<String, Long> persistedHeartbeats = new ConcurrentHashMap<>();
 
     public ChatPresenceService(JdbcTemplate jdbc, ChatEventPublisher publisher,
-                               @Value("${chat.presence.ttl-seconds:90}") long ttlSeconds,
-                               @Value("${chat.presence.persist-interval-millis:40000}")
-                               long persistIntervalMillis) {
+                               @Value("${chat.presence.ttl-seconds:75}") long ttlSeconds) {
         this.jdbc = jdbc;
         this.publisher = publisher;
         this.ttlSeconds = Math.max(45, ttlSeconds);
-        this.persistIntervalMillis = Math.max(20_000, persistIntervalMillis);
     }
 
     @Transactional
@@ -47,7 +43,7 @@ public class ChatPresenceService {
     public void heartbeat(UUID userId, String sessionId) {
         long now = System.currentTimeMillis();
         Long lastPersisted = persistedHeartbeats.get(sessionId);
-        if (lastPersisted != null && now - lastPersisted < persistIntervalMillis) return;
+        if (lastPersisted != null && now - lastPersisted < 20_000) return;
         persistedHeartbeats.put(sessionId, now);
         boolean wasOnline = isOnline(userId);
         upsertSession(userId, sessionId);

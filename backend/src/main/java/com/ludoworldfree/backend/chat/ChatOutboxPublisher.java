@@ -3,23 +3,22 @@ package com.ludoworldfree.backend.chat;
 import java.util.List;
 import java.util.Map;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.ludoworldfree.backend.realtime.PubSubRealtimeEventBus;
+import com.ludoworldfree.backend.realtime.DatabaseRealtimeEventBus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import java.util.concurrent.TimeUnit;
 
 @Component
 @ConditionalOnProperty(prefix = "chat.outbox", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class ChatOutboxPublisher {
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
-    private final PubSubRealtimeEventBus realtimeEvents;
+    private final DatabaseRealtimeEventBus realtimeEvents;
 
     public ChatOutboxPublisher(JdbcTemplate jdbc, ObjectMapper objectMapper,
-                               PubSubRealtimeEventBus realtimeEvents) {
+                               DatabaseRealtimeEventBus realtimeEvents) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.realtimeEvents = realtimeEvents;
@@ -40,8 +39,7 @@ public class ChatOutboxPublisher {
         for (OutboxEvent event : events) {
             try {
                 realtimeEvents.publish(Map.of("route", "chat",
-                        "payload", objectMapper.readValue(event.json(), Map.class)))
-                        .get(5, TimeUnit.SECONDS);
+                        "payload", objectMapper.readValue(event.json(), Map.class)));
             } catch (Exception exception) {
                 throw new IllegalStateException("Chat outbox event could not be published.", exception);
             }

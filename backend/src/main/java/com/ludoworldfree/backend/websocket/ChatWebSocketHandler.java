@@ -121,7 +121,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         removeConnection(session.getId());
     }
 
-    public void routeRealtimeEvent(JsonNode event) {
+    public void routeRedisEvent(JsonNode event) {
         JsonNode recipients = event.path("recipients");
         if (!recipients.isArray()) return;
         String type = event.path("type").asText();

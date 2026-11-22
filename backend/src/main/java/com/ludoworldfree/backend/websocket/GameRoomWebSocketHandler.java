@@ -6,7 +6,7 @@ import com.ludoworldfree.backend.service.MatchmakingService;
 import com.ludoworldfree.backend.service.MatchmakingService.RoomSnapshot;
 import com.ludoworldfree.backend.service.OnlineMatchChatService;
 import com.ludoworldfree.backend.model.OnlineMatchStateEvent;
-import com.ludoworldfree.backend.realtime.PubSubRealtimeEventBus;
+import com.ludoworldfree.backend.realtime.DatabaseRealtimeEventBus;
 import com.ludoworldfree.backend.util.PlayerIdResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,13 +40,13 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final MatchmakingService matchmakingService;
     private final OnlineMatchChatService onlineMatchChatService;
-    private final PubSubRealtimeEventBus realtimeEvents;
+    private final DatabaseRealtimeEventBus realtimeEvents;
     private final Map<String, LocalRoom> localRooms = new ConcurrentHashMap<>();
 
     public GameRoomWebSocketHandler(ObjectMapper objectMapper,
                                     MatchmakingService matchmakingService,
                                     OnlineMatchChatService onlineMatchChatService,
-                                    PubSubRealtimeEventBus realtimeEvents) {
+                                    DatabaseRealtimeEventBus realtimeEvents) {
         this.objectMapper = objectMapper;
         this.matchmakingService = matchmakingService;
         this.onlineMatchChatService = onlineMatchChatService;
