@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ludoworldfree.backend.dto.MatchmakingRequestDto;
 import com.ludoworldfree.backend.dto.MatchmakingResponseDto;
+import com.ludoworldfree.backend.dto.FriendPlayRoomSeatDto;
 import com.ludoworldfree.backend.model.GoldTransaction;
 import com.ludoworldfree.backend.model.MatchmakingTicket;
 import com.ludoworldfree.backend.model.OnlineMatchRoom;
@@ -433,6 +434,57 @@ public class MatchmakingService {
                         && room.contains(playerId))
                 .map(room -> responseFor(room, playerId))
                 .orElse(null);
+    }
+
+    @Transactional
+    public MatchmakingResponseDto createFriendPlayRoomMatch(
+            String roomId, long entryFee, String gameMode,
+            List<FriendPlayRoomSeatDto> seats) {
+        if (seats == null || (seats.size() != 2 && seats.size() != 4)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "The room needs two or four players before the game can start.");
+        }
+        if (entryFee < 0 || gameMode == null
+                || !Set.of("CLASSIC", "FIRST_KILL").contains(gameMode)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "The friend room settings are invalid.");
+        }
+        Set<UUID> playerIds = new HashSet<>();
+        Set<String> colors = new HashSet<>();
+        List<MatchmakingTicket> tickets = new ArrayList<>();
+        for (FriendPlayRoomSeatDto seat : seats) {
+            String color = seat.selectedColor() == null
+                    ? "" : seat.selectedColor().toLowerCase();
+            if (seat.playerId() == null || !playerIds.add(seat.playerId())
+                    || !List.of("red", "green", "yellow", "blue").contains(color)
+                    || !colors.add(color)
+                    || seat.sessionId() == null || seat.sessionId().isBlank()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Player seats or colors in this room are invalid.");
+            }
+            if (isPlayerInActiveRoom(seat.playerId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "A player is already in an online game.");
+            }
+            tickets.add(new MatchmakingTicket(seat.playerId(),
+                    nonBlank(seat.displayName(), "Player"), seat.avatarUrl(),
+                    nonBlank(seat.country(), "World"), nonBlank(seat.countryFlag(), "🌐"),
+                    entryFee, seats.size(), color, seat.sessionId(), gameMode));
+        }
+
+        Map<UUID, PlayerWallet> wallets = lockWallets(new ArrayList<>(playerIds));
+        for (PlayerWallet wallet : wallets.values()) {
+            if (wallet.getBalance() < entryFee) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Every player needs enough coins for the entry amount.");
+            }
+        }
+        for (PlayerWallet wallet : wallets.values()) deductEntryFee(wallet, entryFee, roomId);
+        transactionRepository.flush();
+
+        OnlineMatchRoom room = new OnlineMatchRoom(roomId, tickets, entryFee);
+        roomRepository.saveAndFlush(room);
+        return responseFor(room, tickets.getFirst().getPlayerId());
     }
 
     @Transactional(readOnly = true)

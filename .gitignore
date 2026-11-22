@@ -52,3 +52,5 @@ backend/target/
 mobile/android/build/
 ludo_keystore.jks
 *.sh
+/backend/src/main/java/com/ludoworldfree/backend/realtime/DatabaseRealtimeEventBus.java
+/backend/src/main/java/com/ludoworldfree/backend/chat/ChatRedisEventListener.java

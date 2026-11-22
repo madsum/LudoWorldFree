@@ -27,6 +27,7 @@ import 'widgets/lobby_center_graphic.dart';
 import 'widgets/lobby_game_card.dart';
 import 'widgets/lobby_header_bar.dart';
 import 'widgets/online_matchmaking_dialog.dart';
+import 'widgets/friend_room_flow_dialog.dart';
 import 'widgets/daily_bonus_dialog.dart';
 import 'widgets/live_chat_dialog.dart';
 import 'widgets/incoming_buddy_request_dialog.dart';
@@ -1432,8 +1433,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     title: 'FRIENDS',
                                     playerCount: '16,393',
                                     cardType: LobbyCardType.friends,
-                                    onTap: () => _showComingSoonSnackBar(
-                                        'Play with Friends'),
+                                    onTap: () {
+                                      FriendRoomFlowDialog.show(
+                                        context,
+                                        onStartMatch: (players, roomId,
+                                            playerId, color, gameMode) {
+                                          final gameController = ref.read(
+                                              gameControllerProvider.notifier);
+                                          gameController.configureOnlineMatch(
+                                            roomId: roomId,
+                                            playerId: playerId,
+                                            selectedColor: color,
+                                            gameMode: gameMode,
+                                            requestDiceRoll: ref
+                                                .read(webSocketServiceProvider)
+                                                .requestDiceRoll,
+                                          );
+                                          gameController.startNewGame(
+                                              players: players);
+                                          context.push('/game');
+                                        },
+                                      );
+                                    },
                                   ),
                                 ),
                               ],
