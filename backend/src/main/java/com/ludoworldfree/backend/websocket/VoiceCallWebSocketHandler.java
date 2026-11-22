@@ -107,7 +107,8 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
                     "type", "voice_call_incoming",
                     "fromPlayerId", senderId.toString(),
                     "fromPlayerName", caller == null ? "Buddy" : caller.getDisplayName(),
-                    "callId", callId));
+                    "callId", callId,
+                    "withVideo", payload.path("withVideo").asBoolean(false)));
             return;
         }
 

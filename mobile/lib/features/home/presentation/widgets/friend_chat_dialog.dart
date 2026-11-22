@@ -245,11 +245,11 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
         secondTime.difference(firstTime).abs() <= const Duration(minutes: 2);
   }
 
-  Future<void> _startVoiceCall() async {
+  Future<void> _startVoiceCall({bool withVideo = false}) async {
     try {
       await ref
           .read(voiceCallServiceProvider)
-          .startCall(widget.friendId, widget.friendName);
+          .startCall(widget.friendId, widget.friendName, withVideo: withVideo);
     } catch (error) {
       if (mounted) {
         setState(
@@ -357,21 +357,28 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
                       ],
                     ),
                   ),
-                  IconButton(
-                    tooltip: callingThisFriend
-                        ? 'End voice call'
-                        : 'Call this buddy',
-                    onPressed: callingThisFriend
-                        ? () => ref.read(voiceCallServiceProvider).endCall()
-                        : _startVoiceCall,
-                    icon: Icon(
-                      callingThisFriend
-                          ? Icons.call_end_rounded
-                          : Icons.call_rounded,
-                      color:
-                          callingThisFriend ? Colors.redAccent : AppColors.gold,
+                  if (callingThisFriend)
+                    IconButton(
+                      tooltip: 'End call',
+                      onPressed: () =>
+                          ref.read(voiceCallServiceProvider).endCall(),
+                      icon: const Icon(Icons.call_end_rounded,
+                          color: Colors.redAccent),
+                    )
+                  else ...[
+                    IconButton(
+                      tooltip: 'Start voice call',
+                      onPressed: () => _startVoiceCall(),
+                      icon: const Icon(Icons.call_rounded,
+                          color: AppColors.gold),
                     ),
-                  ),
+                    IconButton(
+                      tooltip: 'Start video call',
+                      onPressed: () => _startVoiceCall(withVideo: true),
+                      icon: const Icon(Icons.videocam_rounded,
+                          color: AppColors.gold),
+                    ),
+                  ],
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
                     icon:

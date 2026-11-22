@@ -201,6 +201,7 @@ class OnlineChatSheet extends StatefulWidget {
     required this.onSend,
     this.onTypingChanged,
     required this.onVoiceCallPressed,
+    required this.onVideoCallPressed,
     required this.onStopTimerPressed,
   });
 
@@ -210,6 +211,7 @@ class OnlineChatSheet extends StatefulWidget {
   final ValueChanged<String> onSend;
   final ValueChanged<bool>? onTypingChanged;
   final VoidCallback onVoiceCallPressed;
+  final VoidCallback onVideoCallPressed;
   final VoidCallback onStopTimerPressed;
 
   static Future<void> show(
@@ -220,6 +222,7 @@ class OnlineChatSheet extends StatefulWidget {
     required ValueChanged<String> onSend,
     ValueChanged<bool>? onTypingChanged,
     required VoidCallback onVoiceCallPressed,
+    required VoidCallback onVideoCallPressed,
     required VoidCallback onStopTimerPressed,
   }) {
     return showModalBottomSheet<void>(
@@ -234,6 +237,7 @@ class OnlineChatSheet extends StatefulWidget {
         onSend: onSend,
         onTypingChanged: onTypingChanged,
         onVoiceCallPressed: onVoiceCallPressed,
+        onVideoCallPressed: onVideoCallPressed,
         onStopTimerPressed: onStopTimerPressed,
       ),
     );
@@ -355,6 +359,13 @@ class _OnlineChatSheetState extends State<OnlineChatSheet> {
                     tooltip: 'Voice call a buddy',
                     visualDensity: VisualDensity.compact,
                     icon: const Icon(Icons.call_rounded,
+                        color: Colors.white, size: 23),
+                  ),
+                  IconButton(
+                    onPressed: widget.onVideoCallPressed,
+                    tooltip: 'Video call a buddy',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.videocam_rounded,
                         color: Colors.white, size: 23),
                   ),
                   IconButton(

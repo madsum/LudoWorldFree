@@ -18,6 +18,7 @@ class VoiceCallSession {
     required this.peerName,
     required this.phase,
     this.muted = false,
+    this.withVideo = false,
   });
 
   final String callId;
@@ -25,6 +26,7 @@ class VoiceCallSession {
   final String peerName;
   final VoiceCallPhase phase;
   final bool muted;
+  final bool withVideo;
 
   VoiceCallSession copyWith({VoiceCallPhase? phase, bool? muted}) =>
       VoiceCallSession(
@@ -33,6 +35,7 @@ class VoiceCallSession {
         peerName: peerName,
         phase: phase ?? this.phase,
         muted: muted ?? this.muted,
+        withVideo: withVideo,
       );
 }
 
@@ -53,12 +56,16 @@ class VoiceCallService extends ChangeNotifier {
   bool _disposed = false;
   int _ringtoneGeneration = 0;
   MediaStream? _localStream;
+  MediaStream? _remoteStream;
   RTCPeerConnection? _peerConnection;
   final List<RTCIceCandidate> _queuedCandidates = [];
   final AudioPlayer _ringtonePlayer = AudioPlayer();
 
   VoiceCallSession? call;
   String? lastError;
+  bool isCallUiMinimized = false;
+  MediaStream? get localStream => _localStream;
+  MediaStream? get remoteStream => _remoteStream;
 
   String? takeLastError() {
     final error = lastError;
@@ -137,7 +144,11 @@ class VoiceCallService extends ChangeNotifier {
     await channel?.sink.close();
   }
 
-  Future<void> startCall(String peerId, String peerName) async {
+  Future<void> startCall(
+    String peerId,
+    String peerName, {
+    bool withVideo = false,
+  }) async {
     if (call != null) throw StateError('Finish your current call first.');
     if (!isConnected) {
       final playerId = _playerId;
@@ -152,10 +163,12 @@ class VoiceCallService extends ChangeNotifier {
       peerId: peerId,
       peerName: peerName,
       phase: VoiceCallPhase.outgoing,
+      withVideo: withVideo,
     );
+    isCallUiMinimized = false;
     lastError = null;
     notifyListeners();
-    _send('voice_call_request', peerId, callId);
+    _send('voice_call_request', peerId, callId, withVideo: withVideo);
     _startTimeout(callId);
     unawaited(_startRingtone());
   }
@@ -169,7 +182,9 @@ class VoiceCallService extends ChangeNotifier {
     if (!await _preparePeer()) {
       _send('voice_call_decline', current.peerId, current.callId);
       await _clearCall();
-      lastError = 'Microphone access is needed for voice calls.';
+      lastError = current.withVideo
+          ? 'Camera and microphone access are needed for video calls.'
+          : 'Microphone access is needed for voice calls.';
       notifyListeners();
       return;
     }
@@ -208,6 +223,7 @@ class VoiceCallService extends ChangeNotifier {
     String type,
     String targetPlayerId,
     String callId, {
+    bool? withVideo,
     Map<String, dynamic>? description,
     Map<String, dynamic>? candidate,
   }) {
@@ -217,6 +233,7 @@ class VoiceCallService extends ChangeNotifier {
       'type': type,
       'targetPlayerId': targetPlayerId,
       'callId': callId,
+      if (withVideo != null) 'withVideo': withVideo,
       if (description != null) 'description': description,
       if (candidate != null) 'candidate': candidate,
     }));
@@ -247,7 +264,9 @@ class VoiceCallService extends ChangeNotifier {
         peerId: fromId,
         peerName: message['fromPlayerName']?.toString() ?? 'Buddy',
         phase: VoiceCallPhase.incoming,
+        withVideo: message['withVideo'] == true,
       );
+      isCallUiMinimized = false;
       notifyListeners();
       unawaited(_startRingtone());
       return;
@@ -264,7 +283,9 @@ class VoiceCallService extends ChangeNotifier {
         await _stopRingtone();
         if (!await _preparePeer()) {
           await endCall();
-          lastError = 'Microphone access is needed for voice calls.';
+          lastError = current.withVideo
+              ? 'Camera and microphone access are needed for video calls.'
+              : 'Microphone access is needed for voice calls.';
           notifyListeners();
           return;
         }
@@ -330,7 +351,7 @@ class VoiceCallService extends ChangeNotifier {
     try {
       final stream = await navigator.mediaDevices.getUserMedia({
         'audio': true,
-        'video': false,
+        'video': call?.withVideo == true,
       });
       final peer = await createPeerConnection({
         'iceServers': [
@@ -338,8 +359,9 @@ class VoiceCallService extends ChangeNotifier {
         ],
       });
       _localStream = stream;
+      _remoteStream = null;
       _peerConnection = peer;
-      for (final track in stream.getAudioTracks()) {
+      for (final track in stream.getTracks()) {
         await peer.addTrack(track, stream);
       }
       peer.onIceCandidate = (candidate) {
@@ -347,6 +369,11 @@ class VoiceCallService extends ChangeNotifier {
         if (current == null || candidate.candidate == null) return;
         _send('voice_call_ice', current.peerId, current.callId,
             candidate: candidate.toMap().cast<String, dynamic>());
+      };
+      peer.onTrack = (event) {
+        if (event.streams.isEmpty) return;
+        _remoteStream = event.streams.first;
+        notifyListeners();
       };
       peer.onConnectionState = (state) {
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
@@ -398,8 +425,10 @@ class VoiceCallService extends ChangeNotifier {
     final stream = _localStream;
     _peerConnection = null;
     _localStream = null;
+    _remoteStream = null;
     _queuedCandidates.clear();
     call = null;
+    isCallUiMinimized = false;
     if (!_disposed) notifyListeners();
     if (stream != null) {
       for (final track in stream.getTracks()) {
@@ -409,6 +438,18 @@ class VoiceCallService extends ChangeNotifier {
     }
     await peer?.close();
     await peer?.dispose();
+  }
+
+  void minimizeCallUi() {
+    if (call == null || isCallUiMinimized) return;
+    isCallUiMinimized = true;
+    notifyListeners();
+  }
+
+  void restoreCallUi() {
+    if (call == null || !isCallUiMinimized) return;
+    isCallUiMinimized = false;
+    notifyListeners();
   }
 
   Future<void> _startRingtone() async {

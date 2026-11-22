@@ -60,7 +60,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _friendInboxPlayerId;
   String? _buddyGameInvitePlayerId;
   DateTime? _outgoingBuddyRequestCursor;
-  String? _shownIncomingVoiceCallId;
+  bool _voiceCallDialogShowing = false;
   bool _buddyRequestPollInFlight = false;
   bool _friendInboxPollInFlight = false;
   bool _buddyGameInvitePollInFlight = false;
@@ -131,13 +131,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _handleVoiceCallServiceChanged() {
     final currentCall = _voiceCallService.call;
-    if (currentCall?.phase == VoiceCallPhase.incoming &&
-        currentCall!.callId != _shownIncomingVoiceCallId) {
-      _shownIncomingVoiceCallId = currentCall.callId;
+    if (currentCall != null &&
+        !_voiceCallDialogShowing &&
+        !_voiceCallService.isCallUiMinimized) {
+      _voiceCallDialogShowing = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted ||
-            _voiceCallService.call?.callId != currentCall.callId ||
-            _voiceCallService.call?.phase != VoiceCallPhase.incoming) {
+        if (!mounted || _voiceCallService.call?.callId != currentCall.callId) {
+          _voiceCallDialogShowing = false;
           return;
         }
         showDialog<void>(
@@ -146,8 +146,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           barrierDismissible: false,
           builder: (_) => IncomingVoiceCallDialog(
             voiceCallService: _voiceCallService,
+            onMinimize: _voiceCallService.minimizeCallUi,
           ),
-        ).then((_) => _showNextIncomingFriendChat());
+        ).then((_) {
+          _voiceCallDialogShowing = false;
+          _showNextIncomingFriendChat();
+          _showNextIncomingBuddyGameInvite();
+        });
       });
     }
     final error = _voiceCallService.takeLastError();
@@ -1297,6 +1302,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authControllerProvider);
+    final callService = ref.watch(voiceCallServiceProvider);
     final user = authState.user;
     final playerName = user?.name ?? 'Guest Player';
     final avatarUrl = user?.avatarUrl;
@@ -1321,8 +1327,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       },
       child: Scaffold(
         backgroundColor: const Color(0xFF07122E),
-        body: Column(
+        body: Stack(
           children: [
+            Column(
+              children: [
             LobbyHeaderBar(
               playerName: playerName,
               avatarUrl: avatarUrl,
@@ -1550,13 +1558,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
             ),
-            LobbyBottomNav(
+                LobbyBottomNav(
               selectedIndex: _currentNavIndex,
               onTap: (index) {
                 setState(() => _currentNavIndex = index);
                 if (index == 1) _showLiveChat();
               },
+                ),
+              ],
             ),
+            if (callService.call != null && callService.isCallUiMinimized)
+              Positioned(
+                right: 12,
+                bottom: 86,
+                child: MinimizedVoiceCallChip(
+                  voiceCallService: callService,
+                  onRestore: callService.restoreCallUi,
+                ),
+              ),
           ],
         ),
       ),

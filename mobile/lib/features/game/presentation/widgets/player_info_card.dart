@@ -19,6 +19,7 @@ class PlayerInfoCard extends StatefulWidget {
   final bool compact;
   final bool showRollArrow;
   final bool rollArrowPointsUp;
+  final bool showPlayerDot;
   final VoidCallback? onBuddyRequest;
 
   const PlayerInfoCard({
@@ -31,6 +32,7 @@ class PlayerInfoCard extends StatefulWidget {
     this.compact = false,
     this.showRollArrow = false,
     this.rollArrowPointsUp = false,
+    this.showPlayerDot = false,
     this.onBuddyRequest,
   });
 
@@ -515,6 +517,28 @@ class _PlayerInfoCardState extends State<PlayerInfoCard>
                 ),
               ),
             ),
+            if (widget.showPlayerDot) ...[
+              const SizedBox(width: 4),
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF36D17B),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    width: 0.8,
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x8836D17B),
+                      blurRadius: 5,
+                      spreadRadius: 0.5,
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const Icon(
               Icons.diamond_rounded,
               color: AppColors.diamondBlue,

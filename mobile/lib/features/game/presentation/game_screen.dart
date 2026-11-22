@@ -29,6 +29,7 @@ import 'widgets/ludo_board_widget.dart';
 import 'widgets/mjolnir_icon.dart';
 import 'widgets/online_chat_panel.dart';
 import '../../home/presentation/widgets/incoming_buddy_request_dialog.dart';
+import '../../home/presentation/widgets/incoming_voice_call_dialog.dart';
 import 'widgets/player_info_card.dart';
 import 'widgets/victory_dialog.dart';
 
@@ -884,6 +885,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final isVsComputer =
         botCount == gameState.players.length - 1 && botCount > 0;
     final isTwoPlayerMode = gameState.players.length == 2;
+    final isLocalTwoPlayerMode = !gameNotifier.isOnlineMode &&
+        isTwoPlayerMode &&
+        gameState.players.every((player) => !player.isBot);
     final isPlayerRollTurn = !gameState.isGameOver &&
         !gameState.currentPlayer.isBot &&
         !gameState.currentPlayer.isEliminated &&
@@ -1069,6 +1073,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                         twoPlayerDisplayOrder[0].id,
                                     onRoll: () => gameNotifier.rollDice(),
                                     twoPlayerLayout: true,
+                                    showPlayerDot: isLocalTwoPlayerMode,
                                     showRollArrow: isPlayerRollTurn &&
                                         gameState.currentPlayer.id ==
                                             twoPlayerDisplayOrder[0].id,
@@ -1100,6 +1105,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                         twoPlayerDisplayOrder[1].id,
                                     onRoll: () => gameNotifier.rollDice(),
                                     twoPlayerLayout: true,
+                                    showPlayerDot: isLocalTwoPlayerMode,
                                     showRollArrow: isPlayerRollTurn &&
                                         gameState.currentPlayer.id ==
                                             twoPlayerDisplayOrder[1].id,
@@ -1160,64 +1166,13 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 ],
               ),
 
-              if (voiceCall != null)
+              if (voiceCall != null && voiceCallService.isCallUiMinimized)
                 Positioned(
                   right: 10,
                   bottom: 78,
-                  child: Material(
-                    color: const Color(0xF0122447),
-                    borderRadius: BorderRadius.circular(24),
-                    elevation: 8,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 13, right: 4),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            voiceCall.phase == VoiceCallPhase.connected
-                                ? Icons.call_rounded
-                                : Icons.call_made_rounded,
-                            color: voiceCall.phase == VoiceCallPhase.connected
-                                ? Colors.greenAccent
-                                : AppColors.gold,
-                            size: 17,
-                          ),
-                          const SizedBox(width: 7),
-                          Text(
-                            '${voiceCall.phase == VoiceCallPhase.connected ? (voiceCall.muted ? 'MUTED' : 'VOICE') : voiceCall.phase.name.toUpperCase()} ${voiceCall.peerName.toUpperCase()}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: voiceCall.muted ? 'Unmute' : 'Mute',
-                            onPressed:
-                                voiceCall.phase == VoiceCallPhase.connected
-                                    ? voiceCallService.toggleMute
-                                    : null,
-                            visualDensity: VisualDensity.compact,
-                            icon: Icon(
-                              voiceCall.muted
-                                  ? Icons.mic_off_rounded
-                                  : Icons.mic_rounded,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'End voice call',
-                            onPressed: voiceCallService.endCall,
-                            visualDensity: VisualDensity.compact,
-                            icon: const Icon(Icons.call_end_rounded,
-                                color: Colors.redAccent, size: 19),
-                          ),
-                        ],
-                      ),
-                    ),
+                  child: MinimizedVoiceCallChip(
+                    voiceCallService: voiceCallService,
+                    onRestore: voiceCallService.restoreCallUi,
                   ),
                 ),
 
@@ -1492,6 +1447,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
       onTypingChanged: ref.read(webSocketServiceProvider).sendChatTyping,
       onVoiceCallPressed: () =>
           _chooseVoiceCallTarget(gameState.players, gameNotifier),
+      onVideoCallPressed: () => _chooseVoiceCallTarget(
+        gameState.players,
+        gameNotifier,
+        withVideo: true,
+      ),
       onStopTimerPressed: _requestDiceTimerStop,
     );
   }
@@ -1621,6 +1581,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Future<void> _chooseVoiceCallTarget(
     List<PlayerModel> players,
     GameNotifier gameNotifier,
+    {bool withVideo = false},
   ) async {
     final localPlayerId = gameNotifier.onlineLocalPlayerId;
     if (localPlayerId == null || !gameNotifier.isOnlineMode) return;
@@ -1682,7 +1643,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     try {
       await ref
           .read(voiceCallServiceProvider)
-          .startCall(target.id, target.name);
+          .startCall(target.id, target.name, withVideo: withVideo);
     } catch (error) {
       _showVoiceCallMessage(error.toString().replaceFirst('Bad state: ', ''));
     }

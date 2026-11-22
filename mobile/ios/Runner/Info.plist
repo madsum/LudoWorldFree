@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone access is used for voice calls with your Ludo buddies.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Camera access is used for video calls with your Ludo buddies.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

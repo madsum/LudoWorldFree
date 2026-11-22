@@ -176,11 +176,15 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
     }
   }
 
-  Future<void> _callFriend(Map<String, dynamic> friend) async {
+  Future<void> _callFriend(
+    Map<String, dynamic> friend, {
+    bool withVideo = false,
+  }) async {
     try {
       await ref.read(voiceCallServiceProvider).startCall(
             friend['playerId']?.toString() ?? '',
             friend['displayName']?.toString() ?? 'Buddy',
+            withVideo: withVideo,
           );
     } catch (error) {
       _showMessage(error.toString().replaceFirst('Bad state: ', ''));
@@ -468,6 +472,23 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                               ?.toString()
                                                       ? Colors.redAccent
                                                       : Colors.greenAccent,
+                                                ),
+                                              ),
+                                              IconButton(
+                                                tooltip: currentVoiceCall == null
+                                                    ? 'Video call buddy'
+                                                    : 'Finish the current call first',
+                                                onPressed: currentVoiceCall == null
+                                                    ? () => _callFriend(
+                                                          friend,
+                                                          withVideo: true,
+                                                        )
+                                                    : null,
+                                                icon: Icon(
+                                                  Icons.videocam_rounded,
+                                                  color: currentVoiceCall == null
+                                                      ? Colors.greenAccent
+                                                      : Colors.white24,
                                                 ),
                                               ),
                                               PopupMenuButton<String>(
