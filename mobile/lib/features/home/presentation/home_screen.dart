@@ -1331,239 +1331,248 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           children: [
             Column(
               children: [
-            LobbyHeaderBar(
-              playerName: playerName,
-              avatarUrl: avatarUrl,
-              countryFlag: countryFlag,
-              diamonds: diamonds,
-              coins: coins,
-              coinWalletKey: _walletKey,
-              level: 3,
-              onProfilePressed: () => _showProfileInfoDialog(context),
-              onSettingsPressed: () => _showSettingsDialog(context),
-              onInboxPressed: () => _showComingSoonSnackBar('Mailbox Inbox'),
-              onShopPressed: () =>
-                  _showComingSoonSnackBar('Coin & Diamond Store'),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
-                physics: const BouncingScrollPhysics(),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: isTablet ? 600 : double.infinity,
-                    ),
-                    child: Column(
-                      children: [
-                        const LobbyCenterGraphic(),
-                        const SizedBox(height: 12),
-                        Row(
+                LobbyHeaderBar(
+                  playerName: playerName,
+                  avatarUrl: avatarUrl,
+                  countryFlag: countryFlag,
+                  diamonds: diamonds,
+                  coins: coins,
+                  coinWalletKey: _walletKey,
+                  level: 3,
+                  onProfilePressed: () => _showProfileInfoDialog(context),
+                  onSettingsPressed: () => _showSettingsDialog(context),
+                  onInboxPressed: () =>
+                      _showComingSoonSnackBar('Mailbox Inbox'),
+                  onShopPressed: () =>
+                      _showComingSoonSnackBar('Coin & Diamond Store'),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12.0, vertical: 6.0),
+                    physics: const BouncingScrollPhysics(),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: isTablet ? 600 : double.infinity,
+                        ),
+                        child: Column(
                           children: [
-                            Expanded(
-                              child: LobbyGameCard(
-                                title: 'ONLINE',
-                                playerCount: '218,675',
-                                cardType: LobbyCardType.online,
-                                onTap: () {
-                                  final user =
-                                      ref.read(authControllerProvider).user;
-                                  ModeConfigDialog.show(
-                                    context,
-                                    title: 'Online Multiplayer',
-                                    isVsComputer: false,
-                                    isOnline: true,
-                                    playerName: user?.name ?? 'Player 1',
-                                    avatarUrl: user?.avatarUrl,
-                                    country: user?.country ?? 'World',
-                                    countryFlag: user?.countryFlag ?? '🌐',
-                                    coins: user?.coins ?? 0,
-                                    diamonds: user?.diamonds ?? 0,
-                                    onStartGame: (_) {},
-                                    onStartOnlineMatch: (playerCount, color,
-                                        entryFee, gameMode) {
-                                      OnlineMatchmakingDialog.show(
+                            const LobbyCenterGraphic(),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: LobbyGameCard(
+                                    title: 'ONLINE',
+                                    playerCount: '218,675',
+                                    cardType: LobbyCardType.online,
+                                    onTap: () {
+                                      final user =
+                                          ref.read(authControllerProvider).user;
+                                      ModeConfigDialog.show(
                                         context,
-                                        playerCount: playerCount,
-                                        entryFee: entryFee,
-                                        selectedColor: color,
-                                        gameMode: gameMode,
-                                        onMatchFound:
-                                            (players, roomId, playerId) {
-                                          final gameController = ref.read(
-                                              gameControllerProvider.notifier);
-                                          gameController.configureOnlineMatch(
-                                            roomId: roomId,
-                                            playerId: playerId,
+                                        title: 'Online Multiplayer',
+                                        isVsComputer: false,
+                                        isOnline: true,
+                                        playerName: user?.name ?? 'Player 1',
+                                        avatarUrl: user?.avatarUrl,
+                                        country: user?.country ?? 'World',
+                                        countryFlag: user?.countryFlag ?? '🌐',
+                                        coins: user?.coins ?? 0,
+                                        diamonds: user?.diamonds ?? 0,
+                                        onStartGame: (_) {},
+                                        onStartOnlineMatch: (playerCount, color,
+                                            entryFee, gameMode) {
+                                          OnlineMatchmakingDialog.show(
+                                            context,
+                                            playerCount: playerCount,
+                                            entryFee: entryFee,
                                             selectedColor: color,
                                             gameMode: gameMode,
-                                            requestDiceRoll: ref
-                                                .read(webSocketServiceProvider)
-                                                .requestDiceRoll,
+                                            onMatchFound:
+                                                (players, roomId, playerId) {
+                                              final gameController = ref.read(
+                                                  gameControllerProvider
+                                                      .notifier);
+                                              gameController
+                                                  .configureOnlineMatch(
+                                                roomId: roomId,
+                                                playerId: playerId,
+                                                selectedColor: color,
+                                                gameMode: gameMode,
+                                                requestDiceRoll: ref
+                                                    .read(
+                                                        webSocketServiceProvider)
+                                                    .requestDiceRoll,
+                                              );
+                                              gameController.startNewGame(
+                                                  players: players);
+                                              context.push('/game');
+                                            },
                                           );
-                                          gameController.startNewGame(
-                                              players: players);
-                                          context.push('/game');
                                         },
                                       );
                                     },
-                                  );
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: LobbyGameCard(
-                                title: 'TEAM UP',
-                                playerCount: '4,144',
-                                cardType: LobbyCardType.teamUp,
-                                onTap: () =>
-                                    _showComingSoonSnackBar('Team Up 2v2'),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: LobbyGameCard(
-                                title: 'FRIENDS',
-                                playerCount: '16,393',
-                                cardType: LobbyCardType.friends,
-                                onTap: () => _showComingSoonSnackBar(
-                                    'Play with Friends'),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: LobbyGameCard(
-                                title: 'COMPUTER',
-                                cardType: LobbyCardType.computer,
-                                onTap: () => _launchGameMode(context,
-                                    isVsComputer: true, title: 'Vs Computer'),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: LobbyGameCard(
-                                title: 'PASS N PLAY',
-                                cardType: LobbyCardType.passNPlay,
-                                onTap: () => _launchGameMode(context,
-                                    isVsComputer: false, title: 'Pass & Play'),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        GestureDetector(
-                          onTap: () => _watchAdAndEarnGold(context),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 12),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [
-                                  Color(0xFFFFEA00),
-                                  Color(0xFFFF8F00),
-                                  Color(0xFFB76E00)
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.white, width: 2),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0xFFFF8F00),
-                                  blurRadius: 10,
-                                  offset: Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: const BoxDecoration(
-                                    color: Colors.black38,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.ondemand_video_rounded,
-                                    color: Colors.white,
-                                    size: 26,
                                   ),
                                 ),
-                                const SizedBox(width: 12),
+                                const SizedBox(width: 6),
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'WATCH AD & EARN GOLD',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w900,
-                                          color: Colors.black87,
-                                          letterSpacing: 0.5,
-                                        ),
-                                      ),
-                                      Text(
-                                        'Watch a short video to claim free gold!',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.black87,
-                                        ),
-                                      ),
-                                    ],
+                                  child: LobbyGameCard(
+                                    title: 'TEAM UP',
+                                    playerCount: '4,144',
+                                    cardType: LobbyCardType.teamUp,
+                                    onTap: () =>
+                                        _showComingSoonSnackBar('Team Up 2v2'),
                                   ),
                                 ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black87,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                        color: AppColors.gold, width: 1.2),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.monetization_on_rounded,
-                                          color: AppColors.coinGold, size: 16),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '+${AdConfig.adRewardGoldAmount}',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w900,
-                                          color: AppColors.gold,
-                                        ),
-                                      ),
-                                    ],
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: LobbyGameCard(
+                                    title: 'FRIENDS',
+                                    playerCount: '16,393',
+                                    cardType: LobbyCardType.friends,
+                                    onTap: () => _showComingSoonSnackBar(
+                                        'Play with Friends'),
                                   ),
                                 ),
                               ],
                             ),
-                          ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: LobbyGameCard(
+                                    title: 'COMPUTER',
+                                    cardType: LobbyCardType.computer,
+                                    onTap: () => _launchGameMode(context,
+                                        isVsComputer: true,
+                                        title: 'Vs Computer'),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: LobbyGameCard(
+                                    title: 'PASS N PLAY',
+                                    cardType: LobbyCardType.passNPlay,
+                                    onTap: () => _launchGameMode(context,
+                                        isVsComputer: false,
+                                        title: 'Pass & Play'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            GestureDetector(
+                              onTap: () => _watchAdAndEarnGold(context),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 12),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Color(0xFFFFEA00),
+                                      Color(0xFFFF8F00),
+                                      Color(0xFFB76E00)
+                                    ],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border:
+                                      Border.all(color: Colors.white, width: 2),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0xFFFF8F00),
+                                      blurRadius: 10,
+                                      offset: Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: const BoxDecoration(
+                                        color: Colors.black38,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.ondemand_video_rounded,
+                                        color: Colors.white,
+                                        size: 26,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'WATCH AD & EARN GOLD',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w900,
+                                              color: Colors.black87,
+                                              letterSpacing: 0.5,
+                                            ),
+                                          ),
+                                          Text(
+                                            'Watch a short video to claim free gold!',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black87,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                            color: AppColors.gold, width: 1.2),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(
+                                              Icons.monetization_on_rounded,
+                                              color: AppColors.coinGold,
+                                              size: 16),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '+${AdConfig.adRewardGoldAmount}',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w900,
+                                              color: AppColors.gold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
                         ),
-                        const SizedBox(height: 10),
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ),
                 LobbyBottomNav(
-              selectedIndex: _currentNavIndex,
-              onTap: (index) {
-                setState(() => _currentNavIndex = index);
-                if (index == 1) _showLiveChat();
-              },
+                  selectedIndex: _currentNavIndex,
+                  onTap: (index) {
+                    setState(() => _currentNavIndex = index);
+                    if (index == 1) _showLiveChat();
+                  },
                 ),
               ],
             ),

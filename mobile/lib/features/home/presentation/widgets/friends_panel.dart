@@ -373,6 +373,8 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                 ),
                                 title: Text(
                                   friend['displayName']?.toString() ?? 'Player',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.poppins(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w700),
@@ -381,10 +383,17 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                   incoming
                                       ? 'Wants to be your friend'
                                       : status == 'ACCEPTED'
-                                          ? 'Friend'
+                                          ? isOnline
+                                              ? 'Online'
+                                              : 'Friend'
                                           : 'Request sent',
+                                  maxLines: 1,
                                   style: GoogleFonts.poppins(
-                                      color: Colors.white54, fontSize: 11),
+                                    color: isOnline
+                                        ? Colors.greenAccent
+                                        : Colors.white54,
+                                    fontSize: 11,
+                                  ),
                                 ),
                                 trailing: incoming
                                     ? Row(
@@ -407,46 +416,14 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               IconButton(
-                                                tooltip: 'Chat',
-                                                onPressed: () =>
-                                                    FriendChatDialog.show(
-                                                  context,
-                                                  friendId: friend['playerId']
-                                                          ?.toString() ??
-                                                      '',
-                                                  friendName:
-                                                      friend['displayName']
-                                                              ?.toString() ??
-                                                          'Player',
-                                                ),
-                                                icon: const Icon(
-                                                  Icons
-                                                      .chat_bubble_outline_rounded,
-                                                  color: AppColors.gold,
-                                                ),
-                                              ),
-                                              IconButton(
-                                                tooltip: isOnline
-                                                    ? 'Play a game with this buddy'
-                                                    : 'Buddy is offline',
-                                                onPressed: isOnline
-                                                    ? () => _requestBuddyGame(
-                                                        friend)
-                                                    : null,
-                                                icon: Icon(
-                                                  Icons.sports_esports_rounded,
-                                                  color: isOnline
-                                                      ? Colors.greenAccent
-                                                      : Colors.white24,
-                                                ),
-                                              ),
-                                              IconButton(
-                                                tooltip:
-                                                    currentVoiceCall?.peerId ==
-                                                            friend['playerId']
-                                                                ?.toString()
-                                                        ? 'End voice call'
-                                                        : 'Call buddy',
+                                                tooltip: currentVoiceCall
+                                                            ?.peerId ==
+                                                        friend['playerId']
+                                                            ?.toString()
+                                                    ? 'End voice call'
+                                                    : currentVoiceCall == null
+                                                        ? 'Call buddy'
+                                                        : 'Finish the current call first',
                                                 onPressed: () {
                                                   if (currentVoiceCall
                                                           ?.peerId ==
@@ -456,7 +433,8 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                         .read(
                                                             voiceCallServiceProvider)
                                                         .endCall();
-                                                  } else {
+                                                  } else if (currentVoiceCall ==
+                                                      null) {
                                                     _callFriend(friend);
                                                   }
                                                 },
@@ -471,34 +449,65 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                           friend['playerId']
                                                               ?.toString()
                                                       ? Colors.redAccent
-                                                      : Colors.greenAccent,
-                                                ),
-                                              ),
-                                              IconButton(
-                                                tooltip: currentVoiceCall == null
-                                                    ? 'Video call buddy'
-                                                    : 'Finish the current call first',
-                                                onPressed: currentVoiceCall == null
-                                                    ? () => _callFriend(
-                                                          friend,
-                                                          withVideo: true,
-                                                        )
-                                                    : null,
-                                                icon: Icon(
-                                                  Icons.videocam_rounded,
-                                                  color: currentVoiceCall == null
-                                                      ? Colors.greenAccent
-                                                      : Colors.white24,
+                                                      : currentVoiceCall == null
+                                                          ? Colors.greenAccent
+                                                          : Colors.white24,
                                                 ),
                                               ),
                                               PopupMenuButton<String>(
                                                 tooltip: 'Friend options',
                                                 onSelected: (value) {
-                                                  if (value == 'remove') {
-                                                    _remove(friendshipId);
+                                                  switch (value) {
+                                                    case 'chat':
+                                                      FriendChatDialog.show(
+                                                        context,
+                                                        friendId: friend[
+                                                                    'playerId']
+                                                                ?.toString() ??
+                                                            '',
+                                                        friendName: friend[
+                                                                    'displayName']
+                                                                ?.toString() ??
+                                                            'Player',
+                                                      );
+                                                      break;
+                                                    case 'game':
+                                                      _requestBuddyGame(friend);
+                                                      break;
+                                                    case 'video':
+                                                      if (currentVoiceCall ==
+                                                          null) {
+                                                        _callFriend(friend,
+                                                            withVideo: true);
+                                                      } else {
+                                                        _showMessage(
+                                                            'Finish the current call first.');
+                                                      }
+                                                      break;
+                                                    case 'remove':
+                                                      _remove(friendshipId);
+                                                      break;
                                                   }
                                                 },
-                                                itemBuilder: (_) => const [
+                                                itemBuilder: (_) => [
+                                                  const PopupMenuItem(
+                                                    value: 'chat',
+                                                    child: Text('Open chat'),
+                                                  ),
+                                                  PopupMenuItem(
+                                                    value: 'game',
+                                                    enabled: isOnline,
+                                                    child: Text(isOnline
+                                                        ? 'Play a game'
+                                                        : 'Buddy is offline'),
+                                                  ),
+                                                  PopupMenuItem(
+                                                    value: 'video',
+                                                    enabled: currentVoiceCall ==
+                                                        null,
+                                                    child: Text(
+                                                        'Start video call'),
+                                                  ),
                                                   PopupMenuItem(
                                                     value: 'remove',
                                                     child:

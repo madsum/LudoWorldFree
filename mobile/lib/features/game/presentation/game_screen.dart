@@ -1580,9 +1580,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   Future<void> _chooseVoiceCallTarget(
     List<PlayerModel> players,
-    GameNotifier gameNotifier,
-    {bool withVideo = false},
-  ) async {
+    GameNotifier gameNotifier, {
+    bool withVideo = false,
+  }) async {
     final localPlayerId = gameNotifier.onlineLocalPlayerId;
     if (localPlayerId == null || !gameNotifier.isOnlineMode) return;
     if (ref.read(voiceCallServiceProvider).call != null) {

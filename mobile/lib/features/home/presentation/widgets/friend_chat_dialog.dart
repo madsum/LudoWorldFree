@@ -369,8 +369,8 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
                     IconButton(
                       tooltip: 'Start voice call',
                       onPressed: () => _startVoiceCall(),
-                      icon: const Icon(Icons.call_rounded,
-                          color: AppColors.gold),
+                      icon:
+                          const Icon(Icons.call_rounded, color: AppColors.gold),
                     ),
                     IconButton(
                       tooltip: 'Start video call',

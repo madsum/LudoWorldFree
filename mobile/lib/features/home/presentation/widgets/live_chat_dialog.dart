@@ -52,12 +52,27 @@ class LiveChatDialog extends StatelessWidget {
                 indicatorColor: AppColors.gold,
                 labelColor: AppColors.gold,
                 unselectedLabelColor: Colors.white60,
+                labelPadding: EdgeInsets.symmetric(horizontal: 2),
+                labelStyle: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.1,
+                ),
+                unselectedLabelStyle: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.1,
+                ),
                 tabs: [
-                  Tab(icon: Icon(Icons.people_alt_rounded), text: 'FRIENDS'),
                   Tab(
-                      icon: Icon(Icons.emoji_events_rounded),
+                      icon: Icon(Icons.people_alt_rounded, size: 21),
+                      text: 'FRIENDS'),
+                  Tab(
+                      icon: Icon(Icons.emoji_events_rounded, size: 21),
                       text: 'LEADERBOARD'),
-                  Tab(icon: Icon(Icons.flag_rounded), text: 'DAILY GOALS'),
+                  Tab(
+                      icon: Icon(Icons.flag_rounded, size: 21),
+                      text: 'DAILY GOALS'),
                 ],
               ),
               const Expanded(

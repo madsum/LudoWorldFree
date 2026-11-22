@@ -78,12 +78,11 @@ class _IncomingVoiceCallDialogState extends State<IncomingVoiceCallDialog>
           '${call.withVideo ? 'VIDEO' : 'VOICE'} CALLING',
         VoiceCallPhase.connecting =>
           'CONNECTING ${call.withVideo ? 'VIDEO' : 'AUDIO'}…',
-        VoiceCallPhase.connected =>
-          call.muted
-              ? 'MICROPHONE MUTED'
-              : call.withVideo
-                  ? 'VIDEO CALL'
-                  : 'VOICE CALL',
+        VoiceCallPhase.connected => call.muted
+            ? 'MICROPHONE MUTED'
+            : call.withVideo
+                ? 'VIDEO CALL'
+                : 'VOICE CALL',
       };
 
   String _initials(String name) => name
@@ -164,7 +163,9 @@ class _IncomingVoiceCallDialogState extends State<IncomingVoiceCallDialog>
                       color: Colors.white70,
                     ),
                     IconButton(
-                      tooltip: _maximized ? 'Restore call window' : 'Maximize call window',
+                      tooltip: _maximized
+                          ? 'Restore call window'
+                          : 'Maximize call window',
                       visualDensity: VisualDensity.compact,
                       onPressed: () => setState(() => _maximized = !_maximized),
                       icon: Icon(_maximized
@@ -583,8 +584,8 @@ class _VoiceVideoCallSurfaceState extends State<_VoiceVideoCallSurface> {
                           child: RTCVideoView(
                             _localRenderer,
                             mirror: true,
-                            objectFit:
-                                RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                            objectFit: RTCVideoViewObjectFit
+                                .RTCVideoViewObjectFitCover,
                           ),
                         ),
                       ),
