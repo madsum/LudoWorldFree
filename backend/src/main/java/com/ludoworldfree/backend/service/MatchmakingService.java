@@ -31,6 +31,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -739,6 +740,14 @@ public class MatchmakingService {
     @Transactional(readOnly = true)
     public RoomSnapshot getRoomSnapshot(String roomId) {
         return roomRepository.findById(roomId).map(MatchmakingService::snapshot).orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, RoomSnapshot> getRoomSnapshots(Collection<String> roomIds) {
+        if (roomIds == null || roomIds.isEmpty()) return Map.of();
+        return roomRepository.findAllByRoomIdIn(roomIds).stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        OnlineMatchRoom::getRoomId, MatchmakingService::snapshot));
     }
 
     @Transactional(readOnly = true)

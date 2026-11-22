@@ -6,6 +6,7 @@ import com.ludoworldfree.backend.service.MatchmakingService;
 import com.ludoworldfree.backend.service.MatchmakingService.RoomSnapshot;
 import com.ludoworldfree.backend.service.OnlineMatchChatService;
 import com.ludoworldfree.backend.model.OnlineMatchStateEvent;
+import com.ludoworldfree.backend.realtime.DatabaseRealtimeEventBus;
 import com.ludoworldfree.backend.util.PlayerIdResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,14 +40,17 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final MatchmakingService matchmakingService;
     private final OnlineMatchChatService onlineMatchChatService;
+    private final DatabaseRealtimeEventBus realtimeEvents;
     private final Map<String, LocalRoom> localRooms = new ConcurrentHashMap<>();
 
     public GameRoomWebSocketHandler(ObjectMapper objectMapper,
                                     MatchmakingService matchmakingService,
-                                    OnlineMatchChatService onlineMatchChatService) {
+                                    OnlineMatchChatService onlineMatchChatService,
+                                    DatabaseRealtimeEventBus realtimeEvents) {
         this.objectMapper = objectMapper;
         this.matchmakingService = matchmakingService;
         this.onlineMatchChatService = onlineMatchChatService;
+        this.realtimeEvents = realtimeEvents;
     }
 
     @Override
@@ -188,7 +192,6 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
             LocalConnection sender = localRoom.sessions.get(playerId);
             if (sender == null || sender.session != session) return;
             onlineMatchChatService.save(localRoom.id, playerId, text);
-            relayChatEvents(localRoom);
         }
     }
 
@@ -199,7 +202,6 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
             LocalConnection sender = localRoom.sessions.get(playerId);
             if (sender == null || sender.session != session) return;
             onlineMatchChatService.saveTypingStatus(localRoom.id, playerId, isTyping);
-            relayChatEvents(localRoom);
         }
     }
 
@@ -215,14 +217,12 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         synchronized (localRoom) {
             LocalConnection sender = localRoom.sessions.get(playerId);
             if (sender == null || sender.session != session) return;
-            LocalConnection target = localRoom.sessions.get(targetPlayerId);
-            if (target == null) return;
             Map<String, Object> reaction = Map.of(
                     "type", "emoji_reaction",
                     "playerId", playerId.toString(),
                     "targetPlayerId", targetPlayerId.toString(),
                     "emoji", emoji);
-            send(target.session, reaction);
+            sendPlayer(localRoom, targetPlayerId, reaction);
         }
     }
 
@@ -251,7 +251,6 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                         "expiresAt", System.currentTimeMillis() + 60_000));
                 onlineMatchChatService.saveControlEvent(localRoom.id, playerId, request);
                 send(sender.session, Map.of("type", "dice_timer_stop_request_sent"));
-                relayChatEvents(localRoom);
             } catch (Exception exception) {
                 sendError(session, "DICE_TIMER_REQUEST_FAILED",
                         "The dice timer stop request could not be sent.");
@@ -280,7 +279,6 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                         "accept", payload.path("accept").asBoolean(),
                         "expiresAt", expiresAt));
                 onlineMatchChatService.saveControlEvent(localRoom.id, playerId, response);
-                relayChatEvents(localRoom);
             } catch (Exception exception) {
                 sendError(session, "DICE_TIMER_RESPONSE_FAILED",
                         "The dice timer stop response could not be sent.");
@@ -302,9 +300,8 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
 
         synchronized (localRoom) {
             LocalConnection sender = localRoom.sessions.get(playerId);
-            LocalConnection recipient = localRoom.sessions.get(targetPlayerId);
-            if (sender == null || sender.session != session || recipient == null) return;
-            send(recipient.session, Map.of(
+            if (sender == null || sender.session != session) return;
+            sendPlayer(localRoom, targetPlayerId, Map.of(
                     "type", "bell_alert",
                     "senderPlayerId", playerId.toString(),
                     "targetPlayerId", targetPlayerId.toString(),
@@ -459,6 +456,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
 
     private void publishGameStateToLocal(LocalRoom localRoom, UUID senderId,
                                          long revision, String stateJson) {
+        if (stateJson == null) return;
         synchronized (localRoom) {
             for (LocalConnection connection : localRoom.sessions.values()) {
                 if (revision <= connection.lastRevision) continue;
@@ -467,15 +465,23 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                 sendState(connection.session, senderId, revision, stateJson);
             }
         }
+        realtimeEvents.publish(Map.of(
+                "route", "game_room",
+                "kind", "state",
+                "roomId", localRoom.id,
+                "playerId", senderId == null ? "" : senderId.toString(),
+                "revision", revision,
+                "stateJson", stateJson));
     }
 
-    @Scheduled(fixedDelayString = "${game.rooms.poll-interval-ms:250}")
+    @Scheduled(fixedDelayString = "${game.rooms.poll-interval-ms:5000}")
     public void relaySharedRoomState() {
         log.debug("relaySharedRoomState running, active rooms: {}", localRooms.size());
+        Map<String, RoomSnapshot> snapshots = matchmakingService.getRoomSnapshots(localRooms.keySet());
         for (Map.Entry<String, LocalRoom> entry : new ArrayList<>(localRooms.entrySet())) {
             String roomId = entry.getKey();
             LocalRoom localRoom = entry.getValue();
-            RoomSnapshot snapshot = matchmakingService.getRoomSnapshot(roomId);
+            RoomSnapshot snapshot = snapshots.get(roomId);
             if (snapshot == null || snapshot.status() ==
                     com.ludoworldfree.backend.model.OnlineMatchRoom.Status.CANCELLED) {
                 closeLocalRoom(roomId, localRoom, Map.of(
@@ -533,38 +539,41 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    @Scheduled(fixedDelayString = "${game.chat.poll-interval-ms:100}")
+    @Scheduled(fixedDelayString = "${game.chat.poll-interval-ms:5000}")
     public void relaySharedChatEvents() {
-        for (LocalRoom localRoom : new ArrayList<>(localRooms.values())) {
-            synchronized (localRoom) {
-                if (!localRoom.sessions.isEmpty()) relayChatEvents(localRoom);
+        List<LocalRoom> rooms = new ArrayList<>(localRooms.values());
+        if (rooms.isEmpty()) return;
+        long minimumEventId = rooms.stream().mapToLong(room -> room.lastChatEventId).min().orElse(0);
+        List<OnlineMatchChatService.ChatEvent> events = onlineMatchChatService.after(
+                rooms.stream().map(room -> room.id).toList(), minimumEventId);
+        for (OnlineMatchChatService.ChatEvent event : events) {
+            LocalRoom room = localRooms.get(event.roomId());
+            if (room == null) continue;
+            synchronized (room) {
+                if (event.id() <= room.lastChatEventId) continue;
+                room.lastChatEventId = event.id();
+                relayChatEvent(room, event);
             }
         }
     }
 
-    private void relayChatEvents(LocalRoom localRoom) {
-        List<OnlineMatchChatService.ChatEvent> events = onlineMatchChatService.after(
-                localRoom.id, localRoom.lastChatEventId);
-        for (OnlineMatchChatService.ChatEvent event : events) {
-            localRoom.lastChatEventId = event.id();
-            if (event.eventType().startsWith("TYPING_")) {
-                broadcast(localRoom, Map.of(
-                        "type", "chat_typing",
-                        "playerId", event.playerId().toString(),
-                        "isTyping", "TYPING_START".equals(event.eventType())));
-                continue;
-            }
-            if ("GAME_CONTROL".equals(event.eventType())) {
-                relayGameControlEvent(localRoom, event);
-                continue;
-            }
-            Map<String, Object> chat = Map.of(
-                    "type", "chat",
+    private void relayChatEvent(LocalRoom localRoom, OnlineMatchChatService.ChatEvent event) {
+        if (event.eventType().startsWith("TYPING_")) {
+            broadcastLocal(localRoom, Map.of(
+                    "type", "chat_typing",
                     "playerId", event.playerId().toString(),
-                    "text", event.text(),
-                    "sentAt", event.createdAt().toEpochMilli());
-            broadcast(localRoom, chat);
+                    "isTyping", "TYPING_START".equals(event.eventType())));
+            return;
         }
+        if ("GAME_CONTROL".equals(event.eventType())) {
+            relayGameControlEvent(localRoom, event);
+            return;
+        }
+        broadcastLocal(localRoom, Map.of(
+                "type", "chat",
+                "playerId", event.playerId().toString(),
+                "text", event.text(),
+                "sentAt", event.createdAt().toEpochMilli()));
     }
 
     private void relayGameControlEvent(LocalRoom localRoom,
@@ -588,7 +597,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
                         ? "dice_timer_stop_accepted" : "dice_timer_stop_declined");
                 response.put("responderPlayerId", event.playerId().toString());
                 if (accepted) {
-                    broadcast(localRoom, response);
+                    broadcastLocal(localRoom, response);
                 } else {
                     UUID requesterId = parsePlayerId(
                             payload.path("requesterPlayerId").asText(null));
@@ -683,7 +692,84 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
     }
 
     private void broadcast(LocalRoom room, Map<String, Object> payload) {
+        broadcastLocal(room, payload);
+        realtimeEvents.publish(Map.of(
+                "route", "game_room",
+                "kind", "broadcast",
+                "roomId", room.id,
+                "payload", payload));
+    }
+
+    private void broadcastLocal(LocalRoom room, Map<String, Object> payload) {
         for (LocalConnection connection : room.sessions.values()) send(connection.session, payload);
+    }
+
+    private void sendPlayer(LocalRoom room, UUID playerId, Map<String, Object> payload) {
+        LocalConnection local = room.sessions.get(playerId);
+        if (local != null) send(local.session, payload);
+        realtimeEvents.publish(Map.of(
+                "route", "game_room",
+                "kind", "target",
+                "roomId", room.id,
+                "targetPlayerId", playerId.toString(),
+                "payload", payload));
+    }
+
+    public void routeRealtimeEvent(JsonNode event) {
+        String roomId = event.path("roomId").asText("");
+        LocalRoom room = localRooms.get(roomId);
+        if (room == null) return;
+        String kind = event.path("kind").asText("broadcast");
+        if ("room_chat".equals(kind)) {
+            long eventId = event.path("eventId").asLong(0);
+            synchronized (room) {
+                if (eventId <= room.lastChatEventId) return;
+                room.lastChatEventId = eventId;
+                UUID playerId = parsePlayerId(event.path("playerId").asText(null));
+                if (playerId == null) return;
+                relayChatEvent(room, new OnlineMatchChatService.ChatEvent(
+                        eventId, roomId, playerId, event.path("text").asText(""),
+                        event.path("eventType").asText("MESSAGE"),
+                        java.time.Instant.ofEpochMilli(event.path("createdAt").asLong())));
+            }
+            return;
+        }
+        if (realtimeEvents.instanceId().equals(event.path("sourceInstanceId").asText())) return;
+        switch (kind) {
+            case "state" -> {
+                UUID senderId = parsePlayerId(event.path("playerId").asText(null));
+                long revision = event.path("revision").asLong(-1);
+                String stateJson = event.path("stateJson").asText(null);
+                if (stateJson == null) return;
+                synchronized (room) {
+                    for (LocalConnection connection : room.sessions.values()) {
+                        if (revision <= connection.lastRevision) continue;
+                        connection.lastRevision = revision;
+                        if (!connection.playerId.equals(senderId)) {
+                            sendState(connection.session, senderId, revision, stateJson);
+                        }
+                    }
+                }
+            }
+            case "target" -> {
+                UUID targetId = parsePlayerId(event.path("targetPlayerId").asText(null));
+                if (targetId == null || !event.path("payload").isObject()) return;
+                LocalConnection recipient = room.sessions.get(targetId);
+                if (recipient != null) {
+                    send(recipient.session, objectMapper.convertValue(event.path("payload"), Map.class));
+                }
+            }
+            default -> {
+                if (!event.path("payload").isObject()) return;
+                Map<String, Object> payload = objectMapper.convertValue(event.path("payload"), Map.class);
+                if ("room_ready".equals(payload.get("type"))) room.readyNotified = true;
+                if ("match_finished".equals(payload.get("type"))) {
+                    closeLocalRoom(roomId, room, payload);
+                } else {
+                    broadcastLocal(room, payload);
+                }
+            }
+        }
     }
 
     private void send(WebSocketSession session, Map<String, Object> payload) {

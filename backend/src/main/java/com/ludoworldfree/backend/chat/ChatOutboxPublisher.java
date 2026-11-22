@@ -1,7 +1,9 @@
 package com.ludoworldfree.backend.chat;
 
 import java.util.List;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import java.util.Map;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ludoworldfree.backend.realtime.DatabaseRealtimeEventBus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -12,11 +14,14 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 @ConditionalOnProperty(prefix = "chat.outbox", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class ChatOutboxPublisher {
     private final JdbcTemplate jdbc;
-    private final StringRedisTemplate redis;
+    private final ObjectMapper objectMapper;
+    private final DatabaseRealtimeEventBus realtimeEvents;
 
-    public ChatOutboxPublisher(JdbcTemplate jdbc, StringRedisTemplate redis) {
+    public ChatOutboxPublisher(JdbcTemplate jdbc, ObjectMapper objectMapper,
+                               DatabaseRealtimeEventBus realtimeEvents) {
         this.jdbc = jdbc;
-        this.redis = redis;
+        this.objectMapper = objectMapper;
+        this.realtimeEvents = realtimeEvents;
     }
 
     @Scheduled(fixedDelayString = "${chat.outbox.poll-millis:100}")
@@ -32,7 +37,12 @@ public class ChatOutboxPublisher {
                 """, (rs, rowNum) -> new OutboxEvent(
                 rs.getLong("id"), rs.getString("event_json")));
         for (OutboxEvent event : events) {
-            redis.convertAndSend(ChatEventPublisher.CHANNEL, event.json());
+            try {
+                realtimeEvents.publish(Map.of("route", "chat",
+                        "payload", objectMapper.readValue(event.json(), Map.class)));
+            } catch (Exception exception) {
+                throw new IllegalStateException("Chat outbox event could not be published.", exception);
+            }
             jdbc.update("""
                     UPDATE chat_outbox
                     SET published_at = CURRENT_TIMESTAMP, attempts = attempts + 1

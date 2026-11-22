@@ -68,7 +68,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         connections.put(session.getId(), connection);
         sessionsByUser.computeIfAbsent(userId, ignored -> ConcurrentHashMap.newKeySet())
                 .add(session.getId());
-        presenceService.heartbeat(userId, session.getId());
+        presenceService.connected(userId, "chat:" + session.getId());
         send(session.getId(), Map.of("type", "connected", "userId", userId.toString(),
                 "serverTime", Instant.now().toString()));
     }
@@ -143,7 +143,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     }
 
     private void heartbeat(WebSocketSession session, Connection connection) {
-        presenceService.heartbeat(connection.userId, session.getId());
+        presenceService.heartbeat(connection.userId, "chat:" + session.getId());
         send(session.getId(), Map.of("type", "heartbeat_ack", "serverTime", Instant.now().toString()));
     }
 
@@ -207,7 +207,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 "isTyping", isTyping,
                 "expiresAt", Instant.now().plusSeconds(5).toEpochMilli());
         // Typing is deliberately ephemeral and never written to PostgreSQL.
-        presenceService.heartbeat(connection.userId, session.getId());
+        presenceService.heartbeat(connection.userId, "chat:" + session.getId());
         eventPublisher.publishEphemeral(event);
     }
 
@@ -220,7 +220,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             if (sessions.isEmpty()) sessionsByUser.remove(connection.userId, sessions);
         }
         try {
-            presenceService.disconnected(connection.userId, sessionId);
+            presenceService.disconnected(connection.userId, "chat:" + sessionId);
         } catch (Exception exception) {
             log.warn("Could not update chat presence for {}: {}",
                     connection.userId, exception.getMessage());

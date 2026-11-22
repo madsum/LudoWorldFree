@@ -2,8 +2,8 @@ package com.ludoworldfree.backend.chat;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ludoworldfree.backend.realtime.DatabaseRealtimeEventBus;
 import java.util.Map;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -12,13 +12,13 @@ public class ChatEventPublisher {
     public static final String CHANNEL = "ludoworld:chat:events:v1";
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
-    private final StringRedisTemplate redis;
+    private final DatabaseRealtimeEventBus realtimeEvents;
 
     public ChatEventPublisher(JdbcTemplate jdbc, ObjectMapper objectMapper,
-                              StringRedisTemplate redis) {
+                              DatabaseRealtimeEventBus realtimeEvents) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
-        this.redis = redis;
+        this.realtimeEvents = realtimeEvents;
     }
 
     public void enqueue(Map<String, Object> event) {
@@ -31,10 +31,6 @@ public class ChatEventPublisher {
     }
 
     public void publishEphemeral(Map<String, Object> event) {
-        try {
-            redis.convertAndSend(CHANNEL, objectMapper.writeValueAsString(event));
-        } catch (JsonProcessingException exception) {
-            throw new IllegalArgumentException("Realtime event could not be serialized.", exception);
-        }
+        realtimeEvents.publish(Map.of("route", "chat", "payload", event));
     }
 }

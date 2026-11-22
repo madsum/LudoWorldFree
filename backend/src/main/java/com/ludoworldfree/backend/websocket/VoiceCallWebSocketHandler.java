@@ -8,9 +8,10 @@ import com.ludoworldfree.backend.repository.FriendshipRepository;
 import com.ludoworldfree.backend.repository.PlayerProfileRepository;
 import com.ludoworldfree.backend.util.PlayerIdResolver;
 import com.ludoworldfree.backend.chat.ChatEventPublisher;
+import com.ludoworldfree.backend.chat.ChatPresenceService;
+import com.ludoworldfree.backend.realtime.DatabaseRealtimeEventBus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -22,7 +23,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
 import java.net.URI;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -32,32 +32,29 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @Component
 public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(VoiceCallWebSocketHandler.class);
     private static final int MAX_MESSAGE_CHARS = 32_000;
     private static final String PLAYER_ATTRIBUTE = "voicePlayerId";
-    private static final String PRESENCE_PREFIX = "ludoworld:voice:online:";
-    private static final Duration PRESENCE_TTL = Duration.ofSeconds(45);
-
     private final ObjectMapper objectMapper;
     private final FriendshipRepository friendshipRepository;
     private final PlayerProfileRepository profileRepository;
-    private final StringRedisTemplate redis;
-    private final String instanceId = UUID.randomUUID().toString();
-    private final AtomicBoolean redisUnavailableLogged = new AtomicBoolean();
+    private final DatabaseRealtimeEventBus realtimeEvents;
+    private final ChatPresenceService presenceService;
     private final Map<UUID, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
     public VoiceCallWebSocketHandler(ObjectMapper objectMapper,
                                      FriendshipRepository friendshipRepository,
                                      PlayerProfileRepository profileRepository,
-                                     StringRedisTemplate redis) {
+                                     DatabaseRealtimeEventBus realtimeEvents,
+                                     ChatPresenceService presenceService) {
         this.objectMapper = objectMapper;
         this.friendshipRepository = friendshipRepository;
         this.profileRepository = profileRepository;
-        this.redis = redis;
+        this.realtimeEvents = realtimeEvents;
+        this.presenceService = presenceService;
     }
 
     public boolean isOnline(UUID playerId) {
@@ -69,28 +66,13 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
     public Map<UUID, Boolean> onlineStatuses(Collection<UUID> playerIds) {
         Set<UUID> uniqueIds = new LinkedHashSet<>(playerIds);
         if (uniqueIds.isEmpty()) return Map.of();
-        List<UUID> orderedIds = new ArrayList<>(uniqueIds);
-        List<String> keys = orderedIds.stream().map(this::presenceKey).toList();
-        try {
-            List<String> owners = redis.opsForValue().multiGet(keys);
-            Map<UUID, Boolean> statuses = new LinkedHashMap<>();
-            for (int index = 0; index < orderedIds.size(); index++) {
-                WebSocketSession localSession = sessions.get(orderedIds.get(index));
-                statuses.put(orderedIds.get(index),
-                        (owners != null && owners.get(index) != null)
-                                || (localSession != null && localSession.isOpen()));
-            }
-            redisUnavailableLogged.set(false);
-            return statuses;
-        } catch (RuntimeException exception) {
-            logRedisUnavailable(exception);
-            Map<UUID, Boolean> statuses = new LinkedHashMap<>();
-            for (UUID playerId : orderedIds) {
-                WebSocketSession session = sessions.get(playerId);
-                statuses.put(playerId, session != null && session.isOpen());
-            }
-            return statuses;
+        Map<UUID, Boolean> statuses = new LinkedHashMap<>(
+                presenceService.onlineStatuses(uniqueIds));
+        for (UUID playerId : uniqueIds) {
+            WebSocketSession session = sessions.get(playerId);
+            if (session != null && session.isOpen()) statuses.put(playerId, true);
         }
+        return statuses;
     }
 
     @Override
@@ -110,12 +92,7 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
         WebSocketSession decorated = new ConcurrentWebSocketSessionDecorator(
                 session, 10_000, 64_000);
         WebSocketSession previous = sessions.put(playerId, decorated);
-        try {
-            redis.opsForValue().set(presenceKey(playerId), sessionMarker(decorated), PRESENCE_TTL);
-            redisUnavailableLogged.set(false);
-        } catch (RuntimeException exception) {
-            logRedisUnavailable(exception);
-        }
+        presenceService.connected(playerId, "voice:" + session.getId());
         if (previous != null && previous.isOpen()) previous.close(CloseStatus.NORMAL);
         send(decorated, Map.of("type", "voice_ready", "playerId", playerId.toString()));
     }
@@ -139,6 +116,7 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
         String type = payload.path("type").asText("");
         if ("voice_heartbeat".equals(type)) {
             if (isCurrentSession(session, senderId)) {
+                presenceService.heartbeat(senderId, "voice:" + session.getId());
                 send(session, Map.of("type", "voice_heartbeat_ack"));
             }
             return;
@@ -201,93 +179,43 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
         publishVoiceEvent(session, relayed);
     }
 
-    public void routeRedisEvent(JsonNode event) {
+    public void routeRealtimeEvent(JsonNode event) {
         UUID targetId = parsePlayerId(event.path("targetPlayerId").asText(null));
         if (targetId == null) return;
         WebSocketSession recipient = sessions.get(targetId);
         if (recipient == null || !recipient.isOpen()) return;
-        try {
-            if (!sessionMarker(recipient).equals(
-                    redis.opsForValue().get(presenceKey(targetId)))) return;
-        } catch (RuntimeException exception) {
-            log.debug("Could not verify voice-session owner during routing: {}",
-                    exception.getMessage());
-        }
         send(recipient, objectMapper.convertValue(event, Map.class));
     }
 
     private boolean publishVoiceEvent(WebSocketSession sender,
                                       Map<String, Object> voiceEvent) throws IOException {
         // On a single-instance deployment, route locally without waiting for or depending
-        // on Redis. Redis remains the fallback for deployments with multiple instances.
+        // on the database event channel. Multi-instance deployments fan out through PostgreSQL.
         if (routeLocally(voiceEvent)) return true;
         try {
-            String envelope = objectMapper.writeValueAsString(Map.of(
+            realtimeEvents.publish(Map.of(
                     "route", "voice",
                     "payload", voiceEvent));
-            Long subscriberCount = redis.convertAndSend(ChatEventPublisher.CHANNEL, envelope);
-            if (subscriberCount == null || subscriberCount == 0) {
-                sendError(sender, "VOICE_SIGNALING_UNAVAILABLE",
-                        "Call signaling has no active Redis route. Try again shortly.");
-                return false;
-            }
-            redisUnavailableLogged.set(false);
             return true;
         } catch (RuntimeException exception) {
-            logRedisUnavailable(exception);
+            log.warn("Could not publish voice event across instances: {}", exception.getMessage());
             sendError(sender, "VOICE_SIGNALING_UNAVAILABLE",
-                    "Cross-device calling needs the backend Redis connection. Try again shortly.");
+                    "Cross-device calling is temporarily unavailable. Try again shortly.");
             return false;
         }
     }
 
     @Scheduled(fixedDelayString = "${voice.presence.refresh-millis:15000}")
     public void refreshPresence() {
-        try {
-            sessions.forEach((playerId, session) -> {
-                if (!session.isOpen()) {
-                    removeSession(playerId, session);
-                    return;
-                }
-                String key = presenceKey(playerId);
-                String marker = sessionMarker(session);
-                String owner = redis.opsForValue().get(key);
-                if (owner == null) {
-                    redis.opsForValue().set(key, marker, PRESENCE_TTL);
-                } else if (marker.equals(owner)) {
-                    redis.expire(key, PRESENCE_TTL);
-                } else {
-                    try {
-                        session.close(CloseStatus.NORMAL);
-                    } catch (IOException exception) {
-                        log.debug("Could not close replaced voice session: {}", exception.getMessage());
-                    }
-                }
-            });
-            redisUnavailableLogged.set(false);
-        } catch (RuntimeException exception) {
-            logRedisUnavailable(exception);
-        }
+        sessions.forEach((playerId, session) -> {
+            if (!session.isOpen()) removeSession(playerId, session);
+        });
     }
 
     private void removeSession(UUID playerId, WebSocketSession session) {
         sessions.computeIfPresent(playerId, (ignored, active) ->
                 active.getId().equals(session.getId()) ? null : active);
-        String key = presenceKey(playerId);
-        String marker = sessionMarker(session);
-        try {
-            if (marker.equals(redis.opsForValue().get(key))) redis.delete(key);
-        } catch (RuntimeException exception) {
-            logRedisUnavailable(exception);
-        }
-    }
-
-    private String presenceKey(UUID playerId) {
-        return PRESENCE_PREFIX + playerId;
-    }
-
-    private String sessionMarker(WebSocketSession session) {
-        return instanceId + ":" + session.getId();
+        presenceService.disconnected(playerId, "voice:" + session.getId());
     }
 
     private boolean routeLocally(Map<String, Object> event) {
@@ -298,13 +226,6 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
         if (recipient == null || !recipient.isOpen()) return false;
         send(recipient, event);
         return true;
-    }
-
-    private void logRedisUnavailable(RuntimeException exception) {
-        if (redisUnavailableLogged.compareAndSet(false, true)) {
-            log.warn("Redis is unavailable; using same-instance voice fallback: {}",
-                    exception.getMessage());
-        }
     }
 
     @Override

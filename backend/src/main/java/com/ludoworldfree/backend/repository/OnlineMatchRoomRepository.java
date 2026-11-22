@@ -8,10 +8,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Collection;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface OnlineMatchRoomRepository extends JpaRepository<OnlineMatchRoom, String> {
+    List<OnlineMatchRoom> findAllByRoomIdIn(Collection<String> roomIds);
     @Query("select r from OnlineMatchRoom r where (r.playerAId = :playerId or r.playerBId = :playerId or r.playerCId = :playerId or r.playerDId = :playerId) and r.status in :statuses order by r.createdAt desc")
     List<OnlineMatchRoom> findActiveForPlayer(@Param("playerId") UUID playerId,
                                              @Param("statuses") List<OnlineMatchRoom.Status> statuses);
