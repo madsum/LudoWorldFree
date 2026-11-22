@@ -1429,12 +1429,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     diamonds: user?.diamonds ?? 0,
                                     onStartGame: (_) {},
                                     onStartOnlineMatch:
-                                        (playerCount, color, entryFee) {
+                                        (playerCount, color, entryFee, gameMode) {
                                       OnlineMatchmakingDialog.show(
                                         context,
                                         playerCount: playerCount,
                                         entryFee: entryFee,
                                         selectedColor: color,
+                                        gameMode: gameMode,
                                         onMatchFound:
                                             (players, roomId, playerId) {
                                           final gameController = ref.read(
@@ -1443,6 +1444,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                             roomId: roomId,
                                             playerId: playerId,
                                             selectedColor: color,
+                                            gameMode: gameMode,
                                             requestDiceRoll: ref
                                                 .read(webSocketServiceProvider)
                                                 .requestDiceRoll,

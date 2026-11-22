@@ -1,4 +1,5 @@
 import 'ludo_color.dart';
+import 'game_mode.dart';
 import '../game_engine.dart';
 import 'pawn_model.dart';
 import 'player_model.dart';
@@ -37,6 +38,7 @@ class PawnCaptureEvent {
 
 class GameState {
   final List<PlayerModel> players;
+  final GameMode gameMode;
   final String? localPlayerId;
   final int currentTurnIndex;
   final int? diceValue;
@@ -58,6 +60,7 @@ class GameState {
 
   const GameState({
     required this.players,
+    this.gameMode = GameMode.classic,
     this.localPlayerId,
     this.currentTurnIndex = 0,
     this.diceValue,
@@ -97,6 +100,7 @@ class GameState {
   }
 
   Map<String, dynamic> toJson() => {
+        'gameMode': gameMode.wireValue,
         'players': players.map(_playerToJson).toList(growable: false),
         'currentTurnIndex': currentTurnIndex,
         'diceValue': diceValue,
@@ -166,6 +170,7 @@ class GameState {
     final turnIndex = (json['currentTurnIndex'] as num?)?.toInt() ?? 0;
     return GameState(
       players: players,
+      gameMode: GameMode.fromWireValue(json['gameMode']),
       localPlayerId: localPlayerId,
       currentTurnIndex:
           players.isEmpty ? 0 : turnIndex.clamp(0, players.length - 1),
@@ -289,6 +294,7 @@ class GameState {
 
   GameState copyWith({
     List<PlayerModel>? players,
+    GameMode? gameMode,
     String? localPlayerId,
     bool clearLocalPlayerId = false,
     int? currentTurnIndex,
@@ -313,6 +319,7 @@ class GameState {
   }) {
     return GameState(
       players: players ?? this.players,
+      gameMode: gameMode ?? this.gameMode,
       localPlayerId:
           clearLocalPlayerId ? null : (localPlayerId ?? this.localPlayerId),
       currentTurnIndex: currentTurnIndex ?? this.currentTurnIndex,

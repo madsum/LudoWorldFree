@@ -12,6 +12,7 @@ public class MatchmakingRequestDto {
     private int playerCount = 2;
     private String selectedColor = "red";
     private String sessionId;
+    private String gameMode = "CLASSIC";
 
     public MatchmakingRequestDto() {}
 
@@ -42,4 +43,6 @@ public class MatchmakingRequestDto {
     public void setSelectedColor(String selectedColor) { this.selectedColor = selectedColor; }
     public String getSessionId() { return sessionId; }
     public void setSessionId(String sessionId) { this.sessionId = sessionId; }
+    public String getGameMode() { return gameMode; }
+    public void setGameMode(String gameMode) { this.gameMode = gameMode; }
 }

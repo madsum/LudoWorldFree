@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../domain/models/game_mode.dart';
 import '../../domain/models/ludo_color.dart';
 import '../../domain/models/player_model.dart';
 
@@ -15,8 +16,12 @@ class ModeConfigDialog extends StatefulWidget {
   final int coins;
   final int diamonds;
   final void Function(List<PlayerModel> players) onStartGame;
-  final void Function(int playerCount, LudoColor color, int entryFee)?
-      onStartOnlineMatch;
+  final void Function(
+    int playerCount,
+    LudoColor color,
+    int entryFee,
+    GameMode gameMode,
+  )? onStartOnlineMatch;
 
   const ModeConfigDialog({
     super.key,
@@ -45,8 +50,12 @@ class ModeConfigDialog extends StatefulWidget {
     int coins = 0,
     int diamonds = 0,
     required void Function(List<PlayerModel> players) onStartGame,
-    void Function(int playerCount, LudoColor color, int entryFee)?
-        onStartOnlineMatch,
+    void Function(
+      int playerCount,
+      LudoColor color,
+      int entryFee,
+      GameMode gameMode,
+    )? onStartOnlineMatch,
   }) {
     showDialog(
       context: context,
@@ -87,6 +96,7 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
   int _playerCount = 4; // 2 or 4 players
   LudoColor _selectedColor = LudoColor.red;
   int _selectedEntryFee = 250;
+  GameMode _selectedGameMode = GameMode.classic;
 
   List<PlayerModel> _buildPlayers() {
     final players = <PlayerModel>[];
@@ -209,7 +219,8 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
           ),
         ],
       ),
-      content: Column(
+      content: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -255,6 +266,65 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
               ),
             ],
           ),
+
+          if (widget.isOnline) ...[
+            const SizedBox(height: 16),
+            Text(
+              'SELECT GAME MODE',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: ChoiceChip(
+                    label: Center(
+                      child: Text(
+                        'CLASSIC',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    selected: _selectedGameMode == GameMode.classic,
+                    selectedColor: AppColors.gold,
+                    backgroundColor: AppColors.bgCard,
+                    labelStyle: TextStyle(
+                      color: _selectedGameMode == GameMode.classic
+                          ? Colors.black87
+                          : Colors.white,
+                    ),
+                    onSelected: (_) =>
+                        setState(() => _selectedGameMode = GameMode.classic),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ChoiceChip(
+                    label: Center(
+                      child: Text(
+                        'FIRST KILL WINS',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    selected: _selectedGameMode == GameMode.firstKill,
+                    selectedColor: AppColors.gold,
+                    backgroundColor: AppColors.bgCard,
+                    labelStyle: TextStyle(
+                      color: _selectedGameMode == GameMode.firstKill
+                          ? Colors.black87
+                          : Colors.white,
+                    ),
+                    onSelected: (_) => setState(
+                      () => _selectedGameMode = GameMode.firstKill,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
 
           if (widget.isOnline) ...[
             const SizedBox(height: 16),
@@ -353,7 +423,8 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
               }).toList(),
             ),
           ],
-        ],
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -375,6 +446,7 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
                 _playerCount,
                 _selectedColor,
                 _selectedEntryFee,
+                _selectedGameMode,
               );
             } else {
               widget.onStartGame(_buildPlayers());

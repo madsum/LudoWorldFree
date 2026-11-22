@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/dice_randomizer.dart';
 import '../../domain/game_engine.dart';
 import '../../domain/models/game_state.dart';
+import '../../domain/models/game_mode.dart';
 import '../../domain/models/ludo_color.dart';
 import '../../domain/models/pawn_model.dart';
 import '../../domain/models/player_model.dart';
@@ -42,6 +43,7 @@ class GameNotifier extends StateNotifier<GameState> {
   String? _onlineRoomId;
   String? _onlineLocalPlayerId;
   LudoColor? _onlineSelectedColor;
+  GameMode _onlineGameMode = GameMode.classic;
   Map<String, LudoColor> _onlineWireColorByPlayerId = const {};
   Map<String, String> _onlineViewColorByWireName = const {};
   Map<String, String> _onlineWireColorByViewName = const {};
@@ -65,11 +67,13 @@ class GameNotifier extends StateNotifier<GameState> {
     required String roomId,
     required String playerId,
     required LudoColor selectedColor,
+    GameMode gameMode = GameMode.classic,
     required Future<int> Function(int rollOpportunityId) requestDiceRoll,
   }) {
     _onlineRoomId = roomId;
     _onlineLocalPlayerId = playerId;
     _onlineSelectedColor = selectedColor;
+    _onlineGameMode = gameMode;
     _onlineDiceRoller = requestDiceRoll;
     _lastOnlineStateRevision = 0;
     state = state.copyWith(localPlayerId: playerId);
@@ -80,6 +84,7 @@ class GameNotifier extends StateNotifier<GameState> {
     _onlineLocalPlayerId = null;
     _onlineDiceRoller = null;
     _onlineSelectedColor = null;
+    _onlineGameMode = GameMode.classic;
     _onlineWireColorByPlayerId = const {};
     _onlineViewColorByWireName = const {};
     _onlineWireColorByViewName = const {};
@@ -270,6 +275,7 @@ class GameNotifier extends StateNotifier<GameState> {
     }
     state = GameState(
       players: freshPlayers,
+      gameMode: _onlineGameMode,
       localPlayerId: _onlineLocalPlayerId,
       currentTurnIndex: startingTurnIndex,
       turnPhase: GameTurnPhase.rollDice,
@@ -360,6 +366,7 @@ class GameNotifier extends StateNotifier<GameState> {
           .toList(growable: false);
       state = GameState(
         players: rollbackPlayers,
+        gameMode: state.gameMode,
         localPlayerId: _onlineLocalPlayerId,
         currentTurnIndex: snapshot?.currentTurnIndex ?? state.currentTurnIndex,
         diceValue: diceResult,
@@ -553,7 +560,18 @@ class GameNotifier extends StateNotifier<GameState> {
     // Check player completion / ranking
     final updatedCurrentPlayer =
         updatedPlayers.firstWhere((p) => p.color == player.color);
-    List<String> newWinnerIds = List.from(state.winnerIds);
+    final winsByFirstKill =
+        state.gameMode == GameMode.firstKill && capturedPawn != null;
+    if (winsByFirstKill) {
+      updatedPlayers = updatedPlayers
+          .map((winner) => winner.id == player.id
+              ? winner.copyWith(rank: 1)
+              : winner)
+          .toList(growable: false);
+    }
+    List<String> newWinnerIds = winsByFirstKill
+        ? [player.id]
+        : List.from(state.winnerIds);
     int? achievedRank;
 
     if (updatedCurrentPlayer.hasAllPawnsHome &&
@@ -569,9 +587,9 @@ class GameNotifier extends StateNotifier<GameState> {
 
     final activePlayerCount =
         updatedPlayers.where((candidate) => !candidate.isEliminated).length;
-    final isGameOver = updatedPlayers.length == 2
+    final isGameOver = winsByFirstKill || (updatedPlayers.length == 2
         ? newWinnerIds.isNotEmpty
-        : newWinnerIds.length >= activePlayerCount;
+        : newWinnerIds.length >= activePlayerCount);
     if (isGameOver && updatedPlayers.length == 2) {
       updatedPlayers = updatedPlayers
           .map((finishedPlayer) => finishedPlayer.rank == 0
@@ -580,8 +598,10 @@ class GameNotifier extends StateNotifier<GameState> {
           .toList();
     }
 
-    String statusMsg = capturedPawn != null
-        ? '${player.name} captured a token! Extra turn.'
+    String statusMsg = winsByFirstKill
+        ? '${player.name} captured a token and wins!'
+        : capturedPawn != null
+            ? '${player.name} captured a token! Extra turn.'
         : achievedRank != null
             ? '${player.name} takes rank $achievedRank!'
             : reachedHome
@@ -600,8 +620,9 @@ class GameNotifier extends StateNotifier<GameState> {
       lastCaptureEvent: captureEvent,
       clearLastCaptureEvent: captureEvent == null,
       winnerIds: newWinnerIds,
-      // Keep controls active until the winning pawn's move animation lands.
-      isGameOver: false,
+      // First-kill mode ends as soon as the capture is committed. Other win
+      // conditions wait for the move animation before declaring the result.
+      isGameOver: winsByFirstKill,
       statusMessage: statusMsg,
     );
 
@@ -625,8 +646,9 @@ class GameNotifier extends StateNotifier<GameState> {
       state = state.copyWith(
         isGameOver: true,
         turnPhase: GameTurnPhase.turnEnded,
-        statusMessage:
-            '${updatedPlayers.firstWhere((p) => p.id == newWinnerIds.first).name} wins!',
+        statusMessage: winsByFirstKill
+            ? '${player.name} wins by first capture!'
+            : '${updatedPlayers.firstWhere((p) => p.id == newWinnerIds.first).name} wins!',
       );
       _isTurnProcessing = false;
       _cancelTurnTimer();

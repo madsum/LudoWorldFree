@@ -12,6 +12,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/websocket_service.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
+import '../../../game/domain/models/game_mode.dart';
 import '../../../game/domain/models/ludo_color.dart';
 import '../../../game/domain/models/player_model.dart';
 
@@ -19,6 +20,7 @@ class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
   final int playerCount;
   final int entryFee;
   final LudoColor selectedColor;
+  final GameMode gameMode;
   final void Function(
     List<PlayerModel> players,
     String roomId,
@@ -30,6 +32,7 @@ class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
     required this.playerCount,
     required this.entryFee,
     required this.selectedColor,
+    this.gameMode = GameMode.classic,
     required this.onMatchFound,
   });
 
@@ -38,6 +41,7 @@ class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
     required int playerCount,
     required int entryFee,
     required LudoColor selectedColor,
+    GameMode gameMode = GameMode.classic,
     required void Function(
       List<PlayerModel> players,
       String roomId,
@@ -51,6 +55,7 @@ class OnlineMatchmakingDialog extends ConsumerStatefulWidget {
         playerCount: playerCount,
         entryFee: entryFee,
         selectedColor: selectedColor,
+        gameMode: gameMode,
         onMatchFound: onMatchFound,
       ),
     );
@@ -154,6 +159,7 @@ class _OnlineMatchmakingDialogState
       'entryFee': _selectedEntryFee,
       'playerCount': widget.playerCount,
       'selectedColor': widget.selectedColor.name,
+      'gameMode': widget.gameMode.wireValue,
       'sessionId': _matchmakingSessionId,
     };
 

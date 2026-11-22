@@ -123,12 +123,18 @@ public class MatchmakingService {
         if (!colors.contains(selectedColor)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose a valid player color.");
         }
+        String gameMode = request.getGameMode() == null
+                ? "CLASSIC" : request.getGameMode().strip().toUpperCase();
+        if (!Set.of("CLASSIC", "FIRST_KILL").contains(gameMode)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose a valid online game mode.");
+        }
 
         OnlineMatchRoom activeRoom = null;
         List<OnlineMatchRoom> playerRooms = roomRepository.findActiveForPlayerForUpdate(
                 playerId, ACTIVE_STATUSES);
         for (OnlineMatchRoom room : playerRooms) {
             boolean sameSessionAndMode = room.getPlayerCount() == request.getPlayerCount()
+                    && gameMode.equals(room.getGameMode())
                     && sessionId.equals(room.sessionIdOf(playerId));
             if (sameSessionAndMode && activeRoom == null) {
                 activeRoom = room;
@@ -146,6 +152,7 @@ public class MatchmakingService {
         if (existingTicket.isPresent()
                 && existingTicket.get().getEntryFee() == request.getEntryFee()
                 && existingTicket.get().getPlayerCount() == request.getPlayerCount()
+                && existingTicket.get().getGameMode().equals(gameMode)
                 && sessionId.equals(existingTicket.get().getSessionId())
                 && existingTicket.get().getSelectedColor().equals(selectedColor)) {
             currentTicket = existingTicket.get();
@@ -159,11 +166,11 @@ public class MatchmakingService {
                     nonBlank(request.getCountry(), "World"),
                     nonBlank(request.getCountryFlag(), "🌐"),
                     request.getEntryFee(), request.getPlayerCount(), selectedColor,
-                    sessionId);
+                    sessionId, gameMode);
         }
 
         List<MatchmakingTicket> candidates = ticketRepository.findWaitingCandidateForUpdate(
-                request.getEntryFee(), request.getPlayerCount(), activeAfter,
+                request.getEntryFee(), request.getPlayerCount(), gameMode, activeAfter,
                 playerId, ACTIVE_STATUSES,
                 PageRequest.of(0, request.getPlayerCount() - 1));
         List<MatchmakingTicket> matchedTickets = selectCompatibleTickets(
@@ -213,7 +220,7 @@ public class MatchmakingService {
             MatchmakingTicket current, Instant activeAfter) {
         List<MatchmakingTicket> lowerStakeCandidates =
                 ticketRepository.findLowerStakeCandidatesForUpdate(
-                        current.getEntryFee(), current.getPlayerCount(), activeAfter,
+                        current.getEntryFee(), current.getPlayerCount(), current.getGameMode(), activeAfter,
                         current.getPlayerId(), ACTIVE_STATUSES,
                         PageRequest.of(0, current.getPlayerCount() - 1));
         Map<Long, Integer> candidatesByFee = new LinkedHashMap<>();
@@ -236,6 +243,7 @@ public class MatchmakingService {
         int needed = current.getPlayerCount() - 1;
         for (MatchmakingTicket candidate : candidates) {
             if (candidate.getPlayerCount() != current.getPlayerCount()
+                    || !candidate.getGameMode().equals(current.getGameMode())
                     || candidate.getSessionId() == null
                     || candidate.getLastSeenAt().isBefore(activeAfter)
                     || candidate.getPlayerId().equals(current.getPlayerId())) {
@@ -271,6 +279,7 @@ public class MatchmakingService {
                     ticket.getCountry(), ticket.getCountryFlag(), ticket.getEntryFee());
             retry.setPlayerCount(ticket.getPlayerCount());
             retry.setSelectedColor(ticket.getSelectedColor());
+            retry.setGameMode(ticket.getGameMode());
             retry.setSessionId(sessionId);
             return joinQueue(retry);
         }
@@ -824,19 +833,25 @@ public class MatchmakingService {
             JsonNode next = objectMapper.readTree(stateJson);
             JsonNode previous = room.getLatestStateJson() == null
                     ? null : objectMapper.readTree(room.getLatestStateJson());
+            if (!room.getGameMode().equals(next.path("gameMode").asText("CLASSIC"))) {
+                throw invalidState();
+            }
             Map<String, Integer> before = pawnPositions(previous);
             Map<String, Integer> after = pawnPositions(next);
             int expectedPawns = room.getPlayerCount() * 4;
             if (after.size() != expectedPawns || (!before.isEmpty() && !before.keySet().equals(after.keySet()))) {
                 throw invalidState();
             }
-            if (next.path("isGameOver").asBoolean() && !hasFinishedPlayer(next)) {
+            if (next.path("isGameOver").asBoolean()
+                    && "CLASSIC".equals(room.getGameMode())
+                    && !hasFinishedPlayer(next)) {
                 throw invalidState();
             }
             if (previous == null) {
                 if (!room.getTurnOwnerId().equals(senderId)
                         || !senderId.equals(activePlayerId(next))
-                        || !hasExpectedOnlineSeats(next, room)) throw invalidState();
+                        || !hasExpectedOnlineSeats(next, room)
+                        || next.path("isGameOver").asBoolean()) throw invalidState();
                 if (after.values().stream().anyMatch(step -> step != -1)) throw invalidState();
                 return;
             }
@@ -844,14 +859,28 @@ public class MatchmakingService {
 
             List<String> changed = before.keySet().stream()
                     .filter(key -> !before.get(key).equals(after.get(key))).toList();
+            if (previous.path("isGameOver").asBoolean() && !changed.isEmpty()) {
+                throw invalidState();
+            }
             if (changed.isEmpty()) {
+                if (previous.path("isGameOver").asBoolean()) {
+                    if (!next.path("isGameOver").asBoolean()
+                            || !sameWinnerIds(previous, next)
+                            || !nextTurnOwnerId.equals(activePlayerId(next))) {
+                        throw invalidState();
+                    }
+                    return;
+                }
                 UUID nextActivePlayer = activePlayerId(next);
                 if (nextActivePlayer == null || !nextActivePlayer.equals(nextTurnOwnerId)) {
                     throw invalidState();
                 }
                 if (nextTurnOwnerId.equals(senderId)) {
-                    if (next.path("isGameOver").asBoolean()
-                            && hasFinishedPlayer(next)) return;
+                    if (next.path("isGameOver").asBoolean()) {
+                        if ("CLASSIC".equals(room.getGameMode())
+                                && hasFinishedPlayer(next)) return;
+                        throw invalidState();
+                    }
                     if ("turnEnded".equals(next.path("turnPhase").asText())) {
                         if (diceValue == null || !room.matchesAuthoritativeRoll(
                                 senderId, rollOpportunityId, diceValue)
@@ -917,6 +946,14 @@ public class MatchmakingService {
             } else if (from >= 0 && to <= 50 && hasCapturablePawn(previous, senderId, to)) {
                 throw invalidState();
             }
+            boolean firstKillWin = "FIRST_KILL".equals(room.getGameMode())
+                    && !captured.isEmpty();
+            if ("FIRST_KILL".equals(room.getGameMode())) {
+                if (firstKillWin != next.path("isGameOver").asBoolean()
+                        || (firstKillWin && !isSoleWinner(next, senderId))) {
+                    throw invalidState();
+                }
+            }
             boolean playerFinished = hasPlayerFinishedPawns(next, senderId);
             boolean earnsExtraTurn = diceValue == 6 || !captured.isEmpty()
                     || (to == 56 && !playerFinished);
@@ -927,7 +964,9 @@ public class MatchmakingService {
                     || !nextTurnOwnerId.equals(expectedTurnOwner)) {
                 throw invalidState();
             }
-            if (next.path("isGameOver").asBoolean() && !hasFinishedPlayer(next)) {
+            if (next.path("isGameOver").asBoolean()
+                    && "CLASSIC".equals(room.getGameMode())
+                    && !hasFinishedPlayer(next)) {
                 throw invalidState();
             }
         } catch (IllegalStateException exception) {
@@ -1004,6 +1043,17 @@ public class MatchmakingService {
             if (hasPlayerFinishedPawns(player)) return true;
         }
         return false;
+    }
+
+    private boolean isSoleWinner(JsonNode state, UUID winnerId) {
+        JsonNode winners = state.path("winnerIds");
+        return winners.isArray() && winners.size() == 1
+                && winnerId.toString().equals(winners.get(0).asText());
+    }
+
+    private boolean sameWinnerIds(JsonNode previous, JsonNode next) {
+        return previous.path("winnerIds").toString()
+                .equals(next.path("winnerIds").toString());
     }
 
     private boolean hasPlayerFinishedPawns(JsonNode state, UUID playerId) {
@@ -1131,6 +1181,10 @@ public class MatchmakingService {
         }
         OnlineMatchRoom room = roomRepository.findForUpdate(roomId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Match room not found."));
+        if (isRoomGameOver(room)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This online match has already ended.");
+        }
         try {
             int diceValue = diceRandom.nextInt(6) + 1;
             int result = room.issueDiceRoll(playerId, rollOpportunityId, diceValue);
@@ -1138,6 +1192,16 @@ public class MatchmakingService {
             return result;
         } catch (IllegalStateException exception) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage());
+        }
+    }
+
+    private boolean isRoomGameOver(OnlineMatchRoom room) {
+        if (room.getLatestStateJson() == null) return false;
+        try {
+            return objectMapper.readTree(room.getLatestStateJson())
+                    .path("isGameOver").asBoolean();
+        } catch (Exception exception) {
+            return true;
         }
     }
 

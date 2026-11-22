@@ -174,13 +174,14 @@ CREATE TABLE IF NOT EXISTS matchmaking_tickets (
     entry_fee BIGINT NOT NULL,
     player_count INTEGER NOT NULL DEFAULT 2,
     selected_color VARCHAR(8) NOT NULL DEFAULT 'red',
+    game_mode VARCHAR(16) NOT NULL DEFAULT 'CLASSIC',
     queued_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_matchmaking_tickets_fee_queued
     ON matchmaking_tickets (entry_fee, queued_at);
 CREATE INDEX IF NOT EXISTS idx_matchmaking_tickets_size_fee_queued
-    ON matchmaking_tickets (player_count, entry_fee, queued_at);
+    ON matchmaking_tickets (player_count, entry_fee, game_mode, queued_at);
 
 CREATE TABLE IF NOT EXISTS online_match_rooms (
     room_id VARCHAR(64) PRIMARY KEY,
@@ -195,6 +196,7 @@ CREATE TABLE IF NOT EXISTS online_match_rooms (
     player_b_country VARCHAR(100),
     player_b_flag VARCHAR(16),
     player_count INTEGER NOT NULL DEFAULT 2,
+    game_mode VARCHAR(16) NOT NULL DEFAULT 'CLASSIC',
     player_a_color VARCHAR(8) NOT NULL DEFAULT 'red',
     player_b_color VARCHAR(8) NOT NULL DEFAULT 'yellow',
     player_c_id UUID,

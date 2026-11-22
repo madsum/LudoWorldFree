@@ -81,6 +81,9 @@ public class OnlineMatchRoom {
     @Column(name = "player_count", nullable = false)
     private int playerCount = 2;
 
+    @Column(name = "game_mode", nullable = false, length = 16)
+    private String gameMode = "CLASSIC";
+
     @Column(name = "player_a_session_id", length = 64)
     private String playerASessionId;
     @Column(name = "player_b_session_id", length = 64)
@@ -160,6 +163,10 @@ public class OnlineMatchRoom {
             throw new IllegalArgumentException("Online rooms require two or four players.");
         }
         playerCount = tickets.size();
+        gameMode = tickets.getFirst().getGameMode();
+        if (tickets.stream().anyMatch(ticket -> !gameMode.equals(ticket.getGameMode()))) {
+            throw new IllegalArgumentException("Online room players must choose the same game mode.");
+        }
         List<String> availableColors = new ArrayList<>(List.of("red", "green", "yellow", "blue"));
         List<String> assignedColors = new ArrayList<>();
         if (tickets.size() == 2) {
@@ -233,6 +240,7 @@ public class OnlineMatchRoom {
     public String getPlayerBCountry() { return playerBCountry; }
     public String getPlayerBFlag() { return playerBFlag; }
     public int getPlayerCount() { return playerCount; }
+    public String getGameMode() { return gameMode == null ? "CLASSIC" : gameMode; }
     public List<UUID> getPlayerIds() {
         List<UUID> ids = new ArrayList<>(List.of(playerAId, playerBId));
         if (playerCId != null) ids.add(playerCId);
