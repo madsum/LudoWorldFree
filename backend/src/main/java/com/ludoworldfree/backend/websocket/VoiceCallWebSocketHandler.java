@@ -9,7 +9,7 @@ import com.ludoworldfree.backend.repository.PlayerProfileRepository;
 import com.ludoworldfree.backend.util.PlayerIdResolver;
 import com.ludoworldfree.backend.chat.ChatEventPublisher;
 import com.ludoworldfree.backend.chat.ChatPresenceService;
-import com.ludoworldfree.backend.realtime.DatabaseRealtimeEventBus;
+import com.ludoworldfree.backend.realtime.PubSubRealtimeEventBus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -41,14 +41,14 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final FriendshipRepository friendshipRepository;
     private final PlayerProfileRepository profileRepository;
-    private final DatabaseRealtimeEventBus realtimeEvents;
+    private final PubSubRealtimeEventBus realtimeEvents;
     private final ChatPresenceService presenceService;
     private final Map<UUID, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
     public VoiceCallWebSocketHandler(ObjectMapper objectMapper,
                                      FriendshipRepository friendshipRepository,
                                      PlayerProfileRepository profileRepository,
-                                     DatabaseRealtimeEventBus realtimeEvents,
+                                     PubSubRealtimeEventBus realtimeEvents,
                                      ChatPresenceService presenceService) {
         this.objectMapper = objectMapper;
         this.friendshipRepository = friendshipRepository;

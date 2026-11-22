@@ -3,22 +3,22 @@ package com.ludoworldfree.backend.chat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.ludoworldfree.backend.websocket.ChatWebSocketHandler;
 import com.ludoworldfree.backend.websocket.VoiceCallWebSocketHandler;
-import com.ludoworldfree.backend.realtime.DatabaseRealtimeEventBus;
+import com.ludoworldfree.backend.realtime.PubSubRealtimeEventBus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ChatRedisEventListener {
-    private static final Logger log = LoggerFactory.getLogger(ChatRedisEventListener.class);
+public class RealtimeEventRouter {
+    private static final Logger log = LoggerFactory.getLogger(RealtimeEventRouter.class);
     private final ChatWebSocketHandler webSocketHandler;
     private final VoiceCallWebSocketHandler voiceCallWebSocketHandler;
     private final com.ludoworldfree.backend.websocket.GameRoomWebSocketHandler gameRoomWebSocketHandler;
 
-    public ChatRedisEventListener(ChatWebSocketHandler webSocketHandler,
+    public RealtimeEventRouter(ChatWebSocketHandler webSocketHandler,
                                   VoiceCallWebSocketHandler voiceCallWebSocketHandler,
                                   com.ludoworldfree.backend.websocket.GameRoomWebSocketHandler gameRoomWebSocketHandler,
-                                  DatabaseRealtimeEventBus eventBus) {
+                                  PubSubRealtimeEventBus eventBus) {
         this.webSocketHandler = webSocketHandler;
         this.voiceCallWebSocketHandler = voiceCallWebSocketHandler;
         this.gameRoomWebSocketHandler = gameRoomWebSocketHandler;
@@ -34,8 +34,8 @@ public class ChatRedisEventListener {
                 }
                 case "game_room" -> gameRoomWebSocketHandler.routeRealtimeEvent(event);
                 default -> {
-                    if (payload.isObject()) webSocketHandler.routeRedisEvent(payload);
-                    else webSocketHandler.routeRedisEvent(event);
+                    if (payload.isObject()) webSocketHandler.routeRealtimeEvent(payload);
+                    else webSocketHandler.routeRealtimeEvent(event);
                 }
             }
         } catch (Exception exception) {

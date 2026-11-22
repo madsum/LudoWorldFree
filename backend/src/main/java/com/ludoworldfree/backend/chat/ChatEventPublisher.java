@@ -2,20 +2,19 @@ package com.ludoworldfree.backend.chat;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.ludoworldfree.backend.realtime.DatabaseRealtimeEventBus;
+import com.ludoworldfree.backend.realtime.PubSubRealtimeEventBus;
 import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ChatEventPublisher {
-    public static final String CHANNEL = "ludoworld:chat:events:v1";
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
-    private final DatabaseRealtimeEventBus realtimeEvents;
+    private final PubSubRealtimeEventBus realtimeEvents;
 
     public ChatEventPublisher(JdbcTemplate jdbc, ObjectMapper objectMapper,
-                              DatabaseRealtimeEventBus realtimeEvents) {
+                              PubSubRealtimeEventBus realtimeEvents) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.realtimeEvents = realtimeEvents;

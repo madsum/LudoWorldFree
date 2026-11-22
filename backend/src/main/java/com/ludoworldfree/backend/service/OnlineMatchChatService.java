@@ -2,7 +2,7 @@ package com.ludoworldfree.backend.service;
 
 import com.ludoworldfree.backend.model.OnlineMatchChatEvent;
 import com.ludoworldfree.backend.repository.OnlineMatchChatEventRepository;
-import com.ludoworldfree.backend.realtime.DatabaseRealtimeEventBus;
+import com.ludoworldfree.backend.realtime.PubSubRealtimeEventBus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,10 +14,10 @@ import java.util.UUID;
 @Service
 public class OnlineMatchChatService {
     private final OnlineMatchChatEventRepository repository;
-    private final DatabaseRealtimeEventBus realtimeEvents;
+    private final PubSubRealtimeEventBus realtimeEvents;
 
     public OnlineMatchChatService(OnlineMatchChatEventRepository repository,
-                                  DatabaseRealtimeEventBus realtimeEvents) {
+                                  PubSubRealtimeEventBus realtimeEvents) {
         this.repository = repository;
         this.realtimeEvents = realtimeEvents;
     }
