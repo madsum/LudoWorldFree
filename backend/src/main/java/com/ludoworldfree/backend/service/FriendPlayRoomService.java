@@ -87,7 +87,7 @@ public class FriendPlayRoomService {
                 .orElseThrow(() -> notFound("That room code was not found."));
         List<FriendPlayRoomSeatDto> seats = readSeats(room);
         if (seats.stream().anyMatch(seat -> seat.playerId().equals(playerId))) {
-            return response(room, seats, matchFor(room, playerId));
+            return response(room, seats, matchFor(room, seats, playerId));
         }
         ensureOpen(room);
         if (matchmaking.isPlayerInActiveRoom(playerId)) {
@@ -137,7 +137,7 @@ public class FriendPlayRoomService {
         if (room.getStatus().equals(FriendPlayRoom.OPEN) && room.getExpiresAt().isBefore(Instant.now())) {
             throw conflict("This room has expired.");
         }
-        return response(room, seats, matchFor(room, playerId));
+        return response(room, seats, matchFor(room, seats, playerId));
     }
 
     @Transactional
@@ -150,7 +150,7 @@ public class FriendPlayRoomService {
                     "Only the room host can start the match.");
         }
         if (room.getStatus().equals(FriendPlayRoom.STARTED)) {
-            return response(room, seats, matchFor(room, playerId));
+            return response(room, seats, matchFor(room, seats, playerId));
         }
         ensureOpen(room);
         if (seats.size() != room.getPlayerCount()) {
@@ -160,7 +160,7 @@ public class FriendPlayRoomService {
                 room.getRoomId(), room.getEntryFee(), room.getGameMode(), seats);
         room.markStarted();
         rooms.saveAndFlush(room);
-        return response(room, seats, match);
+        return response(room, seats, completeMatch(room, seats, playerId, match));
     }
 
     @Transactional
@@ -232,9 +232,60 @@ public class FriendPlayRoomService {
         return view;
     }
 
-    private MatchmakingResponseDto matchFor(FriendPlayRoom room, UUID playerId) {
+    private MatchmakingResponseDto matchFor(FriendPlayRoom room,
+                                            List<FriendPlayRoomSeatDto> seats,
+                                            UUID playerId) {
         if (!room.getStatus().equals(FriendPlayRoom.STARTED)) return null;
-        return matchmaking.responseForBuddyRoom(room.getRoomId(), playerId);
+        MatchmakingResponseDto match = matchmaking.responseForBuddyRoom(
+                room.getRoomId(), playerId);
+        return completeMatch(room, seats, playerId,
+                match == null ? new MatchmakingResponseDto() : match);
+    }
+
+    private MatchmakingResponseDto completeMatch(FriendPlayRoom room,
+                                                  List<FriendPlayRoomSeatDto> seats,
+                                                  UUID playerId,
+                                                  MatchmakingResponseDto match) {
+        FriendPlayRoomSeatDto currentSeat = seats.stream()
+                .filter(seat -> seat.playerId().equals(playerId))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN,
+                        "You are not a player in this room."));
+        match.setMatchFound(true);
+        match.setRoomId(room.getRoomId());
+        match.setPlayerId(playerId);
+        match.setSessionId(currentSeat.sessionId());
+        match.setPlayerCount(room.getPlayerCount());
+        match.setGameMode(room.getGameMode());
+        match.setMessage("Friend room is ready.");
+        match.setPlayers(java.util.stream.IntStream.range(0, seats.size())
+                .mapToObj(index -> matchPlayer(seats.get(index),
+                        matchColor(room, seats, index)))
+                .toList());
+        return match;
+    }
+
+    private MatchmakingResponseDto.MatchPlayerDto matchPlayer(
+            FriendPlayRoomSeatDto seat, String color) {
+        var wallet = wallets.findByPlayerId(seat.playerId()).orElse(null);
+        return new MatchmakingResponseDto.MatchPlayerDto(
+                seat.playerId(), seat.displayName(), seat.avatarUrl(),
+                seat.country(), seat.countryFlag(), color,
+                wallet == null ? 0 : wallet.getBalance(),
+                wallet == null ? 0 : wallet.getDiamonds());
+    }
+
+    private String matchColor(FriendPlayRoom room,
+                              List<FriendPlayRoomSeatDto> seats,
+                              int index) {
+        String selected = seats.get(index).selectedColor().toLowerCase();
+        if (room.getPlayerCount() != 2 || index == 0) return selected;
+        return switch (seats.getFirst().selectedColor().toLowerCase()) {
+            case "red" -> "yellow";
+            case "green" -> "blue";
+            case "yellow" -> "red";
+            default -> "green";
+        };
     }
 
     private List<FriendPlayRoomSeatDto> readSeats(FriendPlayRoom room) {

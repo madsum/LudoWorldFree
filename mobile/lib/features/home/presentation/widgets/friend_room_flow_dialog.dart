@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -292,7 +294,8 @@ class _FriendRoomFlowDialogState extends ConsumerState<FriendRoomFlowDialog> {
     _launchingMatch = true;
     final user = ref.read(authControllerProvider).user;
     final roomId = match['roomId']?.toString() ?? _room?['roomId']?.toString();
-    final playerId = match['playerId']?.toString() ?? user?.id;
+    final playerId = match['playerId']?.toString() ??
+        (user == null ? null : _resolvedPlayerId(user.id));
     final sessionId = match['sessionId']?.toString() ?? _sessionId;
     final players =
         _parsePlayers(match['players']) ?? _parseRoomSeats(_room?['seats']);
@@ -342,11 +345,10 @@ class _FriendRoomFlowDialogState extends ConsumerState<FriendRoomFlowDialog> {
         isBot: false,
       ));
     }
-    if (players.length != _playerCount || players.any((p) => p.isBot)) {
+    if (players.length != expectedCount || players.any((p) => p.isBot)) {
       return null;
     }
-    if (user != null &&
-        !players.any((p) => p.id.toLowerCase() == user.id.toLowerCase())) {
+    if (user != null && !players.any((p) => _samePlayerId(p.id, user.id))) {
       return null;
     }
     return players;
@@ -380,21 +382,41 @@ class _FriendRoomFlowDialogState extends ConsumerState<FriendRoomFlowDialog> {
         avatarUrl: row['avatarUrl']?.toString(),
         country: row['country']?.toString() ?? 'World',
         countryFlag: row['countryFlag']?.toString() ?? '🌐',
-        coins:
-            id.toLowerCase() == user?.id.toLowerCase() ? (user?.coins ?? 0) : 0,
-        diamonds: id.toLowerCase() == user?.id.toLowerCase()
-            ? (user?.diamonds ?? 0)
-            : 0,
+        coins: user != null && _samePlayerId(id, user.id) ? user.coins : 0,
+        diamonds:
+            user != null && _samePlayerId(id, user.id) ? user.diamonds : 0,
         color: color,
         isBot: false,
       ));
     }
     if (user != null &&
-        !players.any(
-            (player) => player.id.toLowerCase() == user.id.toLowerCase())) {
+        !players.any((player) => _samePlayerId(player.id, user.id))) {
       return null;
     }
     return players;
+  }
+
+  bool _samePlayerId(String serverId, String appId) =>
+      serverId.toLowerCase() == _resolvedPlayerId(appId);
+
+  String _resolvedPlayerId(String appId) {
+    final normalized = appId.toLowerCase();
+    if (RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+    ).hasMatch(normalized)) {
+      return normalized;
+    }
+
+    // Mirror PlayerIdResolver.resolve on the backend: UUID.nameUUIDFromBytes
+    // creates a deterministic UUID v3 from the UTF-8 bytes of the app ID.
+    final bytes = List<int>.from(md5.convert(utf8.encode(appId)).bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x30;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex =
+        bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20, 32)}';
   }
 
   Uri? _roomInviteUri(String? code) {
