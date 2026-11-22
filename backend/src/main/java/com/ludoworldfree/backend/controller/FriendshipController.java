@@ -14,8 +14,10 @@ import org.springframework.data.domain.PageRequest;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -38,18 +40,30 @@ public class FriendshipController {
             @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId) {
         UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
         List<Map<String, Object>> entries = new ArrayList<>();
-        for (Friendship friendship : friendshipRepository
-                .findAllByRequesterIdOrAddresseeId(playerId, playerId)) {
+        List<Friendship> friendships = friendshipRepository
+                .findAllByRequesterIdOrAddresseeId(playerId, playerId);
+        Set<UUID> friendIds = new LinkedHashSet<>();
+        for (Friendship friendship : friendships) {
+            friendIds.add(friendship.getRequesterId().equals(playerId)
+                    ? friendship.getAddresseeId() : friendship.getRequesterId());
+        }
+        Map<UUID, PlayerProfile> profiles = new LinkedHashMap<>();
+        for (PlayerProfile profile : profileRepository.findByUserIdIn(friendIds)) {
+            profiles.put(profile.getUserId(), profile);
+        }
+        Map<UUID, Boolean> onlineStatuses = voiceCallHandler.onlineStatuses(friendIds);
+
+        for (Friendship friendship : friendships) {
             UUID otherId = friendship.getRequesterId().equals(playerId)
                     ? friendship.getAddresseeId() : friendship.getRequesterId();
-            PlayerProfile profile = profileRepository.findByUserId(otherId).orElse(null);
+            PlayerProfile profile = profiles.get(otherId);
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("id", friendship.getId().toString());
             entry.put("playerId", otherId.toString());
             entry.put("displayName", profile == null ? "Player" : profile.getDisplayName());
             entry.put("avatarUrl", profile == null ? null : profile.getAvatarUrl());
             entry.put("countryFlag", profile == null ? "🌐" : profile.getCountryFlag());
-            entry.put("online", voiceCallHandler.isOnline(otherId));
+            entry.put("online", onlineStatuses.getOrDefault(otherId, false));
             entry.put("status", friendship.getStatus().name());
             entry.put("direction", friendship.getRequesterId().equals(playerId)
                     ? "OUTGOING" : "INCOMING");

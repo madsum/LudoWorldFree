@@ -37,6 +37,8 @@ gcloud run deploy "$BACKEND_SERVICE" \
   --source=backend \
   --region="$REGION" \
   --platform=managed \
+  --min=1 \
+  --max=1 \
   --allow-unauthenticated \
   --add-cloudsql-instances="$SQL_INSTANCE" \
   --set-env-vars="SPRING_PROFILES_ACTIVE=prod,SPRING_DATASOURCE_URL=${JDBC_URL},APP_CORS_ALLOWED_ORIGINS=*" \

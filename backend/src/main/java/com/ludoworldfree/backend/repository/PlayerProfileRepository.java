@@ -7,12 +7,14 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface PlayerProfileRepository extends JpaRepository<PlayerProfile, UUID> {
     Optional<PlayerProfile> findByUserId(UUID userId);
+    List<PlayerProfile> findByUserIdIn(Collection<UUID> userIds);
     boolean existsByUserId(UUID userId);
     Optional<PlayerProfile> findByDisplayName(String displayName);
     boolean existsByDisplayName(String displayName);
