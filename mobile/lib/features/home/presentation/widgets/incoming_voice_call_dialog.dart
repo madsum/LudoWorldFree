@@ -257,6 +257,16 @@ class _IncomingVoiceCallDialogState extends State<IncomingVoiceCallDialog>
                         color: const Color(0xFFE5484D),
                         onPressed: widget.voiceCallService.declineIncomingCall,
                       ),
+                      if (call.withVideo)
+                        _CallActionButton(
+                          label: 'Audio only',
+                          icon: Icons.call_rounded,
+                          color: const Color(0xFF26735F),
+                          onPressed: () => unawaited(
+                            widget.voiceCallService
+                                .acceptIncomingCall(audioOnly: true),
+                          ),
+                        ),
                       _CallActionButton(
                         label: call.withVideo ? 'Answer video' : 'Answer',
                         icon: call.withVideo
@@ -269,35 +279,105 @@ class _IncomingVoiceCallDialogState extends State<IncomingVoiceCallDialog>
                       ),
                     ],
                   )
-                else if (connected)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _CallActionButton(
-                        label: call.muted ? 'Unmute' : 'Mute',
-                        icon: call.muted
-                            ? Icons.mic_off_rounded
-                            : Icons.mic_rounded,
-                        color: const Color(0xFF334761),
-                        onPressed: widget.voiceCallService.toggleMute,
+                else ...[
+                  if (connected &&
+                      widget.voiceCallService.isIncomingVideoUpgrade) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A2D46),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: Colors.white12),
                       ),
-                      _CallActionButton(
-                        label: 'Hang up',
-                        icon: Icons.call_end_rounded,
-                        color: const Color(0xFFE5484D),
-                        onPressed: () =>
-                            unawaited(widget.voiceCallService.endCall()),
+                      child: Column(
+                        children: [
+                          Text(
+                            '${call.peerName} wants to switch to video',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              TextButton(
+                                onPressed: () => unawaited(
+                                  widget.voiceCallService
+                                      .respondToVideoUpgrade(accept: false),
+                                ),
+                                child: const Text('Not now'),
+                              ),
+                              FilledButton.icon(
+                                onPressed: () => unawaited(
+                                  widget.voiceCallService
+                                      .respondToVideoUpgrade(accept: true),
+                                ),
+                                icon: const Icon(Icons.videocam_rounded),
+                                label: const Text('Accept'),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ],
-                  )
-                else
-                  _CallActionButton(
-                    label: 'Cancel call',
-                    icon: Icons.call_end_rounded,
-                    color: const Color(0xFFE5484D),
-                    onPressed: () =>
-                        unawaited(widget.voiceCallService.endCall()),
-                  ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (connected)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _CallActionButton(
+                          label: call.muted ? 'Unmute' : 'Mute',
+                          icon: call.muted
+                              ? Icons.mic_off_rounded
+                              : Icons.mic_rounded,
+                          color: const Color(0xFF334761),
+                          onPressed: widget.voiceCallService.toggleMute,
+                        ),
+                        if (!call.withVideo)
+                          _CallActionButton(
+                            label: widget
+                                    .voiceCallService.isRequestingVideoUpgrade
+                                ? 'Request sent'
+                                : widget.voiceCallService.isIncomingVideoUpgrade
+                                    ? 'Switch requested'
+                                    : 'Request video',
+                            icon: widget.voiceCallService
+                                        .isRequestingVideoUpgrade ||
+                                    widget
+                                        .voiceCallService.isIncomingVideoUpgrade
+                                ? Icons.hourglass_top_rounded
+                                : Icons.videocam_rounded,
+                            color: const Color(0xFF26735F),
+                            onPressed: widget.voiceCallService
+                                        .isRequestingVideoUpgrade ||
+                                    widget
+                                        .voiceCallService.isIncomingVideoUpgrade
+                                ? null
+                                : widget.voiceCallService.requestVideoUpgrade,
+                          ),
+                        _CallActionButton(
+                          label: 'Hang up',
+                          icon: Icons.call_end_rounded,
+                          color: const Color(0xFFE5484D),
+                          onPressed: () =>
+                              unawaited(widget.voiceCallService.endCall()),
+                        ),
+                      ],
+                    )
+                  else if (!connected)
+                    _CallActionButton(
+                      label: 'Cancel call',
+                      icon: Icons.call_end_rounded,
+                      color: const Color(0xFFE5484D),
+                      onPressed: () =>
+                          unawaited(widget.voiceCallService.endCall()),
+                    ),
+                ],
                 if (!_maximized) ...[
                   const SizedBox(height: 8),
                   Align(
@@ -349,7 +429,7 @@ class _CallActionButton extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) => Semantics(

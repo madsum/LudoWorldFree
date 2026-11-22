@@ -454,6 +454,26 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                           : Colors.white24,
                                                 ),
                                               ),
+                                              IconButton(
+                                                tooltip: currentVoiceCall ==
+                                                        null
+                                                    ? 'Video call buddy'
+                                                    : 'Finish the current call first',
+                                                onPressed:
+                                                    currentVoiceCall == null
+                                                        ? () => _callFriend(
+                                                              friend,
+                                                              withVideo: true,
+                                                            )
+                                                        : null,
+                                                icon: Icon(
+                                                  Icons.videocam_rounded,
+                                                  color:
+                                                      currentVoiceCall == null
+                                                          ? Colors.greenAccent
+                                                          : Colors.white24,
+                                                ),
+                                              ),
                                               PopupMenuButton<String>(
                                                 tooltip: 'Friend options',
                                                 onSelected: (value) {
@@ -474,16 +494,6 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                     case 'game':
                                                       _requestBuddyGame(friend);
                                                       break;
-                                                    case 'video':
-                                                      if (currentVoiceCall ==
-                                                          null) {
-                                                        _callFriend(friend,
-                                                            withVideo: true);
-                                                      } else {
-                                                        _showMessage(
-                                                            'Finish the current call first.');
-                                                      }
-                                                      break;
                                                     case 'remove':
                                                       _remove(friendshipId);
                                                       break;
@@ -500,13 +510,6 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                     child: Text(isOnline
                                                         ? 'Play a game'
                                                         : 'Buddy is offline'),
-                                                  ),
-                                                  PopupMenuItem(
-                                                    value: 'video',
-                                                    enabled: currentVoiceCall ==
-                                                        null,
-                                                    child: Text(
-                                                        'Start video call'),
                                                   ),
                                                   PopupMenuItem(
                                                     value: 'remove',

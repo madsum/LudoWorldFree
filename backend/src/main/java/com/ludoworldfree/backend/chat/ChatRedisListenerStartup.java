@@ -18,7 +18,7 @@ public class ChatRedisListenerStartup {
     }
 
     @Scheduled(fixedDelayString = "${chat.redis.listener.retry-millis:5000}",
-            initialDelayString = "${chat.redis.listener.retry-millis:5000}")
+            initialDelayString = "${chat.redis.listener.initial-delay-millis:0}")
     public void startOrRetry() {
         if (listenerContainer.isRunning()) return;
         try {

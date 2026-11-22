@@ -101,6 +101,12 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         String type = payload.path("type").asText("");
+        if ("voice_heartbeat".equals(type)) {
+            if (isCurrentSession(session, senderId)) {
+                send(session, Map.of("type", "voice_heartbeat_ack"));
+            }
+            return;
+        }
         UUID targetId = parsePlayerId(payload.path("targetPlayerId").asText(null));
         String callId = payload.path("callId").asText("");
         if (!isCurrentSession(session, senderId) || targetId == null
@@ -131,7 +137,9 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
 
         if (!switch (type) {
             case "voice_call_accept", "voice_call_decline", "voice_call_offer",
-                    "voice_call_answer", "voice_call_ice", "voice_call_end" -> true;
+                    "voice_call_answer", "voice_call_ice", "voice_call_end",
+                    "voice_video_request", "voice_video_accept", "voice_video_decline",
+                    "voice_video_offer", "voice_video_answer", "voice_video_ice" -> true;
             default -> false;
         }) {
             sendError(session, "VOICE_UNKNOWN_MESSAGE", "Unsupported voice-call message.");
@@ -143,6 +151,9 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
         relayed.put("fromPlayerId", senderId.toString());
         relayed.put("targetPlayerId", targetId.toString());
         relayed.put("callId", callId);
+        if (payload.has("audioOnly")) {
+            relayed.put("audioOnly", payload.path("audioOnly").asBoolean());
+        }
         if (payload.has("description")) {
             relayed.put("description", objectMapper.convertValue(
                     payload.get("description"), Map.class));

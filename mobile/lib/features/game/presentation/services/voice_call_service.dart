@@ -28,14 +28,18 @@ class VoiceCallSession {
   final bool muted;
   final bool withVideo;
 
-  VoiceCallSession copyWith({VoiceCallPhase? phase, bool? muted}) =>
+  VoiceCallSession copyWith({
+    VoiceCallPhase? phase,
+    bool? muted,
+    bool? withVideo,
+  }) =>
       VoiceCallSession(
         callId: callId,
         peerId: peerId,
         peerName: peerName,
         phase: phase ?? this.phase,
         muted: muted ?? this.muted,
-        withVideo: withVideo,
+        withVideo: withVideo ?? this.withVideo,
       );
 }
 
@@ -49,21 +53,31 @@ final voiceCallServiceProvider =
 class VoiceCallService extends ChangeNotifier {
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _subscription;
+  Completer<void>? _readyCompleter;
   Timer? _reconnectTimer;
+  Timer? _heartbeatTimer;
   Timer? _callTimeout;
   String? _playerId;
   bool _shouldReconnect = false;
+  bool _connecting = false;
+  bool _isReady = false;
+  DateTime? _lastHeartbeatAck;
   bool _disposed = false;
   int _ringtoneGeneration = 0;
   MediaStream? _localStream;
+  MediaStream? _videoCaptureStream;
   MediaStream? _remoteStream;
   RTCPeerConnection? _peerConnection;
+  RTCRtpSender? _videoSender;
+  bool _videoRemoteDescriptionReady = false;
   final List<RTCIceCandidate> _queuedCandidates = [];
   final AudioPlayer _ringtonePlayer = AudioPlayer();
 
   VoiceCallSession? call;
   String? lastError;
   bool isCallUiMinimized = false;
+  bool isIncomingVideoUpgrade = false;
+  bool isRequestingVideoUpgrade = false;
   MediaStream? get localStream => _localStream;
   MediaStream? get remoteStream => _remoteStream;
 
@@ -73,19 +87,39 @@ class VoiceCallService extends ChangeNotifier {
     return error;
   }
 
-  bool get isConnected => _channel != null && _channel!.closeCode == null;
+  bool get isConnected =>
+      _isReady && _channel != null && _channel!.closeCode == null;
 
   Future<void> connect(String playerId) async {
-    if (_playerId == playerId && isConnected) return;
-    _playerId = playerId;
-    _shouldReconnect = true;
-    _reconnectTimer?.cancel();
-    await _openChannel();
+    try {
+      if (_playerId == playerId && isConnected) return;
+      if (_playerId == playerId && _connecting) {
+        await _readyCompleter?.future.timeout(const Duration(seconds: 12));
+        if (isConnected) return;
+        throw StateError('Voice calling could not connect. Try again.');
+      }
+      _playerId = playerId;
+      _shouldReconnect = true;
+      _reconnectTimer?.cancel();
+      _connecting = true;
+      _readyCompleter = Completer<void>();
+      await _openChannel();
+      if (!isConnected) {
+        throw StateError('Voice calling could not connect. Try again.');
+      }
+    } catch (error) {
+      debugPrint('Voice-call connection is unavailable: $error');
+      lastError ??= 'Voice calling is reconnecting. Try again shortly.';
+      notifyListeners();
+    } finally {
+      _connecting = false;
+    }
   }
 
   Future<void> _openChannel() async {
     final playerId = _playerId;
     if (playerId == null || !_shouldReconnect || _disposed) return;
+    _isReady = false;
     await _subscription?.cancel();
     final uri = Uri.parse(AppConstants.defaultWebSocketUrl).replace(
       path: '/ws/voice',
@@ -113,21 +147,43 @@ class VoiceCallService extends ChangeNotifier {
       cancelOnError: false,
     );
     try {
-      await channel.ready;
+      await channel.ready.timeout(const Duration(seconds: 10));
+      await _readyCompleter!.future.timeout(const Duration(seconds: 10));
     } catch (error) {
       debugPrint('Could not connect voice-call signaling: $error');
       _handleChannelClosed(channel);
+      rethrow;
+    }
+  }
+
+  Future<void> _retryConnection() async {
+    if (_connecting || !_shouldReconnect || _disposed) return;
+    _connecting = true;
+    _readyCompleter = Completer<void>();
+    try {
+      await _openChannel();
+    } catch (error) {
+      debugPrint('Voice-call reconnect failed: $error');
+    } finally {
+      _connecting = false;
     }
   }
 
   void _handleChannelClosed(WebSocketChannel channel) {
     if (!identical(_channel, channel)) return;
     _channel = null;
+    _isReady = false;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
     _subscription = null;
+    final readyCompleter = _readyCompleter;
+    if (readyCompleter != null && !readyCompleter.isCompleted) {
+      readyCompleter.complete();
+    }
     if (_shouldReconnect && !_disposed && _reconnectTimer == null) {
       _reconnectTimer = Timer(const Duration(seconds: 2), () {
         _reconnectTimer = null;
-        unawaited(_openChannel());
+        unawaited(_retryConnection());
       });
     }
   }
@@ -136,6 +192,8 @@ class VoiceCallService extends ChangeNotifier {
     _shouldReconnect = false;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
     if (call != null) await endCall();
     final channel = _channel;
     _channel = null;
@@ -173,22 +231,27 @@ class VoiceCallService extends ChangeNotifier {
     unawaited(_startRingtone());
   }
 
-  Future<void> acceptIncomingCall() async {
+  Future<void> acceptIncomingCall({bool audioOnly = false}) async {
     final current = call;
     if (current == null || current.phase != VoiceCallPhase.incoming) return;
     await _stopRingtone();
-    call = current.copyWith(phase: VoiceCallPhase.connecting);
+    call = current.copyWith(
+      phase: VoiceCallPhase.connecting,
+      withVideo: current.withVideo && !audioOnly,
+    );
+    final acceptedWithVideo = call!.withVideo;
     notifyListeners();
     if (!await _preparePeer()) {
       _send('voice_call_decline', current.peerId, current.callId);
       await _clearCall();
-      lastError = current.withVideo
+      lastError = acceptedWithVideo
           ? 'Camera and microphone access are needed for video calls.'
           : 'Microphone access is needed for voice calls.';
       notifyListeners();
       return;
     }
-    _send('voice_call_accept', current.peerId, current.callId);
+    _send('voice_call_accept', current.peerId, current.callId,
+        audioOnly: audioOnly);
     _startTimeout(current.callId);
   }
 
@@ -219,11 +282,46 @@ class VoiceCallService extends ChangeNotifier {
     notifyListeners();
   }
 
+  void requestVideoUpgrade() {
+    final current = call;
+    if (current == null ||
+        current.phase != VoiceCallPhase.connected ||
+        current.withVideo ||
+        isRequestingVideoUpgrade ||
+        isIncomingVideoUpgrade) {
+      return;
+    }
+    isRequestingVideoUpgrade = true;
+    _send('voice_video_request', current.peerId, current.callId);
+    notifyListeners();
+  }
+
+  Future<void> respondToVideoUpgrade({required bool accept}) async {
+    final current = call;
+    if (current == null || !isIncomingVideoUpgrade) return;
+    isIncomingVideoUpgrade = false;
+    notifyListeners();
+    if (!accept) {
+      _send('voice_video_decline', current.peerId, current.callId);
+      return;
+    }
+    if (!await _addLocalVideoTrack()) {
+      _send('voice_video_decline', current.peerId, current.callId);
+      lastError = 'Camera access is needed to switch to a video call.';
+      notifyListeners();
+      return;
+    }
+    call = current.copyWith(phase: VoiceCallPhase.connecting, withVideo: true);
+    _send('voice_video_accept', current.peerId, current.callId);
+    notifyListeners();
+  }
+
   void _send(
     String type,
     String targetPlayerId,
     String callId, {
     bool? withVideo,
+    bool? audioOnly,
     Map<String, dynamic>? description,
     Map<String, dynamic>? candidate,
   }) {
@@ -234,6 +332,7 @@ class VoiceCallService extends ChangeNotifier {
       'targetPlayerId': targetPlayerId,
       'callId': callId,
       if (withVideo != null) 'withVideo': withVideo,
+      if (audioOnly != null) 'audioOnly': audioOnly,
       if (description != null) 'description': description,
       if (candidate != null) 'candidate': candidate,
     }));
@@ -241,11 +340,21 @@ class VoiceCallService extends ChangeNotifier {
 
   Future<void> _handleMessage(Map<String, dynamic> message) async {
     final type = message['type']?.toString();
+    if (type == 'voice_ready') {
+      _isReady = true;
+      lastError = null;
+      _startHeartbeat();
+      final completer = _readyCompleter;
+      if (completer != null && !completer.isCompleted) completer.complete();
+      notifyListeners();
+      return;
+    }
+    if (type == 'voice_heartbeat_ack') {
+      _lastHeartbeatAck = DateTime.now();
+      return;
+    }
     if (type == 'error') {
-      final code = message['code']?.toString();
-      if (code != 'VOICE_CONNECTION_REJECTED') {
-        lastError = message['message']?.toString() ?? 'Voice call failed.';
-      }
+      lastError = message['message']?.toString() ?? 'Voice call failed.';
       await _clearCall();
       notifyListeners();
       return;
@@ -279,17 +388,30 @@ class VoiceCallService extends ChangeNotifier {
       return;
     }
     switch (type) {
+      case 'voice_video_request':
+        if (!current.withVideo &&
+            current.phase == VoiceCallPhase.connected &&
+            !isRequestingVideoUpgrade) {
+          isIncomingVideoUpgrade = true;
+          isCallUiMinimized = false;
+          notifyListeners();
+        }
+        return;
       case 'voice_call_accept':
         await _stopRingtone();
+        if (message['audioOnly'] == true && current.withVideo) {
+          call = current.copyWith(withVideo: false);
+        }
+        final acceptedWithVideo = call?.withVideo == true;
         if (!await _preparePeer()) {
           await endCall();
-          lastError = current.withVideo
+          lastError = acceptedWithVideo
               ? 'Camera and microphone access are needed for video calls.'
               : 'Microphone access is needed for voice calls.';
           notifyListeners();
           return;
         }
-        call = current.copyWith(phase: VoiceCallPhase.connecting);
+        call = call?.copyWith(phase: VoiceCallPhase.connecting);
         notifyListeners();
         final offer = await _peerConnection!.createOffer();
         await _peerConnection!.setLocalDescription(offer);
@@ -304,6 +426,7 @@ class VoiceCallService extends ChangeNotifier {
           description['sdp']?.toString(),
           description['type']?.toString(),
         ));
+        if (current.withVideo) _videoRemoteDescriptionReady = true;
         await _applyQueuedCandidates();
         final answer = await _peerConnection!.createAnswer();
         await _peerConnection!.setLocalDescription(answer);
@@ -317,6 +440,7 @@ class VoiceCallService extends ChangeNotifier {
           answer['sdp']?.toString(),
           answer['type']?.toString(),
         ));
+        if (current.withVideo) _videoRemoteDescriptionReady = true;
         await _applyQueuedCandidates();
         return;
       case 'voice_call_ice':
@@ -333,6 +457,20 @@ class VoiceCallService extends ChangeNotifier {
           await _peerConnection?.addCandidate(rtcCandidate);
         }
         return;
+      case 'voice_video_ice':
+        final candidate = message['candidate'];
+        if (candidate is! Map) return;
+        final videoCandidate = RTCIceCandidate(
+          candidate['candidate']?.toString(),
+          candidate['sdpMid']?.toString(),
+          (candidate['sdpMLineIndex'] as num?)?.toInt(),
+        );
+        if (!_videoRemoteDescriptionReady) {
+          _queuedCandidates.add(videoCandidate);
+        } else {
+          await _peerConnection?.addCandidate(videoCandidate);
+        }
+        return;
       case 'voice_call_decline':
         await _clearCall();
         lastError = '${current.peerName} declined the call.';
@@ -343,6 +481,129 @@ class VoiceCallService extends ChangeNotifier {
         lastError = 'Voice call ended.';
         notifyListeners();
         return;
+      case 'voice_video_accept':
+        if (!isRequestingVideoUpgrade) return;
+        isRequestingVideoUpgrade = false;
+        if (!await _addLocalVideoTrack()) {
+          _send('voice_video_decline', fromId, callId);
+          lastError = 'Camera access is needed to switch to a video call.';
+          notifyListeners();
+          return;
+        }
+        call =
+            current.copyWith(phase: VoiceCallPhase.connecting, withVideo: true);
+        notifyListeners();
+        final videoOffer = await _peerConnection!.createOffer();
+        await _peerConnection!.setLocalDescription(videoOffer);
+        _send('voice_video_offer', fromId, callId,
+            description: videoOffer.toMap().cast<String, dynamic>());
+        return;
+      case 'voice_video_decline':
+        isRequestingVideoUpgrade = false;
+        isIncomingVideoUpgrade = false;
+        if (current.withVideo) await _removeLocalVideoTrack();
+        call =
+            current.copyWith(phase: VoiceCallPhase.connected, withVideo: false);
+        lastError = 'Your buddy declined the video call request.';
+        notifyListeners();
+        return;
+      case 'voice_video_offer':
+        if (_peerConnection == null || !current.withVideo) return;
+        final videoDescription = message['description'];
+        if (videoDescription is! Map) return;
+        await _peerConnection!.setRemoteDescription(RTCSessionDescription(
+          videoDescription['sdp']?.toString(),
+          videoDescription['type']?.toString(),
+        ));
+        _videoRemoteDescriptionReady = true;
+        await _applyQueuedCandidates();
+        final videoAnswer = await _peerConnection!.createAnswer();
+        await _peerConnection!.setLocalDescription(videoAnswer);
+        call = call?.copyWith(phase: VoiceCallPhase.connected, withVideo: true);
+        _send('voice_video_answer', fromId, callId,
+            description: videoAnswer.toMap().cast<String, dynamic>());
+        notifyListeners();
+        return;
+      case 'voice_video_answer':
+        final videoAnswer = message['description'];
+        if (videoAnswer is! Map || _peerConnection == null) return;
+        await _peerConnection!.setRemoteDescription(RTCSessionDescription(
+          videoAnswer['sdp']?.toString(),
+          videoAnswer['type']?.toString(),
+        ));
+        _videoRemoteDescriptionReady = true;
+        await _applyQueuedCandidates();
+        call = call?.copyWith(phase: VoiceCallPhase.connected, withVideo: true);
+        notifyListeners();
+        return;
+    }
+  }
+
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _lastHeartbeatAck = DateTime.now();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      final channel = _channel;
+      if (!isConnected || channel == null) return;
+      final lastAck = _lastHeartbeatAck;
+      if (lastAck != null &&
+          DateTime.now().difference(lastAck) > const Duration(seconds: 45)) {
+        unawaited(channel.sink.close());
+        return;
+      }
+      channel.sink.add(jsonEncode({'type': 'voice_heartbeat'}));
+    });
+  }
+
+  Future<bool> _addLocalVideoTrack() async {
+    final peer = _peerConnection;
+    final stream = _localStream;
+    if (peer == null || stream == null) return false;
+    if (stream.getVideoTracks().isNotEmpty) return true;
+    MediaStream? cameraStream;
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        'audio': false,
+        'video': true,
+      });
+      final tracks = cameraStream.getVideoTracks();
+      if (tracks.isEmpty) {
+        await cameraStream.dispose();
+        return false;
+      }
+      final track = tracks.first;
+      await stream.addTrack(track);
+      _videoSender = await peer.addTrack(track, stream);
+      _videoCaptureStream = cameraStream;
+      notifyListeners();
+      return true;
+    } catch (error) {
+      debugPrint('Could not enable video during call: $error');
+      if (cameraStream != null) {
+        for (final track in cameraStream.getTracks()) {
+          await _localStream?.removeTrack(track);
+          await track.stop();
+        }
+        await cameraStream.dispose();
+      }
+      return false;
+    }
+  }
+
+  Future<void> _removeLocalVideoTrack() async {
+    final peer = _peerConnection;
+    final stream = _localStream;
+    final captureStream = _videoCaptureStream;
+    final sender = _videoSender;
+    _videoSender = null;
+    _videoCaptureStream = null;
+    if (peer != null && sender != null) await peer.removeTrack(sender);
+    if (captureStream != null) {
+      for (final track in captureStream.getVideoTracks()) {
+        await stream?.removeTrack(track);
+        await track.stop();
+      }
+      await captureStream.dispose();
     }
   }
 
@@ -360,6 +621,7 @@ class VoiceCallService extends ChangeNotifier {
       });
       _localStream = stream;
       _remoteStream = null;
+      _videoRemoteDescriptionReady = false;
       _peerConnection = peer;
       for (final track in stream.getTracks()) {
         await peer.addTrack(track, stream);
@@ -367,7 +629,8 @@ class VoiceCallService extends ChangeNotifier {
       peer.onIceCandidate = (candidate) {
         final current = call;
         if (current == null || candidate.candidate == null) return;
-        _send('voice_call_ice', current.peerId, current.callId,
+        _send(current.withVideo ? 'voice_video_ice' : 'voice_call_ice',
+            current.peerId, current.callId,
             candidate: candidate.toMap().cast<String, dynamic>());
       };
       peer.onTrack = (event) {
@@ -423,12 +686,18 @@ class VoiceCallService extends ChangeNotifier {
     await _stopRingtone();
     final peer = _peerConnection;
     final stream = _localStream;
+    final videoCaptureStream = _videoCaptureStream;
     _peerConnection = null;
     _localStream = null;
+    _videoCaptureStream = null;
+    _videoSender = null;
     _remoteStream = null;
+    _videoRemoteDescriptionReady = false;
     _queuedCandidates.clear();
     call = null;
     isCallUiMinimized = false;
+    isIncomingVideoUpgrade = false;
+    isRequestingVideoUpgrade = false;
     if (!_disposed) notifyListeners();
     if (stream != null) {
       for (final track in stream.getTracks()) {
@@ -436,6 +705,7 @@ class VoiceCallService extends ChangeNotifier {
       }
       await stream.dispose();
     }
+    await videoCaptureStream?.dispose();
     await peer?.close();
     await peer?.dispose();
   }
@@ -481,6 +751,7 @@ class VoiceCallService extends ChangeNotifier {
     _ringtoneGeneration++;
     _shouldReconnect = false;
     _reconnectTimer?.cancel();
+    _heartbeatTimer?.cancel();
     _callTimeout?.cancel();
     unawaited(_ringtonePlayer.stop());
     unawaited(_ringtonePlayer.dispose());
@@ -488,12 +759,14 @@ class VoiceCallService extends ChangeNotifier {
     unawaited(_channel?.sink.close());
     unawaited(_peerConnection?.close());
     final stream = _localStream;
+    final videoCaptureStream = _videoCaptureStream;
     if (stream != null) {
       for (final track in stream.getTracks()) {
         unawaited(track.stop());
       }
       unawaited(stream.dispose());
     }
+    unawaited(videoCaptureStream?.dispose());
     super.dispose();
   }
 }
