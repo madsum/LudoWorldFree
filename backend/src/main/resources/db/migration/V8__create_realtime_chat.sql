@@ -112,3 +112,15 @@ CREATE TABLE IF NOT EXISTS chat_media_uploads (
 );
 CREATE INDEX IF NOT EXISTS idx_chat_media_owner_state
     ON chat_media_uploads (owner_id, conversation_id, state, expires_at);
+
+-- Public E2EE key material only; private identity/session keys stay on devices.
+CREATE TABLE IF NOT EXISTS chat_device_key_bundles (
+    user_id UUID NOT NULL REFERENCES user_accounts(id) ON DELETE CASCADE,
+    device_id VARCHAR(120) NOT NULL,
+    identity_key TEXT NOT NULL,
+    signed_prekey TEXT NOT NULL,
+    signed_prekey_signature TEXT NOT NULL,
+    one_time_prekeys JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, device_id)
+);

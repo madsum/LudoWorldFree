@@ -4,6 +4,7 @@ import com.ludoworldfree.backend.chat.ChatConversationService;
 import com.ludoworldfree.backend.chat.ChatDirectoryService;
 import com.ludoworldfree.backend.chat.ChatMessage;
 import com.ludoworldfree.backend.chat.ChatMessageService;
+import com.ludoworldfree.backend.chat.ChatMediaUploadService;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -30,13 +31,16 @@ public class RealtimeChatController {
     private final ChatDirectoryService directory;
     private final ChatConversationService conversations;
     private final ChatMessageService messages;
+    private final ChatMediaUploadService mediaUploads;
 
     public RealtimeChatController(ChatDirectoryService directory,
                                   ChatConversationService conversations,
-                                  ChatMessageService messages) {
+                                  ChatMessageService messages,
+                                  ChatMediaUploadService mediaUploads) {
         this.directory = directory;
         this.conversations = conversations;
         this.messages = messages;
+        this.mediaUploads = mediaUploads;
     }
 
     @GetMapping("/me")
@@ -111,6 +115,23 @@ public class RealtimeChatController {
                      @PathVariable UUID conversationId,
                      @RequestBody ReceiptRequest request) {
         messages.markRead(userId(jwt), conversationId, request.sequence());
+    }
+
+    @PostMapping("/conversations/{conversationId}/media/uploads")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, Object> createMediaUpload(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID conversationId,
+            @RequestBody ChatMediaUploadService.UploadRequest request) {
+        return mediaUploads.createUpload(userId(jwt), conversationId, request);
+    }
+
+    @GetMapping("/conversations/{conversationId}/media/{attachmentId}")
+    public Map<String, Object> mediaDownload(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID conversationId,
+            @PathVariable UUID attachmentId) {
+        return mediaUploads.createDownload(userId(jwt), conversationId, attachmentId);
     }
 
     private UUID userId(Jwt jwt) {

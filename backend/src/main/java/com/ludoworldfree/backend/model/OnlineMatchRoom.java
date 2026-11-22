@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -295,19 +296,23 @@ public class OnlineMatchRoom {
     }
 
     public String nameOf(UUID playerId) {
-        return getPlayers().stream().filter(p -> p.id().equals(playerId)).map(MatchPlayer::name).findFirst().orElse(null);
+        return getPlayers().stream().filter(p -> p.id().equals(playerId))
+                .map(MatchPlayer::name).filter(Objects::nonNull).findFirst().orElse(null);
     }
 
     public String avatarOf(UUID playerId) {
-        return getPlayers().stream().filter(p -> p.id().equals(playerId)).map(MatchPlayer::avatarUrl).findFirst().orElse(null);
+        return getPlayers().stream().filter(p -> p.id().equals(playerId))
+                .map(MatchPlayer::avatarUrl).filter(Objects::nonNull).findFirst().orElse(null);
     }
 
     public String countryOf(UUID playerId) {
-        return getPlayers().stream().filter(p -> p.id().equals(playerId)).map(MatchPlayer::country).findFirst().orElse(null);
+        return getPlayers().stream().filter(p -> p.id().equals(playerId))
+                .map(MatchPlayer::country).filter(Objects::nonNull).findFirst().orElse(null);
     }
 
     public String flagOf(UUID playerId) {
-        return getPlayers().stream().filter(p -> p.id().equals(playerId)).map(MatchPlayer::countryFlag).findFirst().orElse(null);
+        return getPlayers().stream().filter(p -> p.id().equals(playerId))
+                .map(MatchPlayer::countryFlag).filter(Objects::nonNull).findFirst().orElse(null);
     }
 
     public boolean isConnected(UUID playerId) {

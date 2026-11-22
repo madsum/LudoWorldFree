@@ -3,6 +3,8 @@ package com.ludoworldfree.backend.chat;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,7 +51,7 @@ public class ChatMediaUploadService {
             JdbcTemplate jdbc,
             ChatConversationService conversations,
             @Value("${chat.media.bucket:}") String bucket,
-            @Value("${chat.media.region:europe-west1}") String region,
+            @Value("${chat.media.region:eu-west-1}") String region,
             @Value("${chat.media.endpoint:}") String endpoint,
             @Value("${chat.media.upload-url-minutes:10}") long uploadUrlMinutes,
             @Value("${chat.media.download-url-minutes:5}") long downloadUrlMinutes) {
@@ -94,6 +96,8 @@ public class ChatMediaUploadService {
                 .key(objectKey)
                 .contentType(contentType)
                 .contentLength(request.byteSize())
+                .checksumSHA256(Base64.getEncoder().encodeToString(
+                        HexFormat.of().parseHex(request.sha256Hex())))
                 .metadata(Map.of("sha256", request.sha256Hex().toLowerCase(),
                         "owner", userId.toString()))
                 .build();

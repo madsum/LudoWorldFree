@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/top_notice.dart';
 import '../../../../shared/widgets/custom_button.dart';
 import '../controllers/auth_controller.dart';
 
@@ -521,6 +522,7 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
 
   void _handleSaveAndPlay() async {
     if (ref.read(authControllerProvider).isLoading || _isPickingAvatar) return;
+    final rootOverlay = Overlay.maybeOf(context, rootOverlay: true);
     final name = _nameController.text.trim().isEmpty
         ? 'Guest Player'
         : _nameController.text.trim();
@@ -558,16 +560,15 @@ class _GuestSetupDialogState extends ConsumerState<GuestSetupDialog> {
     }
 
     if (success && mounted) {
-      final messenger = ScaffoldMessenger.maybeOf(context);
       Navigator.of(context).pop();
       if (!widget.isEditMode) {
         context.go('/home');
       }
       if (uploadFailed) {
-        messenger?.showSnackBar(const SnackBar(
-          content: Text(
-              'Image upload failed. Your selected default avatar was saved.'),
-        ));
+        TopNotice.showOnOverlay(
+          rootOverlay,
+          'Image upload failed. Your selected default avatar was saved.',
+        );
       }
     }
   }

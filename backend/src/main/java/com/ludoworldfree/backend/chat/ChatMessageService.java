@@ -29,20 +29,25 @@ public class ChatMessageService {
                               Long replyToSequence) {}
 
     public record MessagePage(List<Map<String, Object>> messages,
-                              long lastSequence, boolean hasMore) {}
+                              long nextAfterSequence,
+                              long conversationLastSequence,
+                              boolean hasMore) {}
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final ChatConversationService conversations;
     private final ChatEventPublisher eventPublisher;
+    private final ChatMediaUploadService mediaUploads;
 
     public ChatMessageService(JdbcTemplate jdbc, ObjectMapper objectMapper,
                               ChatConversationService conversations,
-                              ChatEventPublisher eventPublisher) {
+                              ChatEventPublisher eventPublisher,
+                              ChatMediaUploadService mediaUploads) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.conversations = conversations;
         this.eventPublisher = eventPublisher;
+        this.mediaUploads = mediaUploads;
     }
 
     @Transactional
@@ -52,6 +57,10 @@ public class ChatMessageService {
         ChatMessage duplicate = findByClientId(conversationId, senderId,
                 request.clientMessageId());
         if (duplicate != null) return duplicate;
+
+        List<Map<String, Object>> attachments = request.attachments() == null
+                ? List.of() : request.attachments();
+        mediaUploads.attachUploads(senderId, conversationId, attachments);
 
         if (request.replyToSequence() != null) {
             Integer exists = jdbc.queryForObject("""
@@ -74,8 +83,6 @@ public class ChatMessageService {
         String body = request.body() == null ? "" : request.body().trim();
         String ciphertext = request.ciphertext() == null ? "" : request.ciphertext().trim();
         String contentType = request.contentType() == null ? "TEXT" : request.contentType();
-        List<Map<String, Object>> attachments = request.attachments() == null
-                ? List.of() : request.attachments();
         String attachmentsJson = writeAttachments(attachments);
         jdbc.update("""
                 INSERT INTO messages (
@@ -124,17 +131,39 @@ public class ChatMessageService {
                 """, MESSAGE_ROW_MAPPER, conversationId, Math.max(0, afterSequence), safeLimit + 1);
         boolean hasMore = rows.size() > safeLimit;
         List<ChatMessage> pageRows = hasMore ? rows.subList(0, safeLimit) : rows;
+        Map<Long, List<Map<String, Object>>> receiptSummaries = new LinkedHashMap<>();
+        if (!pageRows.isEmpty()) {
+            long first = pageRows.getFirst().sequence();
+            long last = pageRows.getLast().sequence();
+            jdbc.query("""
+                    SELECT sequence, user_id, delivered_at, read_at
+                    FROM message_receipts
+                    WHERE conversation_id = ? AND sequence BETWEEN ? AND ?
+                    ORDER BY sequence, user_id
+                    """, rs -> {
+                long sequence = rs.getLong("sequence");
+                Map<String, Object> receipt = new LinkedHashMap<>();
+                receipt.put("userId", rs.getObject("user_id", UUID.class).toString());
+                receipt.put("deliveredAt", rs.getTimestamp("delivered_at") == null
+                        ? null : rs.getTimestamp("delivered_at").toInstant().toString());
+                receipt.put("readAt", rs.getTimestamp("read_at") == null
+                        ? null : rs.getTimestamp("read_at").toInstant().toString());
+                receiptSummaries.computeIfAbsent(sequence, ignored -> new ArrayList<>()).add(receipt);
+            }, conversationId, first, last);
+        }
         List<Map<String, Object>> messages = new ArrayList<>(pageRows.size());
         for (ChatMessage row : pageRows) {
             Map<String, Object> message = new LinkedHashMap<>(row.toMap());
-            message.put("receiptSummary", receiptSummary(row.conversationId(), row.sequence()));
+            message.put("receiptSummary", receiptSummaries.getOrDefault(row.sequence(), List.of()));
             messages.add(message);
         }
         Long lastSequence = jdbc.queryForObject(
                 "SELECT last_sequence FROM conversations WHERE id = ?", Long.class,
                 conversationId);
-        return new MessagePage(List.copyOf(messages), lastSequence == null ? 0 : lastSequence,
-                hasMore);
+        long nextCursor = pageRows.isEmpty()
+                ? Math.max(0, afterSequence) : pageRows.getLast().sequence();
+        return new MessagePage(List.copyOf(messages), nextCursor,
+                lastSequence == null ? 0 : lastSequence, hasMore);
     }
 
     @Transactional
@@ -184,23 +213,6 @@ public class ChatMessageService {
                 "status", status,
                 "at", Instant.now().toString());
         eventPublisher.enqueue(event);
-    }
-
-    private List<Map<String, Object>> receiptSummary(UUID conversationId, long sequence) {
-        return jdbc.query("""
-                SELECT user_id, delivered_at, read_at
-                FROM message_receipts
-                WHERE conversation_id = ? AND sequence = ?
-                ORDER BY user_id
-                """, (rs, rowNum) -> {
-                    Map<String, Object> receipt = new LinkedHashMap<>();
-                    receipt.put("userId", rs.getObject("user_id", UUID.class).toString());
-                    receipt.put("deliveredAt", rs.getTimestamp("delivered_at") == null
-                            ? null : rs.getTimestamp("delivered_at").toInstant().toString());
-                    receipt.put("readAt", rs.getTimestamp("read_at") == null
-                            ? null : rs.getTimestamp("read_at").toInstant().toString());
-                    return receipt;
-                }, conversationId, sequence);
     }
 
     private void lockConversation(UUID conversationId, UUID userId) {

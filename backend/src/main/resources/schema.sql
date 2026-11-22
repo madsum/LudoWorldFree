@@ -222,6 +222,18 @@ CREATE TABLE IF NOT EXISTS chat_media_uploads (
 CREATE INDEX IF NOT EXISTS idx_chat_media_owner_state
     ON chat_media_uploads (owner_id, conversation_id, state, expires_at);
 
+-- Public E2EE key material only; private identity/session keys stay on devices.
+CREATE TABLE IF NOT EXISTS chat_device_key_bundles (
+    user_id UUID NOT NULL REFERENCES user_accounts(id) ON DELETE CASCADE,
+    device_id VARCHAR(120) NOT NULL,
+    identity_key TEXT NOT NULL,
+    signed_prekey TEXT NOT NULL,
+    signed_prekey_signature TEXT NOT NULL,
+    one_time_prekeys JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, device_id)
+);
+
 -- 7. Chat Messages Table
 CREATE TABLE IF NOT EXISTS chat_messages (
     id UUID PRIMARY KEY,
@@ -293,13 +305,21 @@ CREATE TABLE IF NOT EXISTS matchmaking_tickets (
     player_count INTEGER NOT NULL DEFAULT 2,
     selected_color VARCHAR(8) NOT NULL DEFAULT 'red',
     game_mode VARCHAR(16) NOT NULL DEFAULT 'CLASSIC',
-    queued_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+    session_id VARCHAR(64),
+    queued_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE matchmaking_tickets
+    ADD COLUMN IF NOT EXISTS session_id VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP;
 
 CREATE INDEX IF NOT EXISTS idx_matchmaking_tickets_fee_queued
     ON matchmaking_tickets (entry_fee, queued_at);
 CREATE INDEX IF NOT EXISTS idx_matchmaking_tickets_size_fee_queued
     ON matchmaking_tickets (player_count, entry_fee, game_mode, queued_at);
+CREATE INDEX IF NOT EXISTS idx_matchmaking_tickets_waiting
+    ON matchmaking_tickets (game_mode, player_count, entry_fee, last_seen_at, queued_at);
 
 CREATE TABLE IF NOT EXISTS online_match_rooms (
     room_id VARCHAR(64) PRIMARY KEY,

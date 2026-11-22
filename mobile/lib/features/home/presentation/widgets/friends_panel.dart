@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/top_notice.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/websocket_service.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
@@ -225,12 +226,7 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(
-        backgroundColor: const Color(0xFF142547),
-        content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
-      ));
+    TopNotice.show(context, message);
   }
 
   @override

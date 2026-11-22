@@ -11,6 +11,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:vibration/vibration.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/top_notice.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
 import '../../../core/ads/interstitial_ad_service.dart';
 import '../../../core/network/websocket_service.dart';
@@ -40,8 +41,6 @@ class GameScreen extends ConsumerStatefulWidget {
 
 class _GameScreenState extends ConsumerState<GameScreen>
     with WidgetsBindingObserver {
-  bool _showTimeoutNotice = false;
-  Timer? _timeoutNoticeTimer;
   bool _hasTriggeredGameOverAd = false;
   bool _readyToShowVictoryDialog = false;
   StreamSubscription<Map<String, dynamic>>? _onlineSubscription;
@@ -199,14 +198,11 @@ class _GameScreenState extends ConsumerState<GameScreen>
             mounted) {
           setState(() => _rematchPending = false);
           final reason = message['message']?.toString().trim();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                reason == null || reason.isEmpty
-                    ? 'The replay request could not be completed.'
-                    : reason,
-              ),
-            ),
+          TopNotice.show(
+            context,
+            reason == null || reason.isEmpty
+                ? 'The replay request could not be completed.'
+                : reason,
           );
         } else if (message['type'] == 'error' &&
             (message['code'] == 'DICE_TIMER_REQUEST_UNAVAILABLE' ||
@@ -335,7 +331,14 @@ class _GameScreenState extends ConsumerState<GameScreen>
             (player) =>
                 player.missedTurns > (previousMissedTurns[player.id] ?? 0),
           );
-          if (hasMissedRoll) _showTimeoutNoticeOverlay();
+          if (hasMissedRoll) {
+            TopNotice.show(
+              context,
+              'You ran out of time!',
+              foregroundColor: AppColors.gold,
+              duration: const Duration(seconds: 2),
+            );
+          }
           final gameNotifier = ref.read(gameControllerProvider.notifier);
           final localPlayerId = gameNotifier.onlineLocalPlayerId;
           final newlyForfeitedOpponent = next.players.where((player) {
@@ -349,10 +352,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 !wasEliminated;
           }).firstOrNull;
           if (newlyForfeitedOpponent != null) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content:
-                  Text('${newlyForfeitedOpponent.name} forfeited the game.'),
-            ));
+            TopNotice.show(
+              context,
+              '${newlyForfeitedOpponent.name} forfeited the game.',
+            );
           }
         }
 
@@ -361,10 +364,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
           if (gameNotifier.isOnlineMode &&
               next.winnerIds.contains(gameNotifier.onlineLocalPlayerId)) {
             unawaited(_refreshWalletAfterWin());
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'You won! Your online match reward is being added to your wallet.'),
-            ));
+            TopNotice.show(
+              context,
+              'You won! Your online match reward is being added to your wallet.',
+            );
           }
           unawaited(_recordDailyGoalEvents(
             next,
@@ -457,9 +460,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (status == 'DECLINED') {
       setState(() => _rematchPending = false);
       if (requesterId == localPlayerId) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('A player declined the replay.'),
-        ));
+        TopNotice.show(context, 'A player declined the replay.');
       }
       return;
     }
@@ -520,7 +521,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
       gameNotifier!.clearOnlineMatch();
       if (playerId != null) unawaited(_cancelOnlineMatch(playerId));
     }
-    _timeoutNoticeTimer?.cancel();
     ref
         .read(gameControllerProvider.notifier)
         .pauseTurnTimer(updateGameState: false);
@@ -830,9 +830,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     if (!mounted) return;
     if (accepted == true) {
       final name = request['displayName']?.toString() ?? 'Player';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('You and $name are buddies now.')),
-      );
+      TopNotice.show(context, 'You and $name are buddies now.');
     }
     _showNextIncomingBuddyRequest();
   }
@@ -1162,50 +1160,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 ],
               ),
 
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 180),
-                    opacity: _showTimeoutNotice ? 1 : 0,
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
-                            vertical: 14,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xE6000000),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.28),
-                              width: 1.2,
-                            ),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Color(0x99000000),
-                                blurRadius: 18,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          ),
-                          child: Text(
-                            'You ran out of time!',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.poppins(
-                              color: const Color(0xFFFFF3B0),
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
               if (voiceCall != null)
                 Positioned(
                   right: 10,
@@ -1295,12 +1249,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                                 .requestRematch();
                             if (!sent) {
                               setState(() => _rematchPending = false);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'The game server is disconnected. Reconnect and try again.',
-                                  ),
-                                ),
+                              TopNotice.show(
+                                context,
+                                'The game server is disconnected. Reconnect and try again.',
                               );
                             }
                             return;
@@ -1323,16 +1274,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ),
       ),
     );
-  }
-
-  void _showTimeoutNoticeOverlay() {
-    if (!mounted) return;
-    _timeoutNoticeTimer?.cancel();
-    setState(() => _showTimeoutNotice = true);
-    _timeoutNoticeTimer = Timer(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      setState(() => _showTimeoutNotice = false);
-    });
   }
 
   Widget _buildBackButtonRow(BuildContext context) => Padding(
@@ -1790,9 +1731,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   void _showVoiceCallMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    TopNotice.show(context, message);
   }
 
   void _confirmExitDialog(BuildContext context) {

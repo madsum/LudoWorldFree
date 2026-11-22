@@ -21,8 +21,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementCallback;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
@@ -33,6 +38,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.security.SecureRandom;
 import java.time.Instant;
 
@@ -41,7 +49,7 @@ public class MatchmakingService {
     private static final Logger log = LoggerFactory.getLogger(MatchmakingService.class);
     private static final List<OnlineMatchRoom.Status> ACTIVE_STATUSES =
             List.of(OnlineMatchRoom.Status.MATCHED, OnlineMatchRoom.Status.READY);
-    private static final long MATCHMAKING_TICKET_TTL_SECONDS = 10;
+    private static final long MATCHMAKING_TICKET_TTL_SECONDS = 60;
     private static final Set<Long> ALLOWED_ENTRY_FEES = Set.of(
             250L, 500L, 1_000L, 2_000L, 4_000L, 8_000L,
             16_000L, 25_000L, 50_000L, 100_000L);
@@ -80,6 +88,9 @@ public class MatchmakingService {
     private final PlayerWalletRepository walletRepository;
     private final GoldTransactionRepository transactionRepository;
     private final ObjectMapper objectMapper;
+    private final JdbcTemplate jdbc;
+    private final boolean postgresDatabase;
+    private final ConcurrentMap<String, ReentrantLock> localQueueLocks = new ConcurrentHashMap<>();
     private final SecureRandom diceRandom = new SecureRandom();
 
     public MatchmakingService(MatchmakingTicketRepository ticketRepository,
@@ -87,13 +98,18 @@ public class MatchmakingService {
                               OnlineMatchStateEventRepository stateEventRepository,
                               PlayerWalletRepository walletRepository,
                               GoldTransactionRepository transactionRepository,
-                              ObjectMapper objectMapper) {
+                              ObjectMapper objectMapper,
+                              JdbcTemplate jdbc) {
         this.ticketRepository = ticketRepository;
         this.roomRepository = roomRepository;
         this.stateEventRepository = stateEventRepository;
         this.walletRepository = walletRepository;
         this.transactionRepository = transactionRepository;
         this.objectMapper = objectMapper;
+        this.jdbc = jdbc;
+        this.postgresDatabase = Boolean.TRUE.equals(jdbc.execute(
+                (ConnectionCallback<Boolean>) connection -> connection.getMetaData()
+                        .getDatabaseProductName().toLowerCase().contains("postgres")));
     }
 
     @Transactional
@@ -128,6 +144,7 @@ public class MatchmakingService {
         if (!Set.of("CLASSIC", "FIRST_KILL").contains(gameMode)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Choose a valid online game mode.");
         }
+        acquireQueueLaneLock(request.getPlayerCount(), request.getEntryFee(), gameMode);
 
         OnlineMatchRoom activeRoom = null;
         List<OnlineMatchRoom> playerRooms = roomRepository.findActiveForPlayerForUpdate(
@@ -169,10 +186,15 @@ public class MatchmakingService {
                     sessionId, gameMode);
         }
 
-        List<MatchmakingTicket> candidates = ticketRepository.findWaitingCandidateForUpdate(
-                request.getEntryFee(), request.getPlayerCount(), gameMode, activeAfter,
-                playerId, ACTIVE_STATUSES,
-                PageRequest.of(0, request.getPlayerCount() - 1));
+        List<MatchmakingTicket> candidates = postgresDatabase
+                ? ticketRepository.findWaitingCandidateForUpdate(
+                        request.getEntryFee(), request.getPlayerCount(), gameMode, activeAfter,
+                        playerId, OnlineMatchRoom.Status.MATCHED.name(),
+                        OnlineMatchRoom.Status.READY.name(), request.getPlayerCount() - 1)
+                : ticketRepository.findWaitingCandidatePortable(
+                        request.getEntryFee(), request.getPlayerCount(), gameMode, activeAfter,
+                        playerId, ACTIVE_STATUSES,
+                        PageRequest.of(0, request.getPlayerCount() - 1));
         List<MatchmakingTicket> matchedTickets = selectCompatibleTickets(
                 currentTicket, candidates, activeAfter);
         if (matchedTickets.isEmpty()) {
@@ -213,7 +235,7 @@ public class MatchmakingService {
 
     private MatchmakingResponseDto requeueCurrentTicket(MatchmakingTicket ticket) {
         ticketRepository.save(ticket);
-        return searchingResponse();
+        return searchingResponse(ticket.getGameMode(), ticket.getPlayerCount());
     }
 
     private MatchmakingResponseDto lowerStakeOffer(
@@ -227,13 +249,14 @@ public class MatchmakingService {
         for (MatchmakingTicket candidate : lowerStakeCandidates) {
             int count = candidatesByFee.merge(candidate.getEntryFee(), 1, Integer::sum);
             if (count >= current.getPlayerCount() - 1) {
-                MatchmakingResponseDto response = searchingResponse();
+                MatchmakingResponseDto response = searchingResponse(
+                        current.getGameMode(), current.getPlayerCount());
                 response.setLowerEntryFee(candidate.getEntryFee());
                 response.setMessage("Players are available at a lower entry amount.");
                 return response;
             }
         }
-        return searchingResponse();
+        return searchingResponse(current.getGameMode(), current.getPlayerCount());
     }
 
     private List<MatchmakingTicket> selectCompatibleTickets(
@@ -265,13 +288,10 @@ public class MatchmakingService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "A valid matchmaking session is required.");
         }
-        OnlineMatchRoom activeRoom = findActiveRoom(playerId, playerCount, sessionId);
-        if (activeRoom != null) {
-            deleteTicketForSession(playerId, sessionId);
-            return responseFor(activeRoom, playerId);
-        }
-        MatchmakingTicket ticket = ticketRepository.findByPlayerIdForUpdate(playerId)
-                .orElse(null);
+        // Read without taking a row lock here: joinQueue acquires the lane lock
+        // before room/ticket locks. This consistent order prevents simultaneous
+        // status polls from deadlocking each other while matching.
+        MatchmakingTicket ticket = ticketRepository.findById(playerId).orElse(null);
         if (ticket != null && sessionId.equals(ticket.getSessionId())
                 && ticket.getPlayerCount() == playerCount) {
             MatchmakingRequestDto retry = new MatchmakingRequestDto(
@@ -283,7 +303,39 @@ public class MatchmakingService {
             retry.setSessionId(sessionId);
             return joinQueue(retry);
         }
+        OnlineMatchRoom activeRoom = findActiveRoom(playerId, playerCount, sessionId);
+        if (activeRoom != null) {
+            deleteTicketForSession(playerId, sessionId);
+            return responseFor(activeRoom, playerId);
+        }
         return searchingResponse();
+    }
+
+    private void acquireQueueLaneLock(int playerCount, long entryFee, String gameMode) {
+        String laneKey = playerCount + ":" + entryFee + ":" + gameMode;
+        if (postgresDatabase) {
+            jdbc.execute("SELECT pg_advisory_xact_lock(hashtext(?), 0)",
+                    (PreparedStatementCallback<Void>) statement -> {
+                        statement.setString(1, laneKey);
+                        statement.execute();
+                        return null;
+                    });
+            return;
+        }
+
+        ReentrantLock lock = localQueueLocks.computeIfAbsent(laneKey,
+                ignored -> new ReentrantLock());
+        lock.lock();
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCompletion(int status) {
+                    lock.unlock();
+                }
+            });
+        } else {
+            lock.unlock();
+        }
     }
 
     @Transactional
@@ -1340,6 +1392,13 @@ public class MatchmakingService {
     private static MatchmakingResponseDto searchingResponse() {
         return new MatchmakingResponseDto(false, null, null, null, null, null, null,
                 "Searching for online players...");
+    }
+
+    private static MatchmakingResponseDto searchingResponse(String gameMode, int playerCount) {
+        MatchmakingResponseDto response = searchingResponse();
+        response.setGameMode(gameMode);
+        response.setPlayerCount(playerCount);
+        return response;
     }
 
     private static MatchmakingResponseDto insufficientFunds() {

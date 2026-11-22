@@ -6,6 +6,8 @@ import com.ludoworldfree.backend.service.MatchmakingService;
 import com.ludoworldfree.backend.util.PlayerIdResolver;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 import java.util.UUID;
@@ -24,7 +26,7 @@ public class MatchmakingController {
     public ResponseEntity<MatchmakingResponseDto> joinQueue(
             @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
             @RequestBody MatchmakingRequestDto requestDto) {
-        UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
+        UUID playerId = requirePlayerId(headerPlayerId);
         requestDto.setPlayerId(playerId);
 
         MatchmakingResponseDto response = matchmakingService.joinQueue(requestDto);
@@ -36,7 +38,7 @@ public class MatchmakingController {
             @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
             @RequestParam int playerCount,
             @RequestParam String sessionId) {
-        UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
+        UUID playerId = requirePlayerId(headerPlayerId);
         MatchmakingResponseDto response = matchmakingService.checkStatus(
                 playerId, playerCount, sessionId);
         return ResponseEntity.ok(response);
@@ -46,8 +48,16 @@ public class MatchmakingController {
     public ResponseEntity<?> cancelQueue(
             @RequestHeader(value = "X-Player-ID", required = false) String headerPlayerId,
             @RequestParam(required = false) String sessionId) {
-        UUID playerId = PlayerIdResolver.resolve(headerPlayerId);
+        UUID playerId = requirePlayerId(headerPlayerId);
         matchmakingService.cancelQueue(playerId, sessionId);
         return ResponseEntity.ok(Map.of("success", true, "message", "Matchmaking cancelled."));
+    }
+
+    private UUID requirePlayerId(String headerPlayerId) {
+        if (headerPlayerId == null || headerPlayerId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "A stable X-Player-ID is required for matchmaking.");
+        }
+        return PlayerIdResolver.resolve(headerPlayerId);
     }
 }

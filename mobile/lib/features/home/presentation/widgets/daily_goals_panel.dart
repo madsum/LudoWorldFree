@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/top_notice.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
 
@@ -60,18 +61,14 @@ class _DailyGoalsPanelState extends ConsumerState<DailyGoalsPanel> {
       }
       if (mounted) {
         setState(() => _goalsFuture = _loadGoals());
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Daily goal reward added to your wallet.'),
-        ));
+        TopNotice.show(context, 'Daily goal reward added to your wallet.');
       }
     } on DioException catch (error) {
       if (!mounted) return;
       final message = error.response?.data is Map
           ? error.response?.data['message']?.toString()
           : null;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(message ?? 'Could not claim this reward.'),
-      ));
+      TopNotice.show(context, message ?? 'Could not claim this reward.');
     } finally {
       if (mounted) setState(() => _claiming = false);
     }

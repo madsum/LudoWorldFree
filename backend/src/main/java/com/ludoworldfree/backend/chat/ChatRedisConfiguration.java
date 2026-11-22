@@ -12,8 +12,15 @@ public class ChatRedisConfiguration {
     RedisMessageListenerContainer chatRedisMessageListenerContainer(
             RedisConnectionFactory connectionFactory,
             ChatRedisEventListener listener) {
-        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        RedisMessageListenerContainer container = new RedisMessageListenerContainer() {
+            @Override
+            public boolean isAutoStartup() {
+                return false;
+            }
+        };
         container.setConnectionFactory(connectionFactory);
+        // Do not let an unavailable Redis server prevent the game/API backend
+        // from starting. ChatRedisListenerStartup retries the subscription.
         container.addMessageListener(listener,
                 new ChannelTopic(ChatEventPublisher.CHANNEL));
         return container;

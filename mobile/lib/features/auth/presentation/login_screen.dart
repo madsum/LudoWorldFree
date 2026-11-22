@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/constants/app_assets.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/top_notice.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../shared/widgets/custom_button.dart';
 import '../../../shared/widgets/glass_card.dart';
@@ -28,11 +29,10 @@ class LoginScreen extends ConsumerWidget {
       context.go('/home');
     } else if (context.mounted) {
       final errorMsg = ref.read(authControllerProvider).errorMessage ?? 'Login failed. Try again.';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.bgNavy,
-          content: Text(errorMsg, style: const TextStyle(color: Colors.white)),
-        ),
+      TopNotice.show(
+        context,
+        errorMsg,
+        backgroundColor: AppColors.bgNavy,
       );
     }
   }

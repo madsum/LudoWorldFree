@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants/app_assets.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/top_notice.dart';
 import '../../domain/models/game_state.dart';
 import '../../domain/models/player_model.dart';
 import 'ludo_pawn_icon.dart';
@@ -387,11 +388,7 @@ class VictoryDialog extends StatelessWidget {
                     icon: Icons.share_rounded,
                     color: const Color(0xFFD97706),
                     onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content:
-                                Text('Match results copied to clipboard!')),
-                      );
+                      TopNotice.show(context, 'Match results copied to clipboard!');
                     },
                   ),
 

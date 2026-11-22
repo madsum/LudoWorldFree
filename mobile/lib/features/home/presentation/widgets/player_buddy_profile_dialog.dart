@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/top_notice.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
 import '../../../game/domain/models/player_model.dart';
@@ -144,9 +145,7 @@ class _PlayerBuddyProfileDialogState
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    TopNotice.show(context, message);
   }
 
   Future<void> _openChat() async {

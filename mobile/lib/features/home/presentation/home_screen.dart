@@ -12,9 +12,9 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/network/websocket_service.dart';
 import '../../../core/network/api_client.dart';
-import '../../../core/network/websocket_service.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
 import '../../../core/ads/rewarded_ad_service.dart';
+import '../../../core/utils/top_notice.dart';
 import '../../../shared/widgets/flying_coin_overlay.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
 import '../../auth/domain/auth_repository.dart';
@@ -154,9 +154,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     final error = _voiceCallService.takeLastError();
     if (error != null && mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(error)));
+      TopNotice.show(context, error);
     }
   }
 
@@ -366,9 +364,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
     if (!mounted) return;
     if (!connected) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Could not connect to the buddy game. Please try again.'),
-      ));
+      TopNotice.show(
+        context,
+        'Could not connect to the buddy game. Please try again.',
+      );
       return;
     }
     gameController.configureOnlineMatch(
@@ -388,6 +387,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ref.read(authControllerProvider).user?.id != playerId) {
       return;
     }
+    final rootOverlay = Overlay.maybeOf(context, rootOverlay: true);
     _buddyRequestPollInFlight = true;
     try {
       final response = await ref.read(apiClientProvider).get(
@@ -424,17 +424,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           final status = raw['status']?.toString();
           final name = raw['displayName']?.toString() ?? 'Player';
           if (status == 'ACCEPTED') {
-            ScaffoldMessenger.of(context)
-              ..hideCurrentSnackBar()
-              ..showSnackBar(SnackBar(
-                content: Text('$name accepted your buddy request.'),
-              ));
+            TopNotice.showOnOverlay(
+              rootOverlay,
+              '$name accepted your buddy request.',
+            );
           } else if (status == 'REJECTED') {
-            ScaffoldMessenger.of(context)
-              ..hideCurrentSnackBar()
-              ..showSnackBar(SnackBar(
-                content: Text('$name declined your buddy request.'),
-              ));
+            TopNotice.showOnOverlay(
+              rootOverlay,
+              '$name declined your buddy request.',
+            );
           }
         }
       }
@@ -471,9 +469,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!mounted) return;
     if (accepted == true) {
       final name = request['displayName']?.toString() ?? 'Player';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('You and $name are buddies now.')),
-      );
+      TopNotice.show(context, 'You and $name are buddies now.');
     }
     _showNextBuddyRequest();
   }
@@ -512,31 +508,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _showComingSoonSnackBar(String modeName) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: AppColors.bgNavy,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: AppColors.gold, width: 1.5),
-        ),
-        content: Row(
-          children: [
-            const Icon(Icons.info_outline_rounded, color: AppColors.gold),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                '$modeName mode is coming in the next version!',
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        duration: const Duration(seconds: 2),
-      ),
+    TopNotice.show(
+      context,
+      '$modeName mode is coming in the next version!',
+      backgroundColor: AppColors.bgNavy,
+      foregroundColor: AppColors.gold,
+      duration: const Duration(seconds: 2),
     );
   }
 
@@ -556,19 +533,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     if (status == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.bgNavy,
-          content: Text(
-            'Daily bonus is unavailable. Check your connection and make sure the game backend is running.',
-            style: GoogleFonts.poppins(color: Colors.white),
-          ),
-          action: SnackBarAction(
-            label: 'RETRY',
-            textColor: AppColors.gold,
-            onPressed: () => _loadDailyBonusStatus(userId),
-          ),
-        ),
+      TopNotice.show(
+        context,
+        'Daily bonus is unavailable. Check your connection and make sure the game backend is running.',
+        backgroundColor: AppColors.bgNavy,
+        actionLabel: 'RETRY',
+        onAction: () => _loadDailyBonusStatus(userId),
       );
       return;
     }
@@ -600,14 +570,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         await _flyCoinsFromBottomToWallet();
         await _showDailyBonusCongratulations(finalResult, doubled: wasDoubled);
       } else if (mounted && result?.claimedToday == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: AppColors.bgNavy,
-            content: Text(
-              'Today’s bonus was already credited. Your wallet has been refreshed.',
-              style: GoogleFonts.poppins(color: AppColors.gold),
-            ),
-          ),
+        TopNotice.show(
+          context,
+          'Today’s bonus was already credited. Your wallet has been refreshed.',
+          backgroundColor: AppColors.bgNavy,
+          foregroundColor: AppColors.gold,
         );
       }
       _dailyBonusDialogShowing = false;
@@ -647,11 +614,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onError: (error) {
         complete(null);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        TopNotice.show(
+          context,
+          error,
           backgroundColor: AppColors.bgNavy,
-          content:
-              Text(error, style: GoogleFonts.poppins(color: AppColors.gold)),
-        ));
+          foregroundColor: AppColors.gold,
+        );
       },
     );
     return resultCompleter.future;
@@ -714,14 +682,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return doubleReward;
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.bgNavy,
-          content: Text(
-            'The extra daily bonus was not credited. Your original bonus is safe.',
-            style: GoogleFonts.poppins(color: AppColors.gold),
-          ),
-        ),
+      TopNotice.show(
+        context,
+        'The extra daily bonus was not credited. Your original bonus is safe.',
+        backgroundColor: AppColors.bgNavy,
+        foregroundColor: AppColors.gold,
       );
     }
     return null;
@@ -760,11 +725,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onError: (error) {
         complete(null);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        TopNotice.show(
+          context,
+          error,
           backgroundColor: AppColors.bgNavy,
-          content:
-              Text(error, style: GoogleFonts.poppins(color: AppColors.gold)),
-        ));
+          foregroundColor: AppColors.gold,
+        );
       },
     );
     return resultCompleter.future;
@@ -890,15 +856,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     var earnedAmount = 0;
     var earnedProviderRewardId = '';
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: AppColors.bgNavy,
-        content: Text(
-          'Loading Rewarded Video Ad...',
-          style: GoogleFonts.poppins(color: Colors.white),
-        ),
-        duration: const Duration(seconds: 1),
-      ),
+    TopNotice.show(
+      context,
+      'Loading Rewarded Video Ad...',
+      backgroundColor: AppColors.bgNavy,
+      duration: const Duration(seconds: 1),
     );
 
     await rewardedAdService.showRewardedAd(
@@ -921,12 +883,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onError: (error) {
         _isClaimingReward = false;
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: AppColors.bgNavy,
-              content: Text(error,
-                  style: GoogleFonts.poppins(color: AppColors.gold)),
-            ),
+          TopNotice.show(
+            context,
+            error,
+            backgroundColor: AppColors.bgNavy,
+            foregroundColor: AppColors.gold,
           );
         }
       },
@@ -946,14 +907,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!context.mounted) return;
     if (!credited) {
       _isClaimingReward = false;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: AppColors.bgNavy,
-          content: Text(
-            'Your ad reward could not be added. Please try again.',
-            style: GoogleFonts.poppins(color: AppColors.gold),
-          ),
-        ),
+      TopNotice.show(
+        context,
+        'Your ad reward could not be added. Please try again.',
+        backgroundColor: AppColors.bgNavy,
+        foregroundColor: AppColors.gold,
       );
       return;
     }

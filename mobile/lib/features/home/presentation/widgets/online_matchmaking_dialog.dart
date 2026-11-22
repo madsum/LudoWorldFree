@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/utils/top_notice.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/websocket_service.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
@@ -70,6 +71,7 @@ class _OnlineMatchmakingDialogState
     extends ConsumerState<OnlineMatchmakingDialog>
     with TickerProviderStateMixin {
   late String _matchmakingSessionId = _createSessionId();
+  String? _queuePlayerId;
 
   late final AnimationController _vsGlowController = AnimationController(
     vsync: this,
@@ -150,6 +152,19 @@ class _OnlineMatchmakingDialogState
 
   void _startMatchmakingQueue() async {
     final user = ref.read(authControllerProvider).user;
+    final playerId = user?.id.trim();
+    if (playerId == null || playerId.isEmpty) {
+      _pollingTimer?.cancel();
+      _countdownTimer?.cancel();
+      if (!mounted) return;
+      setState(() {
+        _hasStartedSearch = false;
+        _searchFailed = true;
+        _searchFailureMessage = 'Sign in before searching for an online match.';
+      });
+      return;
+    }
+    _queuePlayerId = playerId;
     final dio = ref.read(apiClientProvider);
     final joinRequest = {
       'displayName': user?.name ?? 'Player 1',
@@ -169,7 +184,7 @@ class _OnlineMatchmakingDialogState
         '/matchmaking/join',
         data: joinRequest,
         options: Options(
-          headers: {'X-Player-ID': user?.id},
+          headers: {'X-Player-ID': playerId},
         ),
       );
 
@@ -205,7 +220,7 @@ class _OnlineMatchmakingDialogState
             ? await dio.post(
                 '/matchmaking/join',
                 data: joinRequest,
-                options: Options(headers: {'X-Player-ID': user?.id}),
+                options: Options(headers: {'X-Player-ID': playerId}),
               )
             : await dio.get(
                 '/matchmaking/status',
@@ -213,7 +228,7 @@ class _OnlineMatchmakingDialogState
                   'playerCount': widget.playerCount,
                   'sessionId': _matchmakingSessionId,
                 },
-                options: Options(headers: {'X-Player-ID': user?.id}),
+                options: Options(headers: {'X-Player-ID': playerId}),
               );
         if (statusResponse.data != null) {
           _handleQueueResponse(statusResponse.data);
@@ -244,13 +259,18 @@ class _OnlineMatchmakingDialogState
     _isQueueRequestRunning = true;
     try {
       final user = ref.read(authControllerProvider).user;
+      final playerId = _queuePlayerId ?? user?.id.trim();
+      if (playerId == null || playerId.isEmpty) {
+        _finishWithoutMatch();
+        return;
+      }
       final response = await ref.read(apiClientProvider).get(
             '/matchmaking/status',
             queryParameters: {
               'playerCount': widget.playerCount,
               'sessionId': _matchmakingSessionId,
             },
-            options: Options(headers: {'X-Player-ID': user?.id}),
+            options: Options(headers: {'X-Player-ID': playerId}),
           );
       if (response.data != null) _handleQueueResponse(response.data);
     } catch (_) {
@@ -559,20 +579,19 @@ class _OnlineMatchmakingDialogState
       _searchFailed = true;
       _searchFailureMessage = message;
     });
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      backgroundColor: const Color(0xFF142547),
-      content: Text(message, style: GoogleFonts.poppins(color: Colors.white)),
-    ));
+    TopNotice.show(context, message);
   }
 
   Future<void> _cancelServerQueue() async {
     try {
       final dio = ref.read(apiClientProvider);
       final user = ref.read(authControllerProvider).user;
+      final playerId = _queuePlayerId ?? user?.id.trim();
+      if (playerId == null || playerId.isEmpty) return;
       await dio.post(
         '/matchmaking/cancel',
         queryParameters: {'sessionId': _matchmakingSessionId},
-        options: Options(headers: {'X-Player-ID': user?.id}),
+        options: Options(headers: {'X-Player-ID': playerId}),
       );
     } catch (_) {}
   }
