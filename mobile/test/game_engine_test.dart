@@ -16,6 +16,37 @@ void main() {
       }
     });
 
+    test('Move paths contain exactly the rolled number of tile transitions', () {
+      for (final color in LudoColor.values) {
+        for (var fromStep = 0; fromStep <= 55; fromStep++) {
+          for (var diceValue = 1; diceValue <= 6; diceValue++) {
+            final toStep = fromStep + diceValue;
+            if (toStep > 56) continue;
+
+            final path = BoardPosition.calculatePathSequence(
+              color: color,
+              pawnId: 0,
+              fromStep: fromStep,
+              toStep: toStep,
+            );
+
+            expect(
+              path.length - 1,
+              diceValue,
+              reason: '$color from step $fromStep with roll $diceValue',
+            );
+            final destination = BoardPosition.getPositionForStep(
+              color,
+              0,
+              toStep,
+            );
+            expect(path.last.x, destination.x);
+            expect(path.last.y, destination.y);
+          }
+        }
+      }
+    });
+
     test('Captured pawns return directly to their own yard', () {
       for (final color in LudoColor.values) {
         final path = BoardPosition.calculatePathSequence(

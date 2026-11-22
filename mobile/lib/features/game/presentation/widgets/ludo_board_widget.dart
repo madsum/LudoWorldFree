@@ -124,11 +124,24 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
           // Check if pawn needs to animate to a new target step
           if (currentVisualStep != targetStep &&
               !_activeControllers.containsKey(key)) {
+            final moveEvent = widget.gameState.lastMoveEvent;
+            final eventMatchesPawn = moveEvent != null &&
+                moveEvent.color == pawn.color &&
+                moveEvent.pawnId == pawn.id &&
+                moveEvent.toStep == targetStep;
+            // The authoritative move event is the source of truth for the
+            // animation endpoints. A cached visual step can be stale when a
+            // remote state update arrives during a previous animation; using
+            // it here can make one roll appear to cover extra squares.
+            final fromStep = eventMatchesPawn
+                ? moveEvent!.fromStep
+                : currentVisualStep;
+            _visualSteps[key] = fromStep;
             _startPawnMovementAnimation(
               key: key,
               color: pawn.color,
               pawnId: pawn.id,
-              fromStep: currentVisualStep,
+              fromStep: fromStep,
               toStep: targetStep,
             );
           }
@@ -186,6 +199,10 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
           setState(() {
             _visualSteps[key] = toStep;
           });
+          // A newer state may have arrived while this animation was active.
+          // Reconcile it now instead of leaving the pawn visually behind
+          // until another game state update happens.
+          _syncVisualStepsWithGameState(isInitial: false);
         }
       }
     });

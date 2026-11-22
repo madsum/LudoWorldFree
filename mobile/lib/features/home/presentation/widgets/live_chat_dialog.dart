@@ -2,12 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/constants/app_colors.dart';
-import 'daily_goals_panel.dart';
 import 'friends_panel.dart';
-import 'leaderboard_dialog.dart';
 
-class SocialHubDialog extends StatelessWidget {
-  const SocialHubDialog({super.key});
+class LiveChatDialog extends StatelessWidget {
+  const LiveChatDialog({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +31,7 @@ class SocialHubDialog extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'SOCIAL HUB',
+                        'LIVE CHAT',
                         style: GoogleFonts.poppins(
                           color: AppColors.gold,
                           fontWeight: FontWeight.w900,
@@ -44,7 +42,8 @@ class SocialHubDialog extends StatelessWidget {
                     ),
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                      icon: const Icon(Icons.close_rounded,
+                          color: Colors.white70),
                     ),
                   ],
                 ),
@@ -55,7 +54,9 @@ class SocialHubDialog extends StatelessWidget {
                 unselectedLabelColor: Colors.white60,
                 tabs: [
                   Tab(icon: Icon(Icons.people_alt_rounded), text: 'FRIENDS'),
-                  Tab(icon: Icon(Icons.emoji_events_rounded), text: 'LEADERBOARD'),
+                  Tab(
+                      icon: Icon(Icons.emoji_events_rounded),
+                      text: 'LEADERBOARD'),
                   Tab(icon: Icon(Icons.flag_rounded), text: 'DAILY GOALS'),
                 ],
               ),
@@ -63,13 +64,32 @@ class SocialHubDialog extends StatelessWidget {
                 child: TabBarView(
                   children: [
                     FriendsPanel(),
-                    LeaderboardDialog(),
-                    DailyGoalsPanel(),
+                    _ComingSoonPanel(),
+                    _ComingSoonPanel(),
                   ],
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ComingSoonPanel extends StatelessWidget {
+  const _ComingSoonPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        'Coming in the next version!',
+        textAlign: TextAlign.center,
+        style: GoogleFonts.poppins(
+          color: Colors.white70,
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

@@ -28,7 +28,7 @@ import 'widgets/lobby_game_card.dart';
 import 'widgets/lobby_header_bar.dart';
 import 'widgets/online_matchmaking_dialog.dart';
 import 'widgets/daily_bonus_dialog.dart';
-import 'widgets/social_hub_dialog.dart';
+import 'widgets/live_chat_dialog.dart';
 import 'widgets/incoming_buddy_request_dialog.dart';
 import 'widgets/incoming_voice_call_dialog.dart';
 import 'widgets/friend_chat_dialog.dart';
@@ -525,7 +525,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                '$modeName mode is coming in Part 2!',
+                '$modeName mode is coming in the next version!',
                 style: GoogleFonts.poppins(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
@@ -539,10 +539,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  void _showSocialHub() {
+  void _showLiveChat() {
     showDialog<void>(
       context: context,
-      builder: (_) => const SocialHubDialog(),
+      builder: (_) => const LiveChatDialog(),
     );
   }
 
@@ -1607,8 +1607,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               selectedIndex: _currentNavIndex,
               onTap: (index) {
                 setState(() => _currentNavIndex = index);
-                if (index == 1) _showComingSoonSnackBar('Live Voice Chat');
-                if (index == 2) _showSocialHub();
+                if (index == 1) _showLiveChat();
               },
             ),
           ],

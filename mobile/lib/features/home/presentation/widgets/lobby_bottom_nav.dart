@@ -51,16 +51,6 @@ class LobbyBottomNav extends StatelessWidget {
                 onTap: () => onTap(1),
               ),
             ),
-
-            // SOCIAL Tab
-            Expanded(
-              child: _BottomNavItem(
-                icon: Icons.groups_rounded,
-                label: 'SOCIAL',
-                isSelected: selectedIndex == 2,
-                onTap: () => onTap(2),
-              ),
-            ),
           ],
         ),
       ),
@@ -91,14 +81,21 @@ class _BottomNavItem extends StatelessWidget {
         decoration: isSelected
             ? BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFF00E5FF), Color(0xFF0288D1), Color(0xFF01579B)],
+                  colors: [
+                    Color(0xFF00E5FF),
+                    Color(0xFF0288D1),
+                    Color(0xFF01579B)
+                  ],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                 ),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.white, width: 1.5),
                 boxShadow: const [
-                  BoxShadow(color: Color(0xFF00E5FF), blurRadius: 8, offset: Offset(0, 2)),
+                  BoxShadow(
+                      color: Color(0xFF00E5FF),
+                      blurRadius: 8,
+                      offset: Offset(0, 2)),
                 ],
               )
             : null,
