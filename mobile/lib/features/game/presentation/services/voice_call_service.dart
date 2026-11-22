@@ -627,6 +627,7 @@ class VoiceCallService extends ChangeNotifier {
         await peer.addTrack(track, stream);
       }
       peer.onIceCandidate = (candidate) {
+        if (!identical(_peerConnection, peer)) return;
         final current = call;
         if (current == null || candidate.candidate == null) return;
         _send(current.withVideo ? 'voice_video_ice' : 'voice_call_ice',
@@ -634,11 +635,15 @@ class VoiceCallService extends ChangeNotifier {
             candidate: candidate.toMap().cast<String, dynamic>());
       };
       peer.onTrack = (event) {
+        if (!identical(_peerConnection, peer)) return;
         if (event.streams.isEmpty) return;
         _remoteStream = event.streams.first;
         notifyListeners();
       };
       peer.onConnectionState = (state) {
+        // A closed call can still emit a final state change while its native
+        // WebRTC peer is being disposed. Never let that old peer mutate a new call.
+        if (!identical(_peerConnection, peer)) return;
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _callTimeout?.cancel();
           final current = call;
@@ -683,7 +688,6 @@ class VoiceCallService extends ChangeNotifier {
   Future<void> _clearCall() async {
     _callTimeout?.cancel();
     _callTimeout = null;
-    await _stopRingtone();
     final peer = _peerConnection;
     final stream = _localStream;
     final videoCaptureStream = _videoCaptureStream;
@@ -698,6 +702,14 @@ class VoiceCallService extends ChangeNotifier {
     isCallUiMinimized = false;
     isIncomingVideoUpgrade = false;
     isRequestingVideoUpgrade = false;
+    // Detach handlers before the first await: cleanup is asynchronous, and a
+    // user may start another call while the previous native peer is closing.
+    if (peer != null) {
+      peer.onIceCandidate = null;
+      peer.onTrack = null;
+      peer.onConnectionState = null;
+    }
+    await _stopRingtone();
     if (!_disposed) notifyListeners();
     if (stream != null) {
       for (final track in stream.getTracks()) {
