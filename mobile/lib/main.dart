@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -35,11 +38,58 @@ void main() async {
   );
 }
 
-class LudoWorldFreeApp extends ConsumerWidget {
+class LudoWorldFreeApp extends ConsumerStatefulWidget {
   const LudoWorldFreeApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<LudoWorldFreeApp> createState() => _LudoWorldFreeAppState();
+}
+
+class _LudoWorldFreeAppState extends ConsumerState<LudoWorldFreeApp> {
+  late final AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSubscription;
+  final Map<String, DateTime> _recentFriendLinks = <String, DateTime>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _appLinks = AppLinks();
+    _linkSubscription = _appLinks.uriLinkStream.listen(_handleAppLink);
+    unawaited(_openInitialLink());
+  }
+
+  Future<void> _openInitialLink() async {
+    try {
+      final initialLink = await _appLinks.getInitialLink();
+      if (initialLink != null) _handleAppLink(initialLink);
+    } catch (_) {
+      // Normal app startup has no initial deep link.
+    }
+  }
+
+  void _handleAppLink(Uri uri) {
+    if (uri.scheme != 'ludoworldfree' || uri.host != 'friend-room') return;
+    final code = uri.queryParameters['code'] ??
+        (uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null);
+    if (code == null || !RegExp(r'^\d{8}$').hasMatch(code)) return;
+    final now = DateTime.now();
+    final previous = _recentFriendLinks[code];
+    if (previous != null &&
+        now.difference(previous) < const Duration(seconds: 3)) {
+      return;
+    }
+    _recentFriendLinks[code] = now;
+    ref.read(appRouterProvider).go('/friend-room?code=$code');
+  }
+
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Start the app-scoped SDK and consent flow before any screen can request ads.
     ref.watch(adMobConsentServiceProvider);
     final router = ref.watch(appRouterProvider);

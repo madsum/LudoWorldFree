@@ -38,7 +38,9 @@ import 'widgets/buddy_game_match.dart';
 import '../../game/presentation/services/voice_call_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.initialFriendRoomCode});
+
+  final String? initialFriendRoomCode;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -91,6 +93,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (!mounted) return;
       final userId = ref.read(authControllerProvider).user?.id;
       if (userId != null) _queueDailyBonusCheck(userId);
+      final roomCode = widget.initialFriendRoomCode;
+      if (roomCode != null) unawaited(_showFriendRoomFlow(roomCode));
     });
     Future.microtask(() {
       ref.read(rewardedAdServiceProvider).preloadAd();
@@ -842,6 +846,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Future<void> _showFriendRoomFlow([String? initialRoomCode]) {
+    return FriendRoomFlowDialog.show(
+      context,
+      initialRoomCode: initialRoomCode,
+      onStartMatch: (players, roomId, playerId, color, gameMode) {
+        final gameController = ref.read(gameControllerProvider.notifier);
+        gameController.configureOnlineMatch(
+          roomId: roomId,
+          playerId: playerId,
+          selectedColor: color,
+          gameMode: gameMode,
+          requestDiceRoll: ref.read(webSocketServiceProvider).requestDiceRoll,
+        );
+        gameController.startNewGame(players: players);
+        context.push('/game');
+      },
+    );
+  }
+
   void _watchAdAndEarnGold(BuildContext context) async {
     if (_isClaimingReward) return;
     final rewardedAdService = ref.read(rewardedAdServiceProvider);
@@ -1433,28 +1456,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     title: 'FRIENDS',
                                     playerCount: '16,393',
                                     cardType: LobbyCardType.friends,
-                                    onTap: () {
-                                      FriendRoomFlowDialog.show(
-                                        context,
-                                        onStartMatch: (players, roomId,
-                                            playerId, color, gameMode) {
-                                          final gameController = ref.read(
-                                              gameControllerProvider.notifier);
-                                          gameController.configureOnlineMatch(
-                                            roomId: roomId,
-                                            playerId: playerId,
-                                            selectedColor: color,
-                                            gameMode: gameMode,
-                                            requestDiceRoll: ref
-                                                .read(webSocketServiceProvider)
-                                                .requestDiceRoll,
-                                          );
-                                          gameController.startNewGame(
-                                              players: players);
-                                          context.push('/game');
-                                        },
-                                      );
-                                    },
+                                    onTap: () => _showFriendRoomFlow(),
                                   ),
                                 ),
                               ],

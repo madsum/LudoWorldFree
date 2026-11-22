@@ -30,6 +30,17 @@
 	<string>Microphone access is used for voice calls with your Ludo buddies.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Camera access is used for video calls with your Ludo buddies.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>nl.iprosoft.ludo</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>ludoworldfree</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

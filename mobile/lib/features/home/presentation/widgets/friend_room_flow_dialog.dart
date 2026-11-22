@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/constants/app_constants.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/websocket_service.dart';
 import '../../../../core/utils/top_notice.dart';
@@ -21,13 +22,16 @@ class FriendRoomFlowDialog extends ConsumerStatefulWidget {
   const FriendRoomFlowDialog({
     super.key,
     required this.onStartMatch,
+    this.initialRoomCode,
   });
 
   final void Function(List<PlayerModel> players, String roomId, String playerId,
       LudoColor selectedColor, GameMode gameMode) onStartMatch;
+  final String? initialRoomCode;
 
   static Future<void> show(
     BuildContext context, {
+    String? initialRoomCode,
     required void Function(List<PlayerModel> players, String roomId,
             String playerId, LudoColor selectedColor, GameMode gameMode)
         onStartMatch,
@@ -36,7 +40,10 @@ class FriendRoomFlowDialog extends ConsumerStatefulWidget {
       context: context,
       barrierDismissible: false,
       barrierColor: Colors.black87,
-      builder: (_) => FriendRoomFlowDialog(onStartMatch: onStartMatch),
+      builder: (_) => FriendRoomFlowDialog(
+        onStartMatch: onStartMatch,
+        initialRoomCode: initialRoomCode,
+      ),
     );
   }
 
@@ -78,6 +85,16 @@ class _FriendRoomFlowDialogState extends ConsumerState<FriendRoomFlowDialog> {
   Timer? _roomPollTimer;
   bool _launchingMatch = false;
   bool _isHost = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final initialCode = widget.initialRoomCode?.trim();
+    if (initialCode != null && RegExp(r'^\d{8}$').hasMatch(initialCode)) {
+      _isJoinFlow = true;
+      _codeController.text = initialCode;
+    }
+  }
 
   static String _newSessionId() {
     final random = math.Random.secure();
@@ -235,7 +252,9 @@ class _FriendRoomFlowDialogState extends ConsumerState<FriendRoomFlowDialog> {
       setState(() => _room = next);
       if (next['started'] == true) {
         final match = next['match'];
-        if (match is Map) await _launchMatch(Map<String, dynamic>.from(match));
+        await _launchMatch(
+          match is Map ? Map<String, dynamic>.from(match) : const {},
+        );
       }
     } catch (error) {
       if (error is DioException && error.response?.statusCode == 404) {
@@ -258,7 +277,9 @@ class _FriendRoomFlowDialogState extends ConsumerState<FriendRoomFlowDialog> {
       final body = Map<String, dynamic>.from(response.data as Map);
       setState(() => _room = body);
       final match = body['match'];
-      if (match is Map) await _launchMatch(Map<String, dynamic>.from(match));
+      await _launchMatch(
+        match is Map ? Map<String, dynamic>.from(match) : const {},
+      );
     } catch (error) {
       _notice(_errorText(error));
     } finally {
@@ -269,17 +290,13 @@ class _FriendRoomFlowDialogState extends ConsumerState<FriendRoomFlowDialog> {
   Future<void> _launchMatch(Map<String, dynamic> match) async {
     if (_launchingMatch || !mounted) return;
     _launchingMatch = true;
-    _roomPollTimer?.cancel();
     final user = ref.read(authControllerProvider).user;
-    final roomId = match['roomId']?.toString();
-    final playerId = match['playerId']?.toString();
-    final sessionId = match['sessionId']?.toString();
-    final players = _parsePlayers(match['players']);
-    if (user == null ||
-        roomId == null ||
-        playerId == null ||
-        sessionId == null ||
-        players == null) {
+    final roomId = match['roomId']?.toString() ?? _room?['roomId']?.toString();
+    final playerId = match['playerId']?.toString() ?? user?.id;
+    final sessionId = match['sessionId']?.toString() ?? _sessionId;
+    final players =
+        _parsePlayers(match['players']) ?? _parseRoomSeats(_room?['seats']);
+    if (user == null || roomId == null || playerId == null || players == null) {
       _launchingMatch = false;
       _notice('The room is ready, but the match details are incomplete.');
       return;
@@ -294,20 +311,24 @@ class _FriendRoomFlowDialogState extends ConsumerState<FriendRoomFlowDialog> {
       _notice('Could not connect to the game room. Please try again.');
       return;
     }
+    _roomPollTimer?.cancel();
     if (mounted) Navigator.of(context).pop();
     widget.onStartMatch(players, roomId, playerId, _selectedColor, _gameMode);
   }
 
   List<PlayerModel>? _parsePlayers(dynamic value) {
-    if (value is! List || value.length != _playerCount) return null;
+    final expectedCount =
+        (_room?['playerCount'] as num?)?.toInt() ?? _playerCount;
+    if (value is! List || value.length != expectedCount) return null;
     final user = ref.read(authControllerProvider).user;
     final players = <PlayerModel>[];
     for (final row in value) {
       if (row is! Map) return null;
-      final colorName = row['color']?.toString();
+      final colorName =
+          (row['color'] ?? row['selectedColor'])?.toString().toLowerCase();
       final color = _colors.where((item) => item.name == colorName).firstOrNull;
-      final id = row['id']?.toString();
-      final name = row['name']?.toString();
+      final id = (row['id'] ?? row['playerId'])?.toString();
+      final name = (row['name'] ?? row['displayName'])?.toString();
       if (color == null || id == null || name == null) return null;
       players.add(PlayerModel.initial(
         id: id,
@@ -324,16 +345,77 @@ class _FriendRoomFlowDialogState extends ConsumerState<FriendRoomFlowDialog> {
     if (players.length != _playerCount || players.any((p) => p.isBot)) {
       return null;
     }
-    if (user != null && !players.any((p) => p.id == user.id)) return null;
+    if (user != null &&
+        !players.any((p) => p.id.toLowerCase() == user.id.toLowerCase())) {
+      return null;
+    }
     return players;
+  }
+
+  List<PlayerModel>? _parseRoomSeats(dynamic value) {
+    final expectedCount =
+        (_room?['playerCount'] as num?)?.toInt() ?? _playerCount;
+    if (value is! List || value.length != expectedCount) return null;
+    final user = ref.read(authControllerProvider).user;
+    final players = <PlayerModel>[];
+    for (var index = 0; index < value.length; index++) {
+      final row = value[index];
+      if (row is! Map) return null;
+      var colorName = row['selectedColor']?.toString().toLowerCase();
+      if (expectedCount == 2 && index == 1 && players.isNotEmpty) {
+        colorName = switch (players.first.color) {
+          LudoColor.red => LudoColor.yellow.name,
+          LudoColor.green => LudoColor.blue.name,
+          LudoColor.yellow => LudoColor.red.name,
+          LudoColor.blue => LudoColor.green.name,
+        };
+      }
+      final color = _colors.where((item) => item.name == colorName).firstOrNull;
+      final id = row['playerId']?.toString();
+      final name = row['displayName']?.toString();
+      if (color == null || id == null || name == null) return null;
+      players.add(PlayerModel.initial(
+        id: id,
+        name: name,
+        avatarUrl: row['avatarUrl']?.toString(),
+        country: row['country']?.toString() ?? 'World',
+        countryFlag: row['countryFlag']?.toString() ?? '🌐',
+        coins:
+            id.toLowerCase() == user?.id.toLowerCase() ? (user?.coins ?? 0) : 0,
+        diamonds: id.toLowerCase() == user?.id.toLowerCase()
+            ? (user?.diamonds ?? 0)
+            : 0,
+        color: color,
+        isBot: false,
+      ));
+    }
+    if (user != null &&
+        !players.any(
+            (player) => player.id.toLowerCase() == user.id.toLowerCase())) {
+      return null;
+    }
+    return players;
+  }
+
+  Uri? _roomInviteUri(String? code) {
+    if (code == null) return null;
+    final apiBase = Uri.parse(AppConstants.defaultApiBaseUrl);
+    return apiBase.replace(
+      path: '${apiBase.path.replaceFirst(RegExp(r'/+$'), '')}'
+          '/friend-rooms/invite/$code',
+      query: null,
+      fragment: null,
+    );
   }
 
   Future<void> _shareRoom() async {
     final code = _room?['roomCode']?.toString();
     if (code == null) return;
+    final inviteUri = _roomInviteUri(code);
     await SharePlus.instance.share(ShareParams(
       text: 'Join my Ludo World game! Room code: $code\n'
-          'Mode: ${_gameMode.displayName} · Entry: $_entryFee coins',
+          'Mode: ${_gameMode.displayName} · Entry: $_entryFee coins'
+          '${inviteUri == null ? '' : '\nOpen room: $inviteUri'}',
       subject: 'Join my Ludo World room',
     ));
   }
@@ -343,7 +425,8 @@ class _FriendRoomFlowDialogState extends ConsumerState<FriendRoomFlowDialog> {
     if (code == null) return;
     final text = Uri.encodeComponent(
       'Join my Ludo World game! Room code: $code. '
-      'Mode: ${_gameMode.displayName} · Entry: $_entryFee coins',
+      'Mode: ${_gameMode.displayName} · Entry: $_entryFee coins. '
+      'Open room: ${_roomInviteUri(code)}',
     );
     final uri = Uri.parse('https://wa.me/?text=$text');
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
