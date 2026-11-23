@@ -16,7 +16,8 @@ public class GoldTransaction {
         PURCHASE,
         SPEND,
         ADMIN_ADJUSTMENT,
-        REFUND
+        REFUND,
+        REFERRAL_BONUS
     }
 
     @Id

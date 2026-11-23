@@ -7,13 +7,18 @@ import 'package:flutter/material.dart';
 class TopNotice {
   TopNotice._();
 
+  static const Color _noticeBackground = Color(0xFF00FF00);
+  static const Color _noticeForeground = Colors.black;
+
   static final Map<OverlayState, OverlayEntry> _entries = {};
 
+  // Keep the color parameters source-compatible with existing callers; every
+  // top notice uses the same high-contrast palette regardless of call site.
   static void show(
     BuildContext context,
     String message, {
-    Color backgroundColor = const Color(0xFF142547),
-    Color foregroundColor = Colors.white,
+    Color backgroundColor = _noticeBackground,
+    Color foregroundColor = _noticeForeground,
     Duration duration = const Duration(seconds: 4),
     String? actionLabel,
     VoidCallback? onAction,
@@ -21,8 +26,8 @@ class TopNotice {
     showOnOverlay(
       Overlay.maybeOf(context, rootOverlay: true),
       message,
-      backgroundColor: backgroundColor,
-      foregroundColor: foregroundColor,
+      backgroundColor: _noticeBackground,
+      foregroundColor: _noticeForeground,
       duration: duration,
       actionLabel: actionLabel,
       onAction: onAction,
@@ -32,8 +37,8 @@ class TopNotice {
   static void showOnOverlay(
     OverlayState? overlay,
     String message, {
-    Color backgroundColor = const Color(0xFF142547),
-    Color foregroundColor = Colors.white,
+    Color backgroundColor = _noticeBackground,
+    Color foregroundColor = _noticeForeground,
     Duration duration = const Duration(seconds: 4),
     String? actionLabel,
     VoidCallback? onAction,
@@ -61,7 +66,7 @@ class TopNotice {
                     vertical: 12,
                   ),
                   decoration: BoxDecoration(
-                    color: backgroundColor,
+                    color: _noticeBackground,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: Colors.white24),
                     boxShadow: const [
@@ -80,7 +85,7 @@ class TopNotice {
                           maxLines: 4,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: foregroundColor,
+                            color: _noticeForeground,
                             fontSize: 14,
                             height: 1.3,
                             fontWeight: FontWeight.w500,
@@ -98,7 +103,7 @@ class TopNotice {
                             onAction();
                           },
                           style: TextButton.styleFrom(
-                            foregroundColor: foregroundColor,
+                            foregroundColor: _noticeForeground,
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                           ),
                           child: Text(actionLabel),

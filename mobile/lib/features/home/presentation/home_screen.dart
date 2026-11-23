@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../config/ad_config.dart';
 import '../../../core/constants/app_colors.dart';
@@ -15,6 +16,7 @@ import '../../../core/network/api_client.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
 import '../../../core/ads/rewarded_ad_service.dart';
 import '../../../core/utils/top_notice.dart';
+import '../../../core/storage/secure_storage_service.dart';
 import '../../../shared/widgets/flying_coin_overlay.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
 import '../../auth/domain/auth_repository.dart';
@@ -38,9 +40,11 @@ import 'widgets/buddy_game_match.dart';
 import '../../game/presentation/services/voice_call_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key, this.initialFriendRoomCode});
+  const HomeScreen(
+      {super.key, this.initialFriendRoomCode, this.initialReferralCode});
 
   final String? initialFriendRoomCode;
+  final String? initialReferralCode;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -70,6 +74,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _buddyRequestDialogShowing = false;
   bool _friendChatDialogShowing = false;
   bool _buddyGameInviteDialogShowing = false;
+  bool _claimingReferral = false;
   final Set<String> _seenBuddyRequestIds = <String>{};
   final Set<String> _seenFriendMessageIds = <String>{};
   final Set<String> _seenBuddyGameInviteIds = <String>{};
@@ -95,10 +100,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (userId != null) _queueDailyBonusCheck(userId);
       final roomCode = widget.initialFriendRoomCode;
       if (roomCode != null) unawaited(_showFriendRoomFlow(roomCode));
+      final referralCode = widget.initialReferralCode;
+      if (referralCode != null) unawaited(_saveAndClaimReferral(referralCode));
+      final user = ref.read(authControllerProvider).user;
+      if (user != null && referralCode == null) {
+        unawaited(_claimPendingReferral(user.id));
+      }
     });
     Future.microtask(() {
       ref.read(rewardedAdServiceProvider).preloadAd();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final code = widget.initialReferralCode;
+    if (code != null && code != oldWidget.initialReferralCode) {
+      unawaited(_saveAndClaimReferral(code));
+    }
+  }
+
+  Future<void> _saveAndClaimReferral(String code) async {
+    await ref.read(secureStorageServiceProvider).savePendingReferralCode(code);
+    final playerId = ref.read(authControllerProvider).user?.id;
+    if (playerId != null) await _claimPendingReferral(playerId);
   }
 
   void _handleAuthStateChanged(AuthState? previous, AuthState next) {
@@ -123,6 +149,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return;
     }
     unawaited(_voiceCallService.connect(user.id));
+    unawaited(_claimPendingReferral(user.id));
     _startBuddyRequestPolling(user.id);
     _startFriendInboxPolling(user.id);
     _startBuddyGameInvitePolling(user.id);
@@ -132,6 +159,65 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     _dailyBonusPopupPlayerId = user.id;
     _queueDailyBonusCheck(user.id);
+  }
+
+  Future<void> _claimPendingReferral(String playerId) async {
+    if (_claimingReferral) return;
+    _claimingReferral = true;
+    try {
+      final storage = ref.read(secureStorageServiceProvider);
+      var code = await storage.getPendingReferralCode();
+      if (code == null || code.isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 700));
+        code = await storage.getPendingReferralCode();
+      }
+      if (code == null || code.isEmpty || !mounted) return;
+      final response = await ref.read(apiClientProvider).post(
+            '/referrals/claim',
+            data: {'code': code},
+            options: Options(headers: {'X-Player-ID': playerId}),
+          );
+      await storage.clearPendingReferralCode();
+      final data = Map<String, dynamic>.from(response.data as Map);
+      final user = ref.read(authControllerProvider).user;
+      if (data['success'] == true && user?.id == playerId) {
+        final balance = (data['balance'] as num?)?.toInt();
+        if (balance != null) {
+          await ref.read(authControllerProvider.notifier).persistWalletBalance(
+                user!.copyWith(coins: balance),
+              );
+        }
+        if (mounted) {
+          TopNotice.show(context, 'Referral bonus claimed: 1,000 gold coins!');
+        }
+      }
+    } catch (error) {
+      debugPrint('Referral claim failed; invite code will be retried: $error');
+    } finally {
+      _claimingReferral = false;
+    }
+  }
+
+  Future<void> _shareReferralInvite() async {
+    try {
+      final response = await ref.read(apiClientProvider).get('/referrals/me');
+      final data = Map<String, dynamic>.from(response.data as Map);
+      final code = data['code']?.toString();
+      final inviteUrl = data['inviteUrl']?.toString();
+      if (code == null || inviteUrl == null)
+        throw StateError('Missing invite link');
+      await SharePlus.instance.share(ShareParams(
+        subject: 'Join Ludo World Free',
+        text: 'Join me in Ludo World Free! Install with my invite link and get '
+            '1,000 gold coins. I earn 10,000 coins when you join.\n'
+            '$inviteUrl\nReferral code: $code',
+      ));
+    } catch (error) {
+      if (mounted)
+        TopNotice.show(
+            context, 'Could not create your invite link. Please try again.');
+      debugPrint('Referral invite creation failed: $error');
+    }
   }
 
   void _handleVoiceCallServiceChanged() {
@@ -1371,223 +1457,306 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       index: selectedIndex,
                       children: [
                         SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12.0, vertical: 6.0),
-                        physics: const BouncingScrollPhysics(),
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: isTablet ? 600 : double.infinity,
-                            ),
-                            child: Column(
-                          children: [
-                            const LobbyCenterGraphic(),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: LobbyGameCard(
-                                    title: 'ONLINE',
-                                    playerCount: '218,675',
-                                    cardType: LobbyCardType.online,
-                                    onTap: () {
-                                      final user =
-                                          ref.read(authControllerProvider).user;
-                                      ModeConfigDialog.show(
-                                        context,
-                                        title: 'Online Multiplayer',
-                                        isVsComputer: false,
-                                        isOnline: true,
-                                        playerName: user?.name ?? 'Player 1',
-                                        avatarUrl: user?.avatarUrl,
-                                        country: user?.country ?? 'World',
-                                        countryFlag: user?.countryFlag ?? '🌐',
-                                        coins: user?.coins ?? 0,
-                                        diamonds: user?.diamonds ?? 0,
-                                        onStartGame: (_) {},
-                                        onStartOnlineMatch: (playerCount, color,
-                                            entryFee, gameMode) {
-                                          OnlineMatchmakingDialog.show(
-                                            context,
-                                            playerCount: playerCount,
-                                            entryFee: entryFee,
-                                            selectedColor: color,
-                                            gameMode: gameMode,
-                                            onMatchFound:
-                                                (players, roomId, playerId) {
-                                              final gameController = ref.read(
-                                                  gameControllerProvider
-                                                      .notifier);
-                                              gameController
-                                                  .configureOnlineMatch(
-                                                roomId: roomId,
-                                                playerId: playerId,
-                                                selectedColor: color,
-                                                gameMode: gameMode,
-                                                requestDiceRoll: ref
-                                                    .read(
-                                                        webSocketServiceProvider)
-                                                    .requestDiceRoll,
-                                              );
-                                              gameController.startNewGame(
-                                                  players: players);
-                                              context.push('/game');
-                                            },
-                                          );
-                                        },
-                                      );
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: LobbyGameCard(
-                                    title: 'TEAM UP',
-                                    playerCount: '4,144',
-                                    cardType: LobbyCardType.teamUp,
-                                    onTap: () =>
-                                        _showComingSoonSnackBar('Team Up 2v2'),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: LobbyGameCard(
-                                    title: 'FRIENDS',
-                                    playerCount: '16,393',
-                                    cardType: LobbyCardType.friends,
-                                    onTap: () => _showFriendRoomFlow(),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: LobbyGameCard(
-                                    title: 'COMPUTER',
-                                    cardType: LobbyCardType.computer,
-                                    onTap: () => _launchGameMode(context,
-                                        isVsComputer: true,
-                                        title: 'Vs Computer'),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: LobbyGameCard(
-                                    title: 'PASS N PLAY',
-                                    cardType: LobbyCardType.passNPlay,
-                                    onTap: () => _launchGameMode(context,
-                                        isVsComputer: false,
-                                        title: 'Pass & Play'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            GestureDetector(
-                              onTap: () => _watchAdAndEarnGold(context),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 12),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [
-                                      Color(0xFFFFEA00),
-                                      Color(0xFFFF8F00),
-                                      Color(0xFFB76E00)
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12.0, vertical: 6.0),
+                          physics: const BouncingScrollPhysics(),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: isTablet ? 600 : double.infinity,
+                              ),
+                              child: Column(
+                                children: [
+                                  const LobbyCenterGraphic(),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: LobbyGameCard(
+                                          title: 'ONLINE',
+                                          playerCount: '218,675',
+                                          cardType: LobbyCardType.online,
+                                          onTap: () {
+                                            final user = ref
+                                                .read(authControllerProvider)
+                                                .user;
+                                            ModeConfigDialog.show(
+                                              context,
+                                              title: 'Online Multiplayer',
+                                              isVsComputer: false,
+                                              isOnline: true,
+                                              playerName:
+                                                  user?.name ?? 'Player 1',
+                                              avatarUrl: user?.avatarUrl,
+                                              country: user?.country ?? 'World',
+                                              countryFlag:
+                                                  user?.countryFlag ?? '🌐',
+                                              coins: user?.coins ?? 0,
+                                              diamonds: user?.diamonds ?? 0,
+                                              onStartGame: (_) {},
+                                              onStartOnlineMatch: (playerCount,
+                                                  color, entryFee, gameMode) {
+                                                OnlineMatchmakingDialog.show(
+                                                  context,
+                                                  playerCount: playerCount,
+                                                  entryFee: entryFee,
+                                                  selectedColor: color,
+                                                  gameMode: gameMode,
+                                                  onMatchFound: (players,
+                                                      roomId, playerId) {
+                                                    final gameController =
+                                                        ref.read(
+                                                            gameControllerProvider
+                                                                .notifier);
+                                                    gameController
+                                                        .configureOnlineMatch(
+                                                      roomId: roomId,
+                                                      playerId: playerId,
+                                                      selectedColor: color,
+                                                      gameMode: gameMode,
+                                                      requestDiceRoll: ref
+                                                          .read(
+                                                              webSocketServiceProvider)
+                                                          .requestDiceRoll,
+                                                    );
+                                                    gameController.startNewGame(
+                                                        players: players);
+                                                    context.push('/game');
+                                                  },
+                                                );
+                                              },
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: LobbyGameCard(
+                                          title: 'TEAM UP',
+                                          playerCount: '4,144',
+                                          cardType: LobbyCardType.teamUp,
+                                          onTap: () => _showComingSoonSnackBar(
+                                              'Team Up 2v2'),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: LobbyGameCard(
+                                          title: 'FRIENDS',
+                                          playerCount: '16,393',
+                                          cardType: LobbyCardType.friends,
+                                          onTap: () => _showFriendRoomFlow(),
+                                        ),
+                                      ),
                                     ],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
                                   ),
-                                  borderRadius: BorderRadius.circular(16),
-                                  border:
-                                      Border.all(color: Colors.white, width: 2),
-                                  boxShadow: const [
-                                    BoxShadow(
-                                      color: Color(0xFFFF8F00),
-                                      blurRadius: 10,
-                                      offset: Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: const BoxDecoration(
-                                        color: Colors.black38,
-                                        shape: BoxShape.circle,
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: LobbyGameCard(
+                                          title: 'COMPUTER',
+                                          cardType: LobbyCardType.computer,
+                                          onTap: () => _launchGameMode(context,
+                                              isVsComputer: true,
+                                              title: 'Vs Computer'),
+                                        ),
                                       ),
-                                      child: const Icon(
-                                        Icons.ondemand_video_rounded,
-                                        color: Colors.white,
-                                        size: 26,
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: LobbyGameCard(
+                                          title: 'PASS N PLAY',
+                                          cardType: LobbyCardType.passNPlay,
+                                          onTap: () => _launchGameMode(context,
+                                              isVsComputer: false,
+                                              title: 'Pass & Play'),
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'WATCH AD & EARN GOLD',
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w900,
-                                              color: Colors.black87,
-                                              letterSpacing: 0.5,
-                                            ),
-                                          ),
-                                          Text(
-                                            'Watch a short video to claim free gold!',
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 10.5,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.black87,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  GestureDetector(
+                                    onTap: _shareReferralInvite,
+                                    child: Container(
+                                      height: 88,
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 6),
+                                          horizontal: 10),
                                       decoration: BoxDecoration(
-                                        color: Colors.black87,
-                                        borderRadius: BorderRadius.circular(12),
+                                        gradient: const LinearGradient(
+                                          colors: [
+                                            Color(0xFF203F74),
+                                            Color(0xFF10264B)
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(16),
                                         border: Border.all(
-                                            color: AppColors.gold, width: 1.2),
+                                            color: AppColors.gold, width: 1.5),
+                                        boxShadow: const [
+                                          BoxShadow(
+                                              color: Color(0x553FC9F5),
+                                              blurRadius: 10),
+                                        ],
                                       ),
                                       child: Row(
                                         children: [
-                                          const Icon(
-                                              Icons.monetization_on_rounded,
-                                              color: AppColors.coinGold,
-                                              size: 16),
+                                          ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(11),
+                                            child: Image.asset(
+                                              'assets/images/referral_banner.webp',
+                                              width: 98,
+                                              height: 68,
+                                              fit: BoxFit.cover,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'INVITE FRIENDS & EARN',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: GoogleFonts.poppins(
+                                                    color: Colors.white,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '10,000 gold for you · 1,000 for them',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: GoogleFonts.poppins(
+                                                    color:
+                                                        const Color(0xFFFFD95A),
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const Icon(Icons.share_rounded,
+                                              color: AppColors.gold, size: 22),
                                           const SizedBox(width: 4),
-                                          Text(
-                                            '+${AdConfig.adRewardGoldAmount}',
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w900,
-                                              color: AppColors.gold,
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  GestureDetector(
+                                    onTap: () => _watchAdAndEarnGold(context),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 12),
+                                      decoration: BoxDecoration(
+                                        gradient: const LinearGradient(
+                                          colors: [
+                                            Color(0xFFFFEA00),
+                                            Color(0xFFFF8F00),
+                                            Color(0xFFB76E00)
+                                          ],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                        ),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                            color: Colors.white, width: 2),
+                                        boxShadow: const [
+                                          BoxShadow(
+                                            color: Color(0xFFFF8F00),
+                                            blurRadius: 10,
+                                            offset: Offset(0, 4),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(8),
+                                            decoration: const BoxDecoration(
+                                              color: Colors.black38,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(
+                                              Icons.ondemand_video_rounded,
+                                              color: Colors.white,
+                                              size: 26,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'WATCH AD & EARN GOLD',
+                                                  style: GoogleFonts.poppins(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w900,
+                                                    color: Colors.black87,
+                                                    letterSpacing: 0.5,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  'Watch a short video to claim free gold!',
+                                                  style: GoogleFonts.poppins(
+                                                    fontSize: 10.5,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.black87,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 6),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black87,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                  color: AppColors.gold,
+                                                  width: 1.2),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                const Icon(
+                                                    Icons
+                                                        .monetization_on_rounded,
+                                                    color: AppColors.coinGold,
+                                                    size: 16),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '+${AdConfig.adRewardGoldAmount}',
+                                                  style: GoogleFonts.poppins(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w900,
+                                                    color: AppColors.gold,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ],
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                ],
                               ),
-                            ),
-                            const SizedBox(height: 10),
-                          ],
                             ),
                           ),
                         ),
-                      ),
                         const LiveChatPage(),
                       ],
                     ),

@@ -9,6 +9,18 @@ final secureStorageServiceProvider = Provider<SecureStorageService>((ref) {
 class SecureStorageService {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
+  Future<void> savePendingReferralCode(String code) async {
+    await _storage.write(key: 'pending_referral_code', value: code);
+  }
+
+  Future<String?> getPendingReferralCode() async {
+    return _storage.read(key: 'pending_referral_code');
+  }
+
+  Future<void> clearPendingReferralCode() async {
+    await _storage.delete(key: 'pending_referral_code');
+  }
+
   Future<void> saveAccessToken(String token) async {
     await _storage.write(key: AppConstants.keyAccessToken, value: token);
   }
@@ -60,10 +72,12 @@ class SecureStorageService {
       );
     }
     if (preferredGameType != null) {
-      writes.add(_storage.write(key: 'preferred_game_type', value: preferredGameType));
+      writes.add(
+          _storage.write(key: 'preferred_game_type', value: preferredGameType));
     }
     if (mostPlayedGameType != null) {
-      writes.add(_storage.write(key: 'most_played_game_type', value: mostPlayedGameType));
+      writes.add(_storage.write(
+          key: 'most_played_game_type', value: mostPlayedGameType));
     }
     await Future.wait(writes);
   }

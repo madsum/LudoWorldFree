@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/ads/ad_mob_consent_service.dart';
 import 'core/constants/app_constants.dart';
+import 'core/storage/secure_storage_service.dart';
 import 'core/theme/app_theme.dart';
 import 'routes/app_router.dart';
 
@@ -49,6 +50,10 @@ class _LudoWorldFreeAppState extends ConsumerState<LudoWorldFreeApp> {
   late final AppLinks _appLinks;
   StreamSubscription<Uri>? _linkSubscription;
   final Map<String, DateTime> _recentFriendLinks = <String, DateTime>{};
+  final SecureStorageService _secureStorage = SecureStorageService();
+  bool _receivedReferralLink = false;
+  static const MethodChannel _referralChannel =
+      MethodChannel('nl.iprosoft.ludo/referral');
 
   @override
   void initState() {
@@ -56,6 +61,24 @@ class _LudoWorldFreeAppState extends ConsumerState<LudoWorldFreeApp> {
     _appLinks = AppLinks();
     _linkSubscription = _appLinks.uriLinkStream.listen(_handleAppLink);
     unawaited(_openInitialLink());
+    unawaited(_captureInstallReferral());
+  }
+
+  Future<void> _captureInstallReferral() async {
+    try {
+      final raw =
+          await _referralChannel.invokeMethod<String>('getInstallReferrer');
+      if (raw == null) return;
+      final params = Uri.splitQueryString(raw);
+      final code = params['referral_code'];
+      if (!_receivedReferralLink &&
+          code != null &&
+          RegExp(r'^[A-Z0-9]{6,16}$').hasMatch(code)) {
+        await _secureStorage.savePendingReferralCode(code);
+      }
+    } catch (_) {
+      // Install referrer is available only on Android installs through Play.
+    }
   }
 
   Future<void> _openInitialLink() async {
@@ -68,7 +91,16 @@ class _LudoWorldFreeAppState extends ConsumerState<LudoWorldFreeApp> {
   }
 
   void _handleAppLink(Uri uri) {
-    if (uri.scheme != 'ludoworldfree' || uri.host != 'friend-room') return;
+    if (uri.scheme != 'ludoworldfree') return;
+    if (uri.host == 'referral') {
+      final code = uri.queryParameters['code']?.toUpperCase();
+      if (code == null || !RegExp(r'^[A-Z0-9]{6,16}$').hasMatch(code)) return;
+      _receivedReferralLink = true;
+      unawaited(_secureStorage.savePendingReferralCode(code));
+      ref.read(appRouterProvider).go('/home?referralCode=$code');
+      return;
+    }
+    if (uri.host != 'friend-room') return;
     final code = uri.queryParameters['code'] ??
         (uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null);
     if (code == null || !RegExp(r'^\d{8}$').hasMatch(code)) return;

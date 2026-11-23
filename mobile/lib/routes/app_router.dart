@@ -24,7 +24,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/home',
         name: 'home',
-        builder: (context, state) => const HomeScreen(),
+        builder: (context, state) => HomeScreen(
+          initialReferralCode: state.uri.queryParameters['referralCode'],
+        ),
       ),
       GoRoute(
         path: '/friend-room',
