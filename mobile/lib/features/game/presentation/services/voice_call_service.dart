@@ -71,6 +71,7 @@ class VoiceCallService extends ChangeNotifier {
   RTCRtpSender? _videoSender;
   bool _videoRemoteDescriptionReady = false;
   final List<RTCIceCandidate> _queuedCandidates = [];
+  List<Map<String, dynamic>> _turnIceServers = const [];
   final AudioPlayer _ringtonePlayer = AudioPlayer();
 
   VoiceCallSession? call;
@@ -341,6 +342,13 @@ class VoiceCallService extends ChangeNotifier {
   Future<void> _handleMessage(Map<String, dynamic> message) async {
     final type = message['type']?.toString();
     if (type == 'voice_ready') {
+      final rawIceServers = message['iceServers'];
+      _turnIceServers = rawIceServers is List
+          ? rawIceServers
+              .whereType<Map>()
+              .map((server) => Map<String, dynamic>.from(server))
+              .toList(growable: false)
+          : const [];
       _isReady = true;
       lastError = null;
       _startHeartbeat();
@@ -617,6 +625,7 @@ class VoiceCallService extends ChangeNotifier {
       final peer = await createPeerConnection({
         'iceServers': [
           {'urls': 'stun:stun.l.google.com:19302'},
+          ..._turnIceServers,
         ],
       });
       _localStream = stream;

@@ -416,6 +416,27 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               IconButton(
+                                                tooltip: 'Open chat',
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                                onPressed: () =>
+                                                    FriendChatDialog.show(
+                                                  context,
+                                                  friendId: friend['playerId']
+                                                          ?.toString() ??
+                                                      '',
+                                                  friendName:
+                                                      friend['displayName']
+                                                              ?.toString() ??
+                                                          'Player',
+                                                ),
+                                                icon: const Icon(
+                                                  Icons
+                                                      .chat_bubble_outline_rounded,
+                                                  color: AppColors.gold,
+                                                ),
+                                              ),
+                                              IconButton(
                                                 tooltip: currentVoiceCall
                                                             ?.peerId ==
                                                         friend['playerId']
@@ -474,6 +495,15 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                           : Colors.white24,
                                                 ),
                                               ),
+                                              IconButton(
+                                                tooltip: 'Invite buddy to play',
+                                                onPressed: () =>
+                                                    _requestBuddyGame(friend),
+                                                icon: Icon(
+                                                  Icons.sports_esports_rounded,
+                                                  color: Colors.amberAccent,
+                                                ),
+                                              ),
                                               PopupMenuButton<String>(
                                                 tooltip: 'Friend options',
                                                 onSelected: (value) {
@@ -506,10 +536,8 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                   ),
                                                   PopupMenuItem(
                                                     value: 'game',
-                                                    enabled: isOnline,
-                                                    child: Text(isOnline
-                                                        ? 'Play a game'
-                                                        : 'Buddy is offline'),
+                                                    child:
+                                                        Text('Play a game'),
                                                   ),
                                                   PopupMenuItem(
                                                     value: 'remove',

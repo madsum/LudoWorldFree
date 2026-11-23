@@ -1259,16 +1259,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final controls = Stack(
       clipBehavior: Clip.none,
       children: [
-        Align(
-          alignment: Alignment.center,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_typingPlayerId == playerId)
-                const OnlineChatTypingIndicator(),
-            ],
-          ),
-        ),
+        // Keep a non-positioned child so this Stack has layout size. The chat
+        // bubble is positioned outside it and otherwise can disappear.
+        const SizedBox(width: 1, height: 1),
         if (_latestChatMessage?.playerId == playerId)
           Positioned(
             right: 0,
@@ -1351,9 +1344,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
           Positioned(
             left: 0,
             top: 1,
-            child: OnlineChatButton(
-              compact: true,
-              onPressed: () => _openOnlineChat(context),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                OnlineChatButton(
+                  compact: true,
+                  onPressed: () => _openOnlineChat(context),
+                ),
+                if (_typingPlayerId != null) ...[
+                  const SizedBox(width: 4),
+                  const OnlineChatTypingIndicator(),
+                ],
+              ],
             ),
           ),
       ],

@@ -10,6 +10,7 @@ import com.ludoworldfree.backend.util.PlayerIdResolver;
 import com.ludoworldfree.backend.chat.ChatEventPublisher;
 import com.ludoworldfree.backend.chat.ChatPresenceService;
 import com.ludoworldfree.backend.realtime.DatabaseRealtimeEventBus;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -22,7 +23,10 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.net.URI;
+import java.time.Instant;
+import java.util.Base64;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -32,6 +36,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 @Component
 public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
@@ -43,18 +49,28 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
     private final PlayerProfileRepository profileRepository;
     private final DatabaseRealtimeEventBus realtimeEvents;
     private final ChatPresenceService presenceService;
+    private final String turnUrls;
+    private final String turnSharedSecret;
+    private final long turnCredentialTtlSeconds;
     private final Map<UUID, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
     public VoiceCallWebSocketHandler(ObjectMapper objectMapper,
                                      FriendshipRepository friendshipRepository,
                                      PlayerProfileRepository profileRepository,
                                      DatabaseRealtimeEventBus realtimeEvents,
-                                     ChatPresenceService presenceService) {
+                                     ChatPresenceService presenceService,
+                                     @Value("${voice.turn.urls:}") String turnUrls,
+                                     @Value("${voice.turn.shared-secret:}") String turnSharedSecret,
+                                     @Value("${voice.turn.credential-ttl-seconds:3600}")
+                                     long turnCredentialTtlSeconds) {
         this.objectMapper = objectMapper;
         this.friendshipRepository = friendshipRepository;
         this.profileRepository = profileRepository;
         this.realtimeEvents = realtimeEvents;
         this.presenceService = presenceService;
+        this.turnUrls = turnUrls;
+        this.turnSharedSecret = turnSharedSecret;
+        this.turnCredentialTtlSeconds = Math.max(300, Math.min(86400, turnCredentialTtlSeconds));
     }
 
     public boolean isOnline(UUID playerId) {
@@ -94,7 +110,37 @@ public class VoiceCallWebSocketHandler extends TextWebSocketHandler {
         WebSocketSession previous = sessions.put(playerId, decorated);
         presenceService.connected(playerId, "voice:" + session.getId());
         if (previous != null && previous.isOpen()) previous.close(CloseStatus.NORMAL);
-        send(decorated, Map.of("type", "voice_ready", "playerId", playerId.toString()));
+        Map<String, Object> ready = new LinkedHashMap<>();
+        ready.put("type", "voice_ready");
+        ready.put("playerId", playerId.toString());
+        Map<String, Object> turnServer = createTurnServer();
+        if (turnServer != null) ready.put("iceServers", List.of(turnServer));
+        send(decorated, ready);
+    }
+
+    private Map<String, Object> createTurnServer() {
+        List<String> urls = java.util.Arrays.stream(turnUrls.split(","))
+                .map(String::trim)
+                .filter(url -> !url.isEmpty())
+                .toList();
+        if (urls.isEmpty() || turnSharedSecret.isBlank()) return null;
+        long expiry = Instant.now().getEpochSecond() + turnCredentialTtlSeconds;
+        String username = expiry + ":ludoworldfree";
+        try {
+            Mac hmac = Mac.getInstance("HmacSHA1");
+            hmac.init(new SecretKeySpec(
+                    turnSharedSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA1"));
+            String credential = Base64.getEncoder().encodeToString(
+                    hmac.doFinal(username.getBytes(StandardCharsets.UTF_8)));
+            Map<String, Object> server = new LinkedHashMap<>();
+            server.put("urls", urls);
+            server.put("username", username);
+            server.put("credential", credential);
+            return server;
+        } catch (Exception exception) {
+            log.error("Could not create temporary TURN credentials", exception);
+            return null;
+        }
     }
 
     @Override
