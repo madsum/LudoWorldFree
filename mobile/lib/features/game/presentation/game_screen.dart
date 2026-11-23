@@ -2,15 +2,14 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:vibration/vibration.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/audio/game_audio_service.dart';
 import '../../../core/utils/top_notice.dart';
 import '../../../core/ads/ad_mob_consent_service.dart';
 import '../../../core/ads/interstitial_ad_service.dart';
@@ -19,6 +18,8 @@ import '../../../core/network/api_client.dart';
 import '../../auth/presentation/controllers/auth_controller.dart';
 import '../../../shared/widgets/banner_ad_widget.dart';
 import '../domain/models/game_state.dart';
+import '../domain/game_engine.dart';
+import '../domain/models/game_mode.dart';
 import '../domain/models/ludo_color.dart';
 import '../domain/models/player_model.dart';
 import 'services/voice_call_service.dart';
@@ -43,6 +44,7 @@ class GameScreen extends ConsumerStatefulWidget {
 class _GameScreenState extends ConsumerState<GameScreen>
     with WidgetsBindingObserver {
   bool _hasTriggeredGameOverAd = false;
+  bool _firstKillResultDialogShowing = false;
   bool _readyToShowVictoryDialog = false;
   StreamSubscription<Map<String, dynamic>>? _onlineSubscription;
   void Function()? _removeOnlineStateListener;
@@ -68,7 +70,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
   final Set<String> _seenBuddyRequestIds = <String>{};
   final List<Map<String, dynamic>> _pendingBuddyRequests = [];
   bool _onlineStateSyncQueued = false;
-  final AudioPlayer _bellAudioPlayer = AudioPlayer();
   LudoColor? _bellAlertedPlayerColor;
   bool _rematchPending = false;
   bool _restartingForRematch = false;
@@ -88,6 +89,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(ref.read(gameAudioServiceProvider).playGameMusic());
     _voiceCallService = ref.read(voiceCallServiceProvider);
     final gameNotifier = ref.read(gameControllerProvider.notifier);
     if (gameNotifier.isOnlineMode) {
@@ -324,6 +326,41 @@ class _GameScreenState extends ConsumerState<GameScreen>
       gameControllerProvider,
       (previous, next) {
         if (previous != null) {
+          final audio = ref.read(gameAudioServiceProvider);
+          if ((next.isDiceRolling && !previous.isDiceRolling) ||
+              (next.turnPhase != GameTurnPhase.rollDice &&
+                  next.turnPhase != GameTurnPhase.animating &&
+                  next.lastRolledDiceValue != previous.lastRolledDiceValue)) {
+            audio.playEffect('audio/dice-rolling.mp3');
+          }
+
+          final move = next.lastMoveEvent;
+          final previousMove = previous.lastMoveEvent;
+          if (move != null &&
+              (previousMove == null ||
+                  move.timestamp.isAfter(previousMove.timestamp))) {
+            final capture = next.lastCaptureEvent;
+            final previousCapture = previous.lastCaptureEvent;
+            final wasCaptured = capture != null &&
+                (previousCapture == null ||
+                    capture.timestamp.isAfter(previousCapture.timestamp));
+            if (wasCaptured) {
+              audio.playEffect('audio/pawn-killed.mp3');
+            } else if (move.toStep == 56) {
+              audio.playEffect('audio/pawn-home.wav');
+            } else {
+              final globalTile = move.toStep >= 0 && move.toStep <= 50
+                  ? (move.color.actualEntryTrackIndex + move.toStep) % 52
+                  : null;
+              if (globalTile != null &&
+                  GameEngine.safeGlobalTiles.contains(globalTile)) {
+                audio.playEffect('audio/pawn-safe-star.wav');
+              } else {
+                audio.playEffect('audio/pawn-move.m4a');
+              }
+            }
+          }
+
           final previousMissedTurns = {
             for (final player in previous.players)
               player.id: player.missedTurns,
@@ -361,37 +398,35 @@ class _GameScreenState extends ConsumerState<GameScreen>
         }
 
         if (next.isGameOver && previous?.isGameOver != true) {
+          unawaited(ref.read(gameAudioServiceProvider).stopMusic());
           final gameNotifier = ref.read(gameControllerProvider.notifier);
           if (gameNotifier.isOnlineMode &&
               next.winnerIds.contains(gameNotifier.onlineLocalPlayerId)) {
             unawaited(_refreshWalletAfterWin());
-            TopNotice.show(
-              context,
-              'You won! Your online match reward is being added to your wallet.',
-            );
+            if (next.gameMode != GameMode.firstKill) {
+              TopNotice.show(
+                context,
+                'You won! Your online match reward is being added to your wallet.',
+              );
+            }
           }
           unawaited(_recordDailyGoalEvents(
             next,
             gameNotifier,
           ));
+        } else if (!next.isGameOver && previous?.isGameOver == true) {
+          unawaited(ref.read(gameAudioServiceProvider).playGameMusic());
         }
 
-        // Immediately trigger Fullscreen Ad upon Game Over before Victory Dialog
+        // First-kill results require acknowledgement before showing the ad.
         if (next.isGameOver && !_hasTriggeredGameOverAd) {
-          _hasTriggeredGameOverAd = true;
-          Future.microtask(() async {
-            final interstitialAdService =
-                ref.read(interstitialAdServiceProvider);
-            await interstitialAdService.showInterstitialAd(
-              onAdClosed: () {
-                if (mounted) {
-                  setState(() {
-                    _readyToShowVictoryDialog = true;
-                  });
-                }
-              },
-            );
-          });
+          if (next.gameMode == GameMode.firstKill) {
+            if (!_firstKillResultDialogShowing) {
+              unawaited(_showFirstKillResultDialog(next));
+            }
+          } else {
+            _showGameOverAd();
+          }
         }
       },
       fireImmediately: true,
@@ -492,8 +527,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final gameNotifier = ref.read(gameControllerProvider.notifier);
     if (lifecycleState == AppLifecycleState.resumed) {
       gameNotifier.resumeTurnTimer();
+      unawaited(ref.read(gameAudioServiceProvider).resumeMusic());
     } else {
       gameNotifier.pauseTurnTimer();
+      unawaited(ref.read(gameAudioServiceProvider).pauseMusic());
     }
   }
 
@@ -505,7 +542,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _typingIndicatorTimer?.cancel();
     _bellAlertTimer?.cancel();
     _opponentDisconnectTimer?.cancel();
-    unawaited(_bellAudioPlayer.dispose());
+    unawaited(ref.read(gameAudioServiceProvider).stopMusic());
     _chatMessages.dispose();
     for (final entry in _emojiFlights.toList()) {
       entry.remove();
@@ -567,12 +604,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   void _playBellAlertSound() {
-    unawaited(_bellAudioPlayer
-        .stop()
-        .then((_) => _bellAudioPlayer.play(AssetSource('audio/play-fast.mp3')))
-        .catchError((error) {
-      debugPrint('Could not play the bell alert: $error');
-    }));
+    ref.read(gameAudioServiceProvider).playEffect('audio/play-fast.mp3');
   }
 
   void _ringPlayerBell(LudoColor playerColor) {
@@ -869,6 +901,86 @@ class _GameScreenState extends ConsumerState<GameScreen>
     }
   }
 
+  Future<void> _showFirstKillResultDialog(GameState gameState) async {
+    if (_firstKillResultDialogShowing || !mounted) return;
+    _firstKillResultDialogShowing = true;
+    final gameNotifier = ref.read(gameControllerProvider.notifier);
+    final localPlayerId =
+        gameNotifier.onlineLocalPlayerId ?? gameState.localPlayerId;
+    final didLocalPlayerWin =
+        localPlayerId != null && gameState.winnerIds.contains(localPlayerId);
+    final winner = gameState.players
+        .where((player) => gameState.winnerIds.contains(player.id))
+        .firstOrNull;
+    final message = didLocalPlayerWin
+        ? 'Congratulations! You captured a pawn and won the game.'
+        : localPlayerId != null
+            ? 'Your opponent captured a pawn first. You lost the game.'
+            : '${winner?.name ?? 'A player'} captured a pawn and won the game.';
+
+    bool? confirmed;
+    try {
+      confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            backgroundColor: AppColors.bgNavy,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: const BorderSide(color: AppColors.gold, width: 1.5),
+            ),
+            title: Text(
+              didLocalPlayerWin ? 'YOU WON!' : 'GAME OVER',
+              style: const TextStyle(
+                color: AppColors.gold,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            content: Text(
+              message,
+              style: const TextStyle(color: Colors.white, height: 1.4),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text(
+                  'OK',
+                  style: TextStyle(
+                    color: AppColors.gold,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      _firstKillResultDialogShowing = false;
+    }
+
+    if (confirmed == true && mounted) _showGameOverAd();
+  }
+
+  void _showGameOverAd() {
+    if (_hasTriggeredGameOverAd || !mounted) return;
+    _hasTriggeredGameOverAd = true;
+    Future.microtask(() async {
+      final interstitialAdService = ref.read(interstitialAdServiceProvider);
+      await interstitialAdService.showInterstitialAd(
+        onAdClosed: () {
+          if (mounted) {
+            setState(() {
+              _readyToShowVictoryDialog = true;
+            });
+          }
+        },
+      );
+    });
+  }
+
   Future<void> _refreshWalletAfterWin() async {
     await Future<void>.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
@@ -878,6 +990,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
   @override
   Widget build(BuildContext context) {
     final gameState = ref.watch(gameControllerProvider);
+    final audioService = ref.watch(gameAudioServiceProvider);
     final gameNotifier = ref.read(gameControllerProvider.notifier);
     final voiceCallService = ref.watch(voiceCallServiceProvider);
     final voiceCall = voiceCallService.call;
@@ -1170,6 +1283,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   ),
                 ),
 
+              if (!gameState.isGameOver)
+                _buildAudioFloatingButtons(audioService),
+
               // Victory Dialog (Shows ONLY after the Fullscreen Interstitial Ad completes and is dismissed)
               if (gameState.isGameOver && _readyToShowVictoryDialog)
                 Positioned.fill(
@@ -1235,6 +1351,41 @@ class _GameScreenState extends ConsumerState<GameScreen>
               onPressed: () => _confirmExitDialog(context),
             ),
           ),
+        ),
+      );
+
+  Widget _buildAudioFloatingButtons(GameAudioService audioService) =>
+      Positioned(
+        right: 10,
+        bottom: 128,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _FloatingAudioButton(
+              tooltip:
+                  audioService.musicEnabled ? 'Mute music' : 'Enable music',
+              icon: audioService.musicEnabled
+                  ? Icons.music_note_rounded
+                  : Icons.music_off_rounded,
+              isEnabled: audioService.musicEnabled,
+              onPressed: () => audioService.setMusicEnabled(
+                !audioService.musicEnabled,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _FloatingAudioButton(
+              tooltip: audioService.effectsEnabled
+                  ? 'Mute sound effects'
+                  : 'Enable sound effects',
+              icon: audioService.effectsEnabled
+                  ? Icons.volume_up_rounded
+                  : Icons.volume_off_rounded,
+              isEnabled: audioService.effectsEnabled,
+              onPressed: () => audioService.setEffectsEnabled(
+                !audioService.effectsEnabled,
+              ),
+            ),
+          ],
         ),
       );
 
@@ -1844,4 +1995,45 @@ class _CompactBackButton extends StatelessWidget {
       ),
     );
   }
+}
+
+class _FloatingAudioButton extends StatelessWidget {
+  const _FloatingAudioButton({
+    required this.tooltip,
+    required this.icon,
+    required this.isEnabled,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final bool isEnabled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: tooltip,
+        child: Material(
+          color: AppColors.bgNavy.withValues(alpha: 0.94),
+          elevation: 5,
+          shape: const CircleBorder(
+            side: BorderSide(color: AppColors.gold, width: 1),
+          ),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: IconButton(
+              onPressed: onPressed,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+              splashRadius: 21,
+              icon: Icon(
+                icon,
+                color: isEnabled ? AppColors.gold : Colors.white54,
+                size: 21,
+              ),
+            ),
+          ),
+        ),
+      );
 }

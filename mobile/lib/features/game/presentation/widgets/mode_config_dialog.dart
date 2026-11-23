@@ -221,170 +221,12 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
       ),
       content: SingleChildScrollView(
         child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Player Count Selection (2 Players or 4 Players)
-          Text(
-            'SELECT PLAYERS',
-            style: GoogleFonts.poppins(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.white70),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: ChoiceChip(
-                  label: Center(
-                      child: Text('2 PLAYERS',
-                          style: GoogleFonts.poppins(
-                              fontWeight: FontWeight.bold))),
-                  selected: _playerCount == 2,
-                  selectedColor: AppColors.gold,
-                  backgroundColor: AppColors.bgCard,
-                  labelStyle: TextStyle(
-                      color: _playerCount == 2 ? Colors.black87 : Colors.white),
-                  onSelected: (selected) => setState(() => _playerCount = 2),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ChoiceChip(
-                  label: Center(
-                      child: Text('4 PLAYERS',
-                          style: GoogleFonts.poppins(
-                              fontWeight: FontWeight.bold))),
-                  selected: _playerCount == 4,
-                  selectedColor: AppColors.gold,
-                  backgroundColor: AppColors.bgCard,
-                  labelStyle: TextStyle(
-                      color: _playerCount == 4 ? Colors.black87 : Colors.white),
-                  onSelected: (selected) => setState(() => _playerCount = 4),
-                ),
-              ),
-            ],
-          ),
-
-          if (widget.isOnline) ...[
-            const SizedBox(height: 16),
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Player Count Selection (2 Players or 4 Players)
             Text(
-              'SELECT GAME MODE',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.white70,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: ChoiceChip(
-                    label: Center(
-                      child: Text(
-                        'CLASSIC',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    selected: _selectedGameMode == GameMode.classic,
-                    selectedColor: AppColors.gold,
-                    backgroundColor: AppColors.bgCard,
-                    labelStyle: TextStyle(
-                      color: _selectedGameMode == GameMode.classic
-                          ? Colors.black87
-                          : Colors.white,
-                    ),
-                    onSelected: (_) =>
-                        setState(() => _selectedGameMode = GameMode.classic),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ChoiceChip(
-                    label: Center(
-                      child: Text(
-                        '1ST KILL WIN',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    selected: _selectedGameMode == GameMode.firstKill,
-                    selectedColor: AppColors.gold,
-                    backgroundColor: AppColors.bgCard,
-                    labelStyle: TextStyle(
-                      color: _selectedGameMode == GameMode.firstKill
-                          ? Colors.black87
-                          : Colors.white,
-                    ),
-                    onSelected: (_) => setState(
-                      () => _selectedGameMode = GameMode.firstKill,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-
-          if (widget.isOnline) ...[
-            const SizedBox(height: 16),
-            Text(
-              'SELECT ENTRY COINS',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.white70,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: AppColors.bgCard,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.gold.withValues(alpha: .7)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.monetization_on_rounded,
-                      color: AppColors.coinGold, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        value: _selectedEntryFee,
-                        isExpanded: true,
-                        dropdownColor: AppColors.bgNavy,
-                        iconEnabledColor: AppColors.gold,
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                        ),
-                        items: _onlineEntryFees
-                            .map((entryFee) => DropdownMenuItem<int>(
-                                  value: entryFee,
-                                  child: Text('$entryFee coins'),
-                                ))
-                            .toList(growable: false),
-                        onChanged: (entryFee) {
-                          if (entryFee == null) return;
-                          setState(() => _selectedEntryFee = entryFee);
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          const SizedBox(height: 16),
-
-          // Color Choice (For Vs Computer Mode)
-          if (widget.isVsComputer || widget.isOnline) ...[
-            Text(
-              'SELECT YOUR COLOR',
+              'SELECT PLAYERS',
               style: GoogleFonts.poppins(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -392,43 +234,215 @@ class _ModeConfigDialogState extends State<ModeConfigDialog> {
             ),
             const SizedBox(height: 8),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: LudoColor.values.map((color) {
-                final isSelected = _selectedColor == color;
-                return GestureDetector(
-                  onTap: () => setState(() => _selectedColor = color),
-                  child: Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: color.color,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isSelected ? Colors.white : Colors.transparent,
-                        width: 3,
-                      ),
-                      boxShadow: [
-                        if (isSelected)
-                          BoxShadow(
-                            color: color.color.withValues(alpha: 0.8),
-                            blurRadius: 10,
-                          ),
-                      ],
-                    ),
-                    child: isSelected
-                        ? const Icon(Icons.check, color: Colors.white)
-                        : null,
+              children: [
+                Expanded(
+                  child: ChoiceChip(
+                    label: Center(
+                        child: Text('2 PLAYERS',
+                            style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.bold))),
+                    selected: _playerCount == 2,
+                    selectedColor: AppColors.gold,
+                    backgroundColor: AppColors.bgCard,
+                    labelStyle: TextStyle(
+                        color:
+                            _playerCount == 2 ? Colors.black87 : Colors.white),
+                    onSelected: (_) {
+                      setState(() => _playerCount = 2);
+                    },
                   ),
-                );
-              }).toList(),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ChoiceChip(
+                    label: Center(
+                        child: Text('4 PLAYERS',
+                            style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.bold))),
+                    selected: _playerCount == 4,
+                    selectedColor: AppColors.gold,
+                    backgroundColor: AppColors.bgCard,
+                    labelStyle: TextStyle(
+                        color:
+                            _playerCount == 4 ? Colors.black87 : Colors.white),
+                    onSelected: (_) {
+                      setState(() => _playerCount = 4);
+                    },
+                  ),
+                ),
+              ],
             ),
-          ],
+
+            if (widget.isOnline) ...[
+              const SizedBox(height: 16),
+              Text(
+                'SELECT GAME MODE',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: ChoiceChip(
+                      label: Center(
+                        child: Text(
+                          'CLASSIC',
+                          style:
+                              GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      selected: _selectedGameMode == GameMode.classic,
+                      selectedColor: AppColors.gold,
+                      backgroundColor: AppColors.bgCard,
+                      labelStyle: TextStyle(
+                        color: _selectedGameMode == GameMode.classic
+                            ? Colors.black87
+                            : Colors.white,
+                      ),
+                      onSelected: (_) {
+                        setState(() => _selectedGameMode = GameMode.classic);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ChoiceChip(
+                      label: Center(
+                        child: Text(
+                          '1ST KILL WIN',
+                          style:
+                              GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      selected: _selectedGameMode == GameMode.firstKill,
+                      selectedColor: AppColors.gold,
+                      backgroundColor: AppColors.bgCard,
+                      labelStyle: TextStyle(
+                        color: _selectedGameMode == GameMode.firstKill
+                            ? Colors.black87
+                            : Colors.white,
+                      ),
+                      onSelected: (_) {
+                        setState(() => _selectedGameMode = GameMode.firstKill);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            if (widget.isOnline) ...[
+              const SizedBox(height: 16),
+              Text(
+                'SELECT ENTRY COINS',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.bgCard,
+                  borderRadius: BorderRadius.circular(10),
+                  border:
+                      Border.all(color: AppColors.gold.withValues(alpha: .7)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.monetization_on_rounded,
+                        color: AppColors.coinGold, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          value: _selectedEntryFee,
+                          isExpanded: true,
+                          dropdownColor: AppColors.bgNavy,
+                          iconEnabledColor: AppColors.gold,
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          items: _onlineEntryFees
+                              .map((entryFee) => DropdownMenuItem<int>(
+                                    value: entryFee,
+                                    child: Text('$entryFee coins'),
+                                  ))
+                              .toList(growable: false),
+                          onChanged: (entryFee) {
+                            if (entryFee == null) return;
+                            setState(() => _selectedEntryFee = entryFee);
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 16),
+
+            // Color Choice (For Vs Computer Mode)
+            if (widget.isVsComputer || widget.isOnline) ...[
+              Text(
+                'SELECT YOUR COLOR',
+                style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white70),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: LudoColor.values.map((color) {
+                  final isSelected = _selectedColor == color;
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() => _selectedColor = color);
+                    },
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: color.color,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isSelected ? Colors.white : Colors.transparent,
+                          width: 3,
+                        ),
+                        boxShadow: [
+                          if (isSelected)
+                            BoxShadow(
+                              color: color.color.withValues(alpha: 0.8),
+                              blurRadius: 10,
+                            ),
+                        ],
+                      ),
+                      child: isSelected
+                          ? const Icon(Icons.check, color: Colors.white)
+                          : null,
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
           ],
         ),
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
           child:
               Text('Cancel', style: GoogleFonts.poppins(color: Colors.white54)),
         ),

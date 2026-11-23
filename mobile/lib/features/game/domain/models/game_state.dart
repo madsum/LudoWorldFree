@@ -18,7 +18,8 @@ class PawnMoveEvent {
     required this.pawnId,
     required this.fromStep,
     required this.toStep,
-  }) : timestamp = DateTime.now();
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
 
   int get stepsCount => (fromStep == -1) ? 1 : (toStep - fromStep).abs();
 }
@@ -33,7 +34,8 @@ class PawnCaptureEvent {
     required this.color,
     required this.pawnId,
     required this.globalTrackIndex,
-  }) : timestamp = DateTime.now();
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
 }
 
 class GameState {
@@ -119,6 +121,7 @@ class GameState {
                 'pawnId': lastMoveEvent!.pawnId,
                 'fromStep': lastMoveEvent!.fromStep,
                 'toStep': lastMoveEvent!.toStep,
+                'timestamp': lastMoveEvent!.timestamp.millisecondsSinceEpoch,
               },
         'lastCaptureEvent': lastCaptureEvent == null
             ? null
@@ -126,6 +129,7 @@ class GameState {
                 'color': lastCaptureEvent!.color.name,
                 'pawnId': lastCaptureEvent!.pawnId,
                 'globalTrackIndex': lastCaptureEvent!.globalTrackIndex,
+                'timestamp': lastCaptureEvent!.timestamp.millisecondsSinceEpoch,
               },
         'isGameOver': isGameOver,
         'winnerIds': winnerIds,
@@ -192,6 +196,10 @@ class GameState {
               pawnId: (move['pawnId'] as num?)?.toInt() ?? 0,
               fromStep: (move['fromStep'] as num?)?.toInt() ?? -1,
               toStep: (move['toStep'] as num?)?.toInt() ?? -1,
+              timestamp: move['timestamp'] is num
+                  ? DateTime.fromMillisecondsSinceEpoch(
+                      (move['timestamp'] as num).toInt())
+                  : null,
             ),
       lastCaptureEvent:
           capture == null || _colorFromJson(capture['color']) == null
@@ -201,6 +209,10 @@ class GameState {
                   pawnId: (capture['pawnId'] as num?)?.toInt() ?? 0,
                   globalTrackIndex:
                       (capture['globalTrackIndex'] as num?)?.toInt() ?? 0,
+                  timestamp: capture['timestamp'] is num
+                      ? DateTime.fromMillisecondsSinceEpoch(
+                          (capture['timestamp'] as num).toInt())
+                      : null,
                 ),
       isGameOver: json['isGameOver'] == true,
       winnerIds: (json['winnerIds'] as List<dynamic>? ?? const [])

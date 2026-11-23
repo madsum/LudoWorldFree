@@ -11,6 +11,7 @@ import 'core/constants/app_constants.dart';
 import 'core/storage/secure_storage_service.dart';
 import 'core/theme/app_theme.dart';
 import 'routes/app_router.dart';
+import 'shared/widgets/menu_click_sound.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -132,6 +133,11 @@ class _LudoWorldFreeAppState extends ConsumerState<LudoWorldFreeApp> {
       theme: AppTheme.darkTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.dark,
+      builder: (context, child) => MenuClickSound(
+        enabledWhen: () =>
+            router.routeInformationProvider.value.uri.path != '/game',
+        child: child ?? const SizedBox.shrink(),
+      ),
       routerConfig: router,
     );
   }

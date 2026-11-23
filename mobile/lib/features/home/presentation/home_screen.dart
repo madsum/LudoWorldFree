@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../config/ad_config.dart';
+import '../../../core/audio/game_audio_service.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/network/websocket_service.dart';
@@ -1316,69 +1317,102 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            FutureBuilder<bool>(
-              future: adsConsent.isPrivacyOptionsRequired(),
-              builder: (context, snapshot) {
-                if (snapshot.data != true) return const SizedBox.shrink();
-                return ListTile(
+        content: Consumer(
+          builder: (context, ref, _) {
+            final audio = ref.watch(gameAudioServiceProvider);
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.privacy_tip_outlined,
+                  secondary: const Icon(Icons.music_note_rounded,
                       color: AppColors.gold),
+                  title: Text('Background music',
+                      style: GoogleFonts.poppins(color: Colors.white)),
+                  value: audio.musicEnabled,
+                  onChanged: (enabled) {
+                    audio.setMusicEnabled(enabled);
+                  },
+                ),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.volume_up_rounded,
+                      color: AppColors.gold),
+                  title: Text('Sound effects',
+                      style: GoogleFonts.poppins(color: Colors.white)),
+                  value: audio.effectsEnabled,
+                  onChanged: (enabled) {
+                    audio.setEffectsEnabled(enabled);
+                  },
+                ),
+                const Divider(color: Colors.white12),
+                FutureBuilder<bool>(
+                  future: adsConsent.isPrivacyOptionsRequired(),
+                  builder: (context, snapshot) {
+                    if (snapshot.data != true) return const SizedBox.shrink();
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.privacy_tip_outlined,
+                          color: AppColors.gold),
+                      title: Text(
+                        'Privacy choices',
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                      onTap: () {
+                        adsConsent.showPrivacyOptionsForm();
+                      },
+                    );
+                  },
+                ),
+                Text(
+                  '${AppConstants.appName} v${AppConstants.appVersion}',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white70,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Developed by ${AppConstants.publisher}',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: Colors.white54,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Divider(color: Colors.white12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading:
+                      const Icon(Icons.logout_rounded, color: AppColors.red),
                   title: Text(
-                    'Privacy choices',
+                    'Sign Out',
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.w600,
-                      color: Colors.white,
+                      color: AppColors.red,
                     ),
                   ),
-                  onTap: adsConsent.showPrivacyOptionsForm,
-                );
-              },
-            ),
-            Text(
-              '${AppConstants.appName} v${AppConstants.appVersion}',
-              style: GoogleFonts.poppins(
-                fontWeight: FontWeight.w600,
-                color: Colors.white70,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Developed by ${AppConstants.publisher}',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: Colors.white54,
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Divider(color: Colors.white12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.logout_rounded, color: AppColors.red),
-              title: Text(
-                'Sign Out',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.red,
+                  onTap: () async {
+                    Navigator.of(context).pop();
+                    await ref.read(authControllerProvider.notifier).signOut();
+                    if (context.mounted) {
+                      context.go('/login');
+                    }
+                  },
                 ),
-              ),
-              onTap: () async {
-                Navigator.of(context).pop();
-                await ref.read(authControllerProvider.notifier).signOut();
-                if (context.mounted) {
-                  context.go('/login');
-                }
-              },
-            ),
-          ],
+              ],
+            );
+          },
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
             child: Text(
               'Close',
               style: GoogleFonts.poppins(color: AppColors.gold),
@@ -1443,12 +1477,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   coins: coins,
                   coinWalletKey: _walletKey,
                   level: 3,
-                  onProfilePressed: () => _showProfileInfoDialog(context),
-                  onSettingsPressed: () => _showSettingsDialog(context),
-                  onInboxPressed: () =>
-                      _showComingSoonSnackBar('Mailbox Inbox'),
-                  onShopPressed: () =>
-                      _showComingSoonSnackBar('Coin & Diamond Store'),
+                  onProfilePressed: () {
+                    _showProfileInfoDialog(context);
+                  },
+                  onSettingsPressed: () {
+                    _showSettingsDialog(context);
+                  },
+                  onInboxPressed: () {
+                    _showComingSoonSnackBar('Mailbox Inbox');
+                  },
+                  onShopPressed: () {
+                    _showComingSoonSnackBar('Coin & Diamond Store');
+                  },
                 ),
                 Expanded(
                   child: ValueListenableBuilder<int>(
@@ -1535,8 +1575,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                           title: 'TEAM UP',
                                           playerCount: '4,144',
                                           cardType: LobbyCardType.teamUp,
-                                          onTap: () => _showComingSoonSnackBar(
-                                              'Team Up 2v2'),
+                                          onTap: () {
+                                            _showComingSoonSnackBar(
+                                                'Team Up 2v2');
+                                          },
                                         ),
                                       ),
                                       const SizedBox(width: 6),
@@ -1545,7 +1587,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                           title: 'FRIENDS',
                                           playerCount: '16,393',
                                           cardType: LobbyCardType.friends,
-                                          onTap: () => _showFriendRoomFlow(),
+                                          onTap: () {
+                                            _showFriendRoomFlow();
+                                          },
                                         ),
                                       ),
                                     ],
@@ -1557,9 +1601,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         child: LobbyGameCard(
                                           title: 'COMPUTER',
                                           cardType: LobbyCardType.computer,
-                                          onTap: () => _launchGameMode(context,
-                                              isVsComputer: true,
-                                              title: 'Vs Computer'),
+                                          onTap: () {
+                                            _launchGameMode(context,
+                                                isVsComputer: true,
+                                                title: 'Vs Computer');
+                                          },
                                         ),
                                       ),
                                       const SizedBox(width: 10),
@@ -1567,16 +1613,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         child: LobbyGameCard(
                                           title: 'PASS N PLAY',
                                           cardType: LobbyCardType.passNPlay,
-                                          onTap: () => _launchGameMode(context,
-                                              isVsComputer: false,
-                                              title: 'Pass & Play'),
+                                          onTap: () {
+                                            _launchGameMode(context,
+                                                isVsComputer: false,
+                                                title: 'Pass & Play');
+                                          },
                                         ),
                                       ),
                                     ],
                                   ),
                                   const SizedBox(height: 12),
                                   GestureDetector(
-                                    onTap: _shareReferralInvite,
+                                    onTap: () {
+                                      _shareReferralInvite();
+                                    },
                                     child: Container(
                                       height: 88,
                                       padding: const EdgeInsets.symmetric(
@@ -1603,7 +1653,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                             borderRadius:
                                                 BorderRadius.circular(11),
                                             child: Image.asset(
-                                              'assets/images/referral_banner.webp',
+                                              'assets/images/referral_icon.webp',
                                               width: 98,
                                               height: 68,
                                               fit: BoxFit.cover,
@@ -1652,7 +1702,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   ),
                                   const SizedBox(height: 12),
                                   GestureDetector(
-                                    onTap: () => _watchAdAndEarnGold(context),
+                                    onTap: () {
+                                      _watchAdAndEarnGold(context);
+                                    },
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 14, vertical: 12),

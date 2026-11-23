@@ -134,7 +134,7 @@ class _LudoBoardWidgetState extends State<LudoBoardWidget>
             // remote state update arrives during a previous animation; using
             // it here can make one roll appear to cover extra squares.
             final fromStep = eventMatchesPawn
-                ? moveEvent!.fromStep
+                ? moveEvent.fromStep
                 : currentVisualStep;
             _visualSteps[key] = fromStep;
             _startPawnMovementAnimation(

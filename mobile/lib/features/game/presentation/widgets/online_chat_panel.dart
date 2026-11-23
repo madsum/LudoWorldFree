@@ -396,7 +396,7 @@ class _OnlineChatSheetState extends State<OnlineChatSheet> {
                     tooltip: 'Ask to stop the dice timer',
                     visualDensity: VisualDensity.compact,
                     icon: Image.asset(
-                      'assets/images/stop-timer.png',
+                      'assets/images/stop-timer.webp',
                       width: 34,
                       height: 34,
                       fit: BoxFit.contain,

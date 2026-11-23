@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../../core/audio/game_audio_service.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/top_notice.dart';
 import '../../../../core/network/api_client.dart';
@@ -165,6 +166,7 @@ class _OnlineMatchmakingDialogState
       return;
     }
     _queuePlayerId = playerId;
+    unawaited(ref.read(gameAudioServiceProvider).playWaitingMusic());
     final dio = ref.read(apiClientProvider);
     final joinRequest = {
       'displayName': user?.name ?? 'Player 1',
@@ -289,6 +291,7 @@ class _OnlineMatchmakingDialogState
     _pollingTimer?.cancel();
     _countdownTimer?.cancel();
     unawaited(_cancelServerQueue());
+    unawaited(ref.read(gameAudioServiceProvider).stopMusic());
     if (!mounted) return;
     setState(() {
       _hasStartedSearch = false;
@@ -327,14 +330,18 @@ class _OnlineMatchmakingDialogState
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
+            onPressed: () {
+              Navigator.of(dialogContext).pop(false);
+            },
             child: Text(
               'NO',
               style: GoogleFonts.poppins(color: Colors.white70),
             ),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
+            onPressed: () {
+              Navigator.of(dialogContext).pop(true);
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.gold,
               foregroundColor: Colors.black87,
@@ -390,6 +397,7 @@ class _OnlineMatchmakingDialogState
       _searchFailureMessage =
           'MATCHMAKING SERVER ERROR ($statusCode). PLEASE TRY AGAIN.';
     });
+    unawaited(ref.read(gameAudioServiceProvider).stopMusic());
   }
 
   void _handleQueueResponse(dynamic data) {
@@ -423,6 +431,7 @@ class _OnlineMatchmakingDialogState
       _searchFailed = true;
       _searchFailureMessage = message;
     });
+    unawaited(ref.read(gameAudioServiceProvider).stopMusic());
   }
 
   void _handleMatchFoundResponse(dynamic data) {
@@ -435,6 +444,7 @@ class _OnlineMatchmakingDialogState
     }
     _pollingTimer?.cancel();
     _countdownTimer?.cancel();
+    unawaited(ref.read(gameAudioServiceProvider).stopMusic());
 
     setState(() {
       _isMatchFound = true;
@@ -573,6 +583,7 @@ class _OnlineMatchmakingDialogState
     _countdownTimer?.cancel();
     unawaited(ref.read(webSocketServiceProvider).leaveRoom());
     _cancelServerQueue();
+    unawaited(ref.read(gameAudioServiceProvider).stopMusic());
     if (!mounted) return;
     setState(() {
       _isMatchFound = false;
@@ -601,6 +612,7 @@ class _OnlineMatchmakingDialogState
     _countdownTimer?.cancel();
     await ref.read(webSocketServiceProvider).leaveRoom();
     await _cancelServerQueue();
+    await ref.read(gameAudioServiceProvider).stopMusic();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -610,6 +622,9 @@ class _OnlineMatchmakingDialogState
     _pulseController.dispose();
     _countdownTimer?.cancel();
     _pollingTimer?.cancel();
+    if (!_isMatchFound) {
+      unawaited(ref.read(gameAudioServiceProvider).stopMusic());
+    }
     super.dispose();
   }
 
@@ -764,7 +779,9 @@ class _OnlineMatchmakingDialogState
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(
-                            onPressed: _beginSearch,
+                            onPressed: () {
+                              _beginSearch();
+                            },
                             icon: const Icon(Icons.search_rounded),
                             label: Text(
                               'SEARCH AGAIN',
@@ -971,7 +988,9 @@ class _OnlineMatchmakingDialogState
               left: 16,
               bottom: 16,
               child: GestureDetector(
-                onTap: _cancelMatchmaking,
+                onTap: () {
+                  _cancelMatchmaking();
+                },
                 child: Container(
                   width: 44,
                   height: 44,
