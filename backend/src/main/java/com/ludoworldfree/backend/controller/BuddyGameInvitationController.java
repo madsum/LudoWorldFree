@@ -9,6 +9,7 @@ import com.ludoworldfree.backend.repository.FriendshipRepository;
 import com.ludoworldfree.backend.repository.PlayerProfileRepository;
 import com.ludoworldfree.backend.service.MatchmakingService;
 import com.ludoworldfree.backend.util.PlayerIdResolver;
+import com.ludoworldfree.backend.websocket.VoiceCallWebSocketHandler;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.http.HttpStatus;
@@ -42,16 +43,19 @@ public class BuddyGameInvitationController {
     private final FriendshipRepository friendshipRepository;
     private final PlayerProfileRepository profileRepository;
     private final MatchmakingService matchmakingService;
+    private final VoiceCallWebSocketHandler voiceCallHandler;
 
     public BuddyGameInvitationController(
             BuddyGameInvitationRepository invitationRepository,
             FriendshipRepository friendshipRepository,
             PlayerProfileRepository profileRepository,
-            MatchmakingService matchmakingService) {
+            MatchmakingService matchmakingService,
+            VoiceCallWebSocketHandler voiceCallHandler) {
         this.invitationRepository = invitationRepository;
         this.friendshipRepository = friendshipRepository;
         this.profileRepository = profileRepository;
         this.matchmakingService = matchmakingService;
+        this.voiceCallHandler = voiceCallHandler;
     }
 
     @PostMapping("/{friendId}/game-invites")
@@ -62,6 +66,10 @@ public class BuddyGameInvitationController {
             @RequestBody Map<String, Object> body) {
         UUID requesterId = PlayerIdResolver.resolve(headerPlayerId);
         requireAcceptedBuddies(requesterId, friendId);
+        if (!voiceCallHandler.isOnline(friendId)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Your buddy is offline right now.");
+        }
 
         long entryFee = ((Number) body.getOrDefault("entryFee", 0)).longValue();
         if (!ALLOWED_ENTRY_FEES.contains(entryFee)) {

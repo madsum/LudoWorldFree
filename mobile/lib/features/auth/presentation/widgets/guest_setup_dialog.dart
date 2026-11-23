@@ -1067,22 +1067,26 @@ class _CountrySearchSheetState extends State<_CountrySearchSheet> {
                       final isSelected =
                           country.name == widget.selectedCountry.name;
 
-                      return ListTile(
-                        onTap: () => widget.onSelected(country),
-                        leading: _buildFlagWidget(country.flag, size: 24),
-                        title: Text(
-                          country.name,
-                          style: GoogleFonts.poppins(
-                            color: isSelected ? AppColors.gold : Colors.white,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
+                      return Material(
+                        color: AppColors.bgNavy,
+                        child: ListTile(
+                          onTap: () => widget.onSelected(country),
+                          leading: _buildFlagWidget(country.flag, size: 24),
+                          title: Text(
+                            country.name,
+                            style: GoogleFonts.poppins(
+                              color:
+                                  isSelected ? AppColors.gold : Colors.white,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
                           ),
+                          trailing: isSelected
+                              ? const Icon(Icons.check_circle_rounded,
+                                  color: AppColors.gold, size: 20)
+                              : null,
                         ),
-                        trailing: isSelected
-                            ? const Icon(Icons.check_circle_rounded,
-                                color: AppColors.gold, size: 20)
-                            : null,
                       );
                     },
                   ),

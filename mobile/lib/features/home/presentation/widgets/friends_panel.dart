@@ -313,11 +313,13 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                       : RefreshIndicator(
                           onRefresh: _loadFriends,
                           color: AppColors.gold,
-                          child: ListView.separated(
-                            itemCount: _friends.length,
-                            separatorBuilder: (_, __) =>
-                                const Divider(height: 1, color: Colors.white10),
-                            itemBuilder: (context, index) {
+                          child: Material(
+                            color: const Color(0xFF08122C),
+                            child: ListView.separated(
+                              itemCount: _friends.length,
+                              separatorBuilder: (_, __) => const Divider(
+                                  height: 1, color: Colors.white10),
+                              itemBuilder: (context, index) {
                               final friend = _friends[index];
                               final status = friend['status']?.toString();
                               final incoming = status == 'PENDING' &&
@@ -496,12 +498,18 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                 ),
                                               ),
                                               IconButton(
-                                                tooltip: 'Invite buddy to play',
-                                                onPressed: () =>
-                                                    _requestBuddyGame(friend),
+                                                tooltip: isOnline
+                                                    ? 'Invite buddy to play'
+                                                    : 'Buddy is offline',
+                                                onPressed: isOnline
+                                                    ? () => _requestBuddyGame(
+                                                        friend)
+                                                    : null,
                                                 icon: Icon(
                                                   Icons.sports_esports_rounded,
-                                                  color: Colors.amberAccent,
+                                                  color: isOnline
+                                                      ? Colors.amberAccent
+                                                      : Colors.white24,
                                                 ),
                                               ),
                                               PopupMenuButton<String>(
@@ -536,8 +544,10 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                   ),
                                                   PopupMenuItem(
                                                     value: 'game',
-                                                    child:
-                                                        Text('Play a game'),
+                                                    enabled: isOnline,
+                                                    child: Text(isOnline
+                                                        ? 'Play a game'
+                                                        : 'Buddy is offline'),
                                                   ),
                                                   PopupMenuItem(
                                                     value: 'remove',
@@ -560,7 +570,8 @@ class _FriendsPanelState extends ConsumerState<FriendsPanel> {
                                                 color: Colors.white54),
                                           ),
                               );
-                            },
+                              },
+                            ),
                           ),
                         ),
         ),

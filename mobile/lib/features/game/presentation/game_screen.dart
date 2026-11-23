@@ -970,7 +970,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                           if (gameState.players.isNotEmpty)
                             _chatAttachedToPlayerCard(
                               playerId: gameState.players[0].id,
-                              placeAboveCard: false,
                               onBuddyRequest:
                                   _buddyRequestFor(gameState.players[0].id),
                               card: PlayerInfoCard(
@@ -989,7 +988,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                           if (gameState.players.length > 1)
                             _chatAttachedToPlayerCard(
                               playerId: gameState.players[1].id,
-                              placeAboveCard: false,
                               onBuddyRequest:
                                   _buddyRequestFor(gameState.players[1].id),
                               card: PlayerInfoCard(
@@ -1062,7 +1060,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               Expanded(
                                 child: _chatAttachedToPlayerCard(
                                   playerId: twoPlayerDisplayOrder[0].id,
-                                  placeAboveCard: true,
                                   showChatButton: true,
                                   onBuddyRequest: _buddyRequestFor(
                                       twoPlayerDisplayOrder[0].id),
@@ -1095,7 +1092,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               Expanded(
                                 child: _chatAttachedToPlayerCard(
                                   playerId: twoPlayerDisplayOrder[1].id,
-                                  placeAboveCard: true,
                                   onBuddyRequest: _buddyRequestFor(
                                       twoPlayerDisplayOrder[1].id),
                                   card: PlayerInfoCard(
@@ -1122,7 +1118,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               if (gameState.players.length > 3)
                                 _chatAttachedToPlayerCard(
                                   playerId: gameState.players[3].id,
-                                  placeAboveCard: true,
                                   showChatButton: true,
                                   onBuddyRequest:
                                       _buddyRequestFor(gameState.players[3].id),
@@ -1142,7 +1137,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
                               if (gameState.players.length > 2)
                                 _chatAttachedToPlayerCard(
                                   playerId: gameState.players[2].id,
-                                  placeAboveCard: true,
                                   onBuddyRequest:
                                       _buddyRequestFor(gameState.players[2].id),
                                   card: PlayerInfoCard(
@@ -1247,7 +1241,6 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget _chatAttachedToPlayerCard({
     required Widget card,
     required String playerId,
-    required bool placeAboveCard,
     bool showChatButton = false,
     VoidCallback? onBuddyRequest,
   }) {
@@ -1256,35 +1249,50 @@ class _GameScreenState extends ConsumerState<GameScreen>
       return card;
     }
 
-    final controls = Stack(
-      clipBehavior: Clip.none,
-      children: [
-        // Keep a non-positioned child so this Stack has layout size. The chat
-        // bubble is positioned outside it and otherwise can disappear.
-        const SizedBox(width: 1, height: 1),
-        if (_latestChatMessage?.playerId == playerId)
-          Positioned(
-            right: 0,
-            top: placeAboveCard ? null : 38,
-            bottom: placeAboveCard ? 38 : null,
-            child: IgnorePointer(
-              child: OnlineChatMessageBubble(
-                text: _latestChatMessage!.text,
-              ),
-            ),
-          ),
-      ],
-    );
-
+    final isTyping = _typingPlayerId == playerId;
+    final hasRecentMessage = _latestChatMessage?.playerId == playerId;
     final playerCard = Stack(
       clipBehavior: Clip.none,
       children: [
         Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Reserve hit-test space for the badge above the card. This keeps
-            // the badge outside visually while allowing taps on its full area.
-            const SizedBox(height: 39),
+            SizedBox(
+              height: 60,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  if (showChatButton &&
+                      gameNotifier.onlineLocalPlayerId != null)
+                    Positioned(
+                      left: 0,
+                      top: 11,
+                      child: OnlineChatButton(
+                        compact: true,
+                        onPressed: () => _openOnlineChat(context),
+                      ),
+                    ),
+                  if (isTyping)
+                    const Positioned(
+                      right: 0,
+                      top: 13,
+                      child: OnlineChatTypingIndicator(),
+                    )
+                  else if (hasRecentMessage)
+                    Positioned(
+                      left: showChatButton ? 52 : 0,
+                      right: 0,
+                      top: 2,
+                      child: IgnorePointer(
+                        child: OnlineChatMessageBubble(
+                          text: _latestChatMessage!.text,
+                          compact: true,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
             Stack(
               key: _playerCardKeys.putIfAbsent(
                 playerId,
@@ -1306,7 +1314,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
         ),
         if (playerId != gameNotifier.onlineLocalPlayerId)
           Positioned(
-            top: 0,
+            top: 60,
             right: 0,
             child: Material(
               color: const Color(0xFF073D22),
@@ -1340,34 +1348,10 @@ class _GameScreenState extends ConsumerState<GameScreen>
               ),
             ),
           ),
-        if (showChatButton && gameNotifier.onlineLocalPlayerId != null)
-          Positioned(
-            left: 0,
-            top: 1,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                OnlineChatButton(
-                  compact: true,
-                  onPressed: () => _openOnlineChat(context),
-                ),
-                if (_typingPlayerId != null) ...[
-                  const SizedBox(width: 4),
-                  const OnlineChatTypingIndicator(),
-                ],
-              ],
-            ),
-          ),
       ],
     );
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: placeAboveCard
-          ? [Align(alignment: Alignment.center, child: controls), playerCard]
-          : [playerCard, Align(alignment: Alignment.center, child: controls)],
-    );
+    return playerCard;
   }
 
   VoidCallback? _buddyRequestFor(String playerId) {

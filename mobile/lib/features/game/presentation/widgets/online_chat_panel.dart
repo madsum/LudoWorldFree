@@ -125,34 +125,57 @@ class OnlineChatTypingIndicator extends StatelessWidget {
 }
 
 class OnlineChatMessageBubble extends StatelessWidget {
-  const OnlineChatMessageBubble({super.key, required this.text});
+  const OnlineChatMessageBubble({
+    super.key,
+    required this.text,
+    this.compact = false,
+  });
 
   final String text;
+  final bool compact;
 
   @override
-  Widget build(BuildContext context) => CustomPaint(
-        size: const Size(240, 82),
-        painter: _ChatBubbleButtonPainter(),
-        child: SizedBox(
-          width: 240,
-          height: 82,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 7, 12, 17),
-            child: Center(
-              child: Text(
-                text,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF172033),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final width = compact
+              ? (constraints.maxWidth.isFinite
+                  ? constraints.maxWidth.clamp(60.0, 180.0).toDouble()
+                  : 180.0)
+              : 240.0;
+          final height = compact ? 58.0 : 82.0;
+          return Align(
+            alignment: Alignment.centerRight,
+            child: CustomPaint(
+              size: Size(width, height),
+              painter: _ChatBubbleButtonPainter(),
+              child: SizedBox(
+                width: width,
+                height: height,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    compact ? 8 : 12,
+                    compact ? 5 : 7,
+                    compact ? 8 : 12,
+                    compact ? 12 : 17,
+                  ),
+                  child: Center(
+                    child: Text(
+                      text,
+                      maxLines: compact ? 2 : 3,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: const Color(0xFF172033),
+                        fontSize: compact ? 10 : 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       );
 }
 

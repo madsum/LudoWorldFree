@@ -64,7 +64,7 @@ public class BuddyGameInvitation {
         this.requesterColor = requesterColor;
         this.gameMode = gameMode;
         this.createdAt = Instant.now();
-        this.expiresAt = this.createdAt.plusSeconds(180);
+        this.expiresAt = this.createdAt.plusSeconds(60);
     }
 
     public void accept(String targetSessionId, String targetColor, String roomId) {

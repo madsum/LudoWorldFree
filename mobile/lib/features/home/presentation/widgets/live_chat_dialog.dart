@@ -4,6 +4,79 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import 'friends_panel.dart';
 
+class LiveChatPage extends StatelessWidget {
+  const LiveChatPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFF08122C),
+      child: DefaultTabController(
+        length: 3,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
+              child: Row(
+                children: [
+                  const Icon(Icons.groups_rounded,
+                      color: AppColors.gold, size: 26),
+                  const SizedBox(width: 10),
+                  Text(
+                    'LIVE CHAT',
+                    style: GoogleFonts.poppins(
+                      color: AppColors.gold,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const TabBar(
+              indicatorColor: AppColors.gold,
+              labelColor: AppColors.gold,
+              unselectedLabelColor: Colors.white60,
+              labelPadding: EdgeInsets.symmetric(horizontal: 2),
+              labelStyle: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.1,
+              ),
+              unselectedLabelStyle: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.1,
+              ),
+              tabs: [
+                Tab(
+                    icon: Icon(Icons.people_alt_rounded, size: 21),
+                    text: 'FRIENDS'),
+                Tab(
+                    icon: Icon(Icons.emoji_events_rounded, size: 21),
+                    text: 'LEADERBOARD'),
+                Tab(
+                    icon: Icon(Icons.flag_rounded, size: 21),
+                    text: 'DAILY GOALS'),
+              ],
+            ),
+            const Expanded(
+              child: TabBarView(
+                children: [
+                  FriendsPanel(),
+                  _ComingSoonPanel(),
+                  _ComingSoonPanel(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class LiveChatDialog extends StatelessWidget {
   const LiveChatDialog({super.key});
 

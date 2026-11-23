@@ -655,11 +655,13 @@ class _FriendRoomFlowDialogState extends ConsumerState<FriendRoomFlowDialog> {
           key: const ValueKey('step-select'),
           title: 'SELECT TOKEN / COLOR',
           subtitle: _isJoinFlow
-              ? 'Choose your seat before joining'
+              ? 'Choose your color to join the host’s game'
               : 'Your choices are saved in the room',
           children: [
-            _skinPicker(),
-            const SizedBox(height: 14),
+            if (!_isJoinFlow) ...[
+              _skinPicker(),
+              const SizedBox(height: 14),
+            ],
             _panelCard(
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -713,13 +715,15 @@ class _FriendRoomFlowDialogState extends ConsumerState<FriendRoomFlowDialog> {
                         }).toList()),
                   ]),
             ),
-            const SizedBox(height: 14),
-            _gameModePicker(),
+            if (!_isJoinFlow) ...[
+              const SizedBox(height: 14),
+              _gameModePicker(),
+            ],
             if (_isJoinFlow)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: Text(
-                    'Room settings and entry amount are set by the host.',
+                    'Host selected ${_gameMode.displayName}. Room settings and entry amount are set by the host.',
                     style: _font(12, Colors.white70),
                     textAlign: TextAlign.center),
               )

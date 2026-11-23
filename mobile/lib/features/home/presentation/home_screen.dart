@@ -54,7 +54,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Timer? _buddyRequestPollTimer;
   Timer? _friendInboxPollTimer;
   Timer? _buddyGameInvitePollTimer;
-  int _currentNavIndex = 0;
+  final ValueNotifier<int> _currentNavIndex = ValueNotifier(0);
   bool _isClaimingReward = false;
   bool _isClaimingDailyBonus = false;
   bool _dailyBonusDialogShowing = false;
@@ -510,13 +510,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       backgroundColor: AppColors.bgNavy,
       foregroundColor: AppColors.gold,
       duration: const Duration(seconds: 2),
-    );
-  }
-
-  void _showLiveChat() {
-    showDialog<void>(
-      context: context,
-      builder: (_) => const LiveChatDialog(),
     );
   }
 
@@ -1320,6 +1313,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _voiceCallService.removeListener(_handleVoiceCallServiceChanged);
     unawaited(_voiceCallService.disconnect());
     _authSubscription.close();
+    _currentNavIndex.dispose();
     super.dispose();
   }
 
@@ -1371,16 +1365,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       _showComingSoonSnackBar('Coin & Diamond Store'),
                 ),
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12.0, vertical: 6.0),
-                    physics: const BouncingScrollPhysics(),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: isTablet ? 600 : double.infinity,
-                        ),
-                        child: Column(
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _currentNavIndex,
+                    builder: (context, selectedIndex, _) => IndexedStack(
+                      index: selectedIndex,
+                      children: [
+                        SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12.0, vertical: 6.0),
+                        physics: const BouncingScrollPhysics(),
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: isTablet ? 600 : double.infinity,
+                            ),
+                            child: Column(
                           children: [
                             const LobbyCenterGraphic(),
                             const SizedBox(height: 12),
@@ -1585,17 +1584,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ),
                             const SizedBox(height: 10),
                           ],
+                            ),
+                          ),
                         ),
                       ),
+                        const LiveChatPage(),
+                      ],
                     ),
                   ),
                 ),
-                LobbyBottomNav(
-                  selectedIndex: _currentNavIndex,
-                  onTap: (index) {
-                    setState(() => _currentNavIndex = index);
-                    if (index == 1) _showLiveChat();
-                  },
+                ValueListenableBuilder<int>(
+                  valueListenable: _currentNavIndex,
+                  builder: (context, selectedIndex, _) => LobbyBottomNav(
+                    selectedIndex: selectedIndex,
+                    onTap: (index) {
+                      if (index != _currentNavIndex.value) {
+                        _currentNavIndex.value = index;
+                      }
+                    },
+                  ),
                 ),
               ],
             ),

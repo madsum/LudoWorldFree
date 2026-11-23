@@ -132,7 +132,7 @@ class _BuddyGameRequestDialogState
     if (_pollInFlight || playerId == null || inviteId == null || !mounted) {
       return;
     }
-    if (DateTime.now().difference(_sentAt ?? DateTime.now()).inSeconds >= 180) {
+    if (DateTime.now().difference(_sentAt ?? DateTime.now()).inSeconds >= 60) {
       _pollTimer?.cancel();
       setState(() => _resultMessage = 'Your buddy did not respond in time.');
       return;
