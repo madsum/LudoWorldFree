@@ -1,5 +1,6 @@
 package com.ludoworldfree.backend.chat;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -136,7 +137,7 @@ public class ChatPresenceService {
                 INSERT INTO chat_presence (user_id, last_seen_at)
                 VALUES (?, ?)
                 ON CONFLICT (user_id) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at
-                """, userId, lastSeen);
+                """, userId, Timestamp.from(lastSeen));
     }
 
     private void publishPresence(UUID userId, boolean online, Instant lastSeen) {

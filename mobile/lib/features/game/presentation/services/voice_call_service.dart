@@ -689,7 +689,9 @@ class VoiceCallService extends ChangeNotifier {
       if (call?.callId != callId || call?.phase == VoiceCallPhase.connected) {
         return;
       }
-      lastError = 'No answer. The voice call was ended.';
+      lastError = call?.phase == VoiceCallPhase.outgoing
+          ? 'No answer. The voice call was ended.'
+          : 'The call could not connect. Check your network and try again.';
       unawaited(endCall());
     });
   }
