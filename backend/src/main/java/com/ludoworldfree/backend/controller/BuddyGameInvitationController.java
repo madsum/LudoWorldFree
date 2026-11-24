@@ -163,10 +163,13 @@ public class BuddyGameInvitationController {
         requireAcceptedBuddies(invitation.getRequesterId(), targetId);
 
         String targetSessionId = text(body.get("sessionId"));
+        String targetColor = text(body.get("selectedColor"));
         if (targetSessionId == null || targetSessionId.isBlank()
-                || targetSessionId.length() > 64) {
+                || targetSessionId.length() > 64
+                || !List.of("red", "green", "yellow", "blue").contains(targetColor)
+                || targetColor.equals(invitation.getRequesterColor())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "A valid game session is required.");
+                    "Choose a valid color different from your buddy's color.");
         }
         PlayerProfile requester = profileRepository.findByUserId(invitation.getRequesterId())
                 .orElseThrow(() -> new ResponseStatusException(
@@ -179,7 +182,7 @@ public class BuddyGameInvitationController {
         MatchmakingResponseDto requesterMatch = matchmakingService.createBuddyRoom(
                 invitation.getRequesterId(), requester,
                 invitation.getRequesterSessionId(), invitation.getRequesterColor(),
-                targetId, target, targetSessionId, invitation.getEntryFee(),
+                targetId, target, targetSessionId, targetColor, invitation.getEntryFee(),
                 invitation.getGameMode());
         MatchmakingResponseDto targetMatch = matchmakingService.responseForBuddyRoom(
                 requesterMatch.getRoomId(), targetId);
@@ -187,9 +190,7 @@ public class BuddyGameInvitationController {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Could not prepare the buddy game.");
         }
-        invitation.accept(targetSessionId,
-                oppositeColor(invitation.getRequesterColor()),
-                requesterMatch.getRoomId());
+        invitation.accept(targetSessionId, targetColor, requesterMatch.getRoomId());
         invitationRepository.save(invitation);
         return Map.of("id", invitation.getId().toString(),
                 "status", invitation.getStatus().name(), "match", targetMatch);
@@ -280,15 +281,6 @@ public class BuddyGameInvitationController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
                     "Buddy game requests are available to accepted buddies only.");
         }
-    }
-
-    private static String oppositeColor(String color) {
-        return switch (color) {
-            case "red" -> "yellow";
-            case "green" -> "blue";
-            case "yellow" -> "red";
-            default -> "green";
-        };
     }
 
     private static String text(Object value) {

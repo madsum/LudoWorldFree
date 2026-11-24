@@ -344,7 +344,7 @@ public class MatchmakingService {
     public MatchmakingResponseDto createBuddyRoom(
             UUID requesterId, PlayerProfile requester, String requesterSessionId,
             String requesterColor, UUID targetId, PlayerProfile target,
-            String targetSessionId, long entryFee, String gameMode) {
+            String targetSessionId, String targetColor, long entryFee, String gameMode) {
         if (!ALLOWED_ENTRY_FEES.contains(entryFee)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Choose a supported online entry amount.");
@@ -365,6 +365,11 @@ public class MatchmakingService {
         if (!colors.contains(color)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Choose a valid player color.");
+        }
+        String selectedTargetColor = targetColor == null ? "" : targetColor.toLowerCase();
+        if (!colors.contains(selectedTargetColor) || selectedTargetColor.equals(color)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Choose a valid player color different from your buddy's color.");
         }
         List<OnlineMatchRoom> existingRooms = new ArrayList<>();
         existingRooms.addAll(roomRepository.findActiveForPlayerForUpdate(
@@ -391,16 +396,10 @@ public class MatchmakingService {
                 requesterId, requester.getDisplayName(), requester.getAvatarUrl(),
                 requester.getCountry(), requester.getCountryFlag(), entryFee, 2,
                 color, requesterSessionId, gameMode);
-        String targetColor = switch (color) {
-            case "red" -> "yellow";
-            case "green" -> "blue";
-            case "yellow" -> "red";
-            default -> "green";
-        };
         MatchmakingTicket targetTicket = new MatchmakingTicket(
                 targetId, target.getDisplayName(), target.getAvatarUrl(),
                 target.getCountry(), target.getCountryFlag(), entryFee, 2,
-                targetColor, targetSessionId, gameMode);
+                selectedTargetColor, targetSessionId, gameMode);
 
         MatchmakingTicket requesterQueueTicket = ticketRepository
                 .findByPlayerIdForUpdate(requesterId).orElse(null);

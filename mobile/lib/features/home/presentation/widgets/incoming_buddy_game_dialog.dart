@@ -40,6 +40,7 @@ class _IncomingBuddyGameDialogState
   bool _working = false;
   bool _declining = false;
   String? _error;
+  LudoColor? _selectedColor;
 
   String? get _playerId => ref.read(authControllerProvider).user?.id;
 
@@ -77,10 +78,15 @@ class _IncomingBuddyGameDialogState
     });
     final sessionId =
         '${DateTime.now().microsecondsSinceEpoch}_${playerId.hashCode.abs()}';
+    final requesterColor = LudoColor.values.firstWhere(
+      (color) => color.name == widget.invitation['requesterColor']?.toString(),
+      orElse: () => LudoColor.red,
+    );
+    final selectedColor = _selectedColor ?? _defaultTargetColor(requesterColor);
     try {
       final response = await ref.read(apiClientProvider).post(
             '/friends/game-invites/$inviteId/accept',
-            data: {'sessionId': sessionId},
+            data: {'sessionId': sessionId, 'selectedColor': selectedColor.name},
             options: Options(headers: {'X-Player-ID': playerId}),
           );
       final match = BuddyGameMatch.parse(
@@ -101,6 +107,14 @@ class _IncomingBuddyGameDialogState
       if (mounted) setState(() => _working = false);
     }
   }
+
+  LudoColor _defaultTargetColor(LudoColor requesterColor) =>
+      switch (requesterColor) {
+        LudoColor.red => LudoColor.yellow,
+        LudoColor.green => LudoColor.blue,
+        LudoColor.yellow => LudoColor.red,
+        LudoColor.blue => LudoColor.green,
+      };
 
   Future<void> _decline() async {
     final playerId = _playerId;
@@ -146,12 +160,10 @@ class _IncomingBuddyGameDialogState
       (color) => color.name == widget.invitation['requesterColor']?.toString(),
       orElse: () => LudoColor.red,
     );
-    final yourColor = switch (inviterColor) {
-      LudoColor.red => LudoColor.yellow,
-      LudoColor.green => LudoColor.blue,
-      LudoColor.yellow => LudoColor.red,
-      LudoColor.blue => LudoColor.green,
-    };
+    final availableColors = LudoColor.values
+        .where((color) => color != inviterColor)
+        .toList(growable: false);
+    final selectedColor = _selectedColor ?? _defaultTargetColor(inviterColor);
     final inGame = widget.invitation['inGame'] == true;
     return AlertDialog(
       backgroundColor: const Color(0xFF102447),
@@ -167,9 +179,43 @@ class _IncomingBuddyGameDialogState
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '$name invited you to a two-player ${gameMode.displayName} game for $amount coins. They chose ${inviterColor.displayName}; you will play ${yourColor.displayName}. Both players use the same entry amount.',
+            '$name invited you to a two-player ${gameMode.displayName} game for $amount coins. They chose ${inviterColor.displayName}. Choose your color below. Both players use the same entry amount.',
             textAlign: TextAlign.center,
             style: GoogleFonts.poppins(color: Colors.white70),
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final color in availableColors)
+                ChoiceChip(
+                  selected: selectedColor == color,
+                  onSelected: _working
+                      ? null
+                      : (_) => setState(() {
+                            _selectedColor = color;
+                            _error = null;
+                          }),
+                  avatar: CircleAvatar(
+                    radius: 8,
+                    backgroundColor: color.color,
+                  ),
+                  label: Text(color.displayName),
+                  selectedColor: color.color.withOpacity(0.25),
+                  labelStyle: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                  ),
+                  side: BorderSide(
+                    color: selectedColor == color
+                        ? color.lightColor
+                        : Colors.white30,
+                  ),
+                ),
+            ],
           ),
           if (inGame) ...[
             const SizedBox(height: 10),
