@@ -31,6 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class GameRoomWebSocketHandler extends TextWebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(GameRoomWebSocketHandler.class);
     private static final int MAX_MESSAGE_CHARS = 64_000;
+    private static final long BELL_ALERT_COOLDOWN_MILLIS = 40_000;
     private static final String ROOM_ATTRIBUTE = "gameRoomId";
     private static final String PLAYER_ATTRIBUTE = "gamePlayerId";
     private static final Set<String> GAME_EMOJIS = Set.of(
@@ -301,11 +302,29 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         synchronized (localRoom) {
             LocalConnection sender = localRoom.sessions.get(playerId);
             if (sender == null || sender.session != session) return;
+            long now = System.currentTimeMillis();
+            Long lastAlertAt = localRoom.lastBellAlertAt.get(playerId);
+            if (lastAlertAt != null
+                    && now - lastAlertAt < BELL_ALERT_COOLDOWN_MILLIS) {
+                long retryAfterSeconds = (BELL_ALERT_COOLDOWN_MILLIS - (now - lastAlertAt)
+                        + 999) / 1_000;
+                send(session, Map.of(
+                        "type", "error",
+                        "code", "BELL_ALERT_COOLDOWN",
+                        "message", "Please wait before sending another play-fast alert.",
+                        "retryAfterSeconds", retryAfterSeconds));
+                return;
+            }
+            localRoom.lastBellAlertAt.put(playerId, now);
             sendPlayer(localRoom, targetPlayerId, Map.of(
                     "type", "bell_alert",
                     "senderPlayerId", playerId.toString(),
                     "targetPlayerId", targetPlayerId.toString(),
-                    "sentAt", System.currentTimeMillis()));
+                    "sentAt", now));
+            send(session, Map.of(
+                    "type", "bell_alert_sent",
+                    "targetPlayerId", targetPlayerId.toString(),
+                    "sentAt", now));
         }
     }
 
@@ -842,6 +861,7 @@ public class GameRoomWebSocketHandler extends TextWebSocketHandler {
         private final Map<UUID, LocalConnection> sessions = new ConcurrentHashMap<>();
         private boolean readyNotified;
         private long lastChatEventId;
+        private final Map<UUID, Long> lastBellAlertAt = new ConcurrentHashMap<>();
 
         private LocalRoom(String id) { this.id = id; }
     }

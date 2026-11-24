@@ -261,9 +261,10 @@ class WebSocketService {
     });
   }
 
-  void sendBellAlert(String targetPlayerId) {
-    if (!isConnected || targetPlayerId.isEmpty) return;
+  bool sendBellAlert(String targetPlayerId) {
+    if (!isConnected || targetPlayerId.isEmpty) return false;
     _send({'type': 'bell_alert', 'targetPlayerId': targetPlayerId});
+    return true;
   }
 
   void forfeitDisconnectedOpponent(String disconnectedPlayerId) {

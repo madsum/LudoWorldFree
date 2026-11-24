@@ -16,7 +16,12 @@ class AuthInterceptor extends Interceptor {
     if (token != null && token.isNotEmpty) {
       options.headers['Authorization'] = 'Bearer $token';
     }
-    options.headers['Content-Type'] = 'application/json';
+    if (options.data is FormData) {
+      // Let Dio add the multipart boundary for file uploads.
+      options.headers.remove('Content-Type');
+    } else {
+      options.headers['Content-Type'] = 'application/json';
+    }
     options.headers['Accept'] = 'application/json';
     return handler.next(options);
   }

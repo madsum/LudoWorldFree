@@ -333,6 +333,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!mounted ||
         _friendChatDialogShowing ||
         _buddyRequestDialogShowing ||
+        _buddyGameInviteDialogShowing ||
         _dailyBonusDialogShowing ||
         _voiceCallService.call != null ||
         _pendingFriendChats.isEmpty) {
@@ -414,8 +415,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (!mounted ||
         _buddyGameInviteDialogShowing ||
         _buddyRequestDialogShowing ||
-        _friendChatDialogShowing ||
-        _pendingFriendChats.isNotEmpty ||
         _dailyBonusDialogShowing ||
         _voiceCallService.call != null ||
         _pendingBuddyGameInvites.isEmpty) {
@@ -428,7 +427,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         context,
         invitation: invitation,
       );
-      if (match != null && mounted) await _startBuddyGame(match);
+      if (match != null && mounted) {
+        if (FriendChatDialog.openFriendIds.isNotEmpty) {
+          await Navigator.of(context, rootNavigator: true).maybePop();
+        }
+        await _startBuddyGame(match);
+      }
     } finally {
       _buddyGameInviteDialogShowing = false;
     }
@@ -536,6 +540,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _showNextBuddyRequest() async {
     if (!mounted ||
         _buddyRequestDialogShowing ||
+        _buddyGameInviteDialogShowing ||
         _dailyBonusDialogShowing ||
         _pendingBuddyRequests.isEmpty ||
         ModalRoute.of(context)?.isCurrent != true) {

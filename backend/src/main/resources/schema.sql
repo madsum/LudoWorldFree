@@ -273,6 +273,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     recipient_id UUID,
     room_id VARCHAR(255),
     content VARCHAR(1000) NOT NULL,
+    attachments JSONB NOT NULL DEFAULT '[]'::jsonb,
     message_type VARCHAR(50) NOT NULL DEFAULT 'TEXT',
     read BOOLEAN NOT NULL DEFAULT FALSE,
     read_at TIMESTAMP WITH TIME ZONE,
@@ -284,6 +285,19 @@ CREATE INDEX IF NOT EXISTS idx_chat_conversation_sender_recipient_created
 
 CREATE INDEX IF NOT EXISTS idx_chat_conversation_recipient_sender_created
     ON chat_messages (recipient_id, sender_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS buddy_chat_attachments (
+    id UUID PRIMARY KEY,
+    sender_id UUID NOT NULL,
+    recipient_id UUID NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    content_type VARCHAR(100) NOT NULL,
+    byte_size BIGINT NOT NULL CHECK (byte_size > 0 AND byte_size <= 20971520),
+    sha256_hex CHAR(64) NOT NULL,
+    file_data BYTEA NOT NULL,
+    message_id UUID REFERENCES chat_messages(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 -- 8. Voice Chat Sessions Table
 CREATE TABLE IF NOT EXISTS voice_chat_sessions (

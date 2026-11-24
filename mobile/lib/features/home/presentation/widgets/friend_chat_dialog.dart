@@ -1,14 +1,23 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/network/api_client.dart';
+import '../../../../core/network/websocket_service.dart';
 import '../../../auth/presentation/controllers/auth_controller.dart';
+import '../../../game/presentation/controllers/game_controller.dart';
 import '../../../game/presentation/services/voice_call_service.dart';
+import 'buddy_game_request_dialog.dart';
 
 class FriendChatDialog extends ConsumerStatefulWidget {
   static final Set<String> openFriendIds = <String>{};
@@ -178,6 +187,225 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
     }
   }
 
+  Future<void> _pickAndSendFiles() async {
+    if (_sending) return;
+    try {
+      final selection = await FilePicker.pickFiles(
+        allowMultiple: true,
+        withData: true,
+        type: FileType.custom,
+        allowedExtensions: const [
+          'jpg',
+          'jpeg',
+          'png',
+          'webp',
+          'gif',
+          'pdf',
+          'txt',
+          'csv',
+          'zip',
+          'doc',
+          'docx',
+          'xls',
+          'xlsx',
+          'ppt',
+          'pptx',
+          'aac',
+          'mp3',
+          'm4a',
+          'ogg',
+          'wav',
+          'webm',
+        ],
+      );
+      if (selection == null || selection.files.isEmpty || !mounted) return;
+      if (selection.files.length > 10) {
+        setState(() => _error = 'You can attach up to 10 files per message.');
+        return;
+      }
+      final totalBytes = selection.files.fold<int>(
+        0,
+        (total, file) => total + file.size,
+      );
+      if (totalBytes > 20 * 1024 * 1024) {
+        setState(
+            () => _error = 'Files in one message must total 20 MB or less.');
+        return;
+      }
+      final invalidFile = selection.files.firstWhere(
+        (file) => file.size <= 0 || file.size > 20 * 1024 * 1024,
+        orElse: () => PlatformFile(name: '', size: 0),
+      );
+      if (invalidFile.name.isNotEmpty) {
+        setState(() => _error = 'Each file must be smaller than 20 MB.');
+        return;
+      }
+      if (_playerId == null) {
+        setState(() => _error = 'Sign in to send files.');
+        return;
+      }
+      setState(() {
+        _sending = true;
+        _error = null;
+      });
+      final attachments = <Map<String, dynamic>>[];
+      for (final file in selection.files) {
+        final bytes = file.bytes ?? await file.xFile.readAsBytes();
+        final contentType = _contentTypeFor(file.extension);
+        if (bytes.isEmpty || contentType == null) {
+          throw StateError('This file type could not be prepared for upload.');
+        }
+        if (bytes.length > 20 * 1024 * 1024) {
+          throw StateError('Each file must be smaller than 20 MB.');
+        }
+        final checksum = sha256.convert(bytes).toString();
+        final upload = await ref.read(apiClientProvider).post(
+              '$_messagesPath/media/uploads',
+              data: FormData.fromMap({
+                'file': MultipartFile.fromBytes(bytes, filename: file.name),
+                'contentType': contentType,
+              }),
+              options: _playerOptions,
+            );
+        final details = upload.data;
+        if (details is! Map || details['attachmentId'] == null) {
+          throw StateError('The file upload could not be saved.');
+        }
+        attachments.add({
+          'attachmentId': details['attachmentId'],
+          'storage': details['storage'] ?? 'database',
+          'contentType': contentType,
+          'byteSize': details['byteSize'] ?? bytes.length,
+          'sha256Hex': details['sha256Hex'] ?? checksum,
+          'fileName': details['fileName'] ?? file.name,
+        });
+      }
+      await ref.read(apiClientProvider).post(
+            _messagesPath,
+            data: {
+              'content': _messageController.text.trim(),
+              'attachments': attachments,
+            },
+            options: _playerOptions,
+          );
+      _messageController.clear();
+      await _loadMessages(silent: true);
+      if (_scrollController.hasClients) _scrollToBottom();
+    } on DioException catch (error) {
+      final message = error.response?.data is Map
+          ? error.response?.data['message']?.toString()
+          : null;
+      if (mounted) {
+        setState(() => _error = message ?? 'Files could not be sent.');
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+            () => _error = error.toString().replaceFirst('Bad state: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  String? _contentTypeFor(String? extension) =>
+      switch (extension?.toLowerCase()) {
+        'jpg' || 'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'gif' => 'image/gif',
+        'aac' => 'audio/aac',
+        'mp3' => 'audio/mpeg',
+        'm4a' => 'audio/mp4',
+        'ogg' => 'audio/ogg',
+        'wav' => 'audio/wav',
+        'webm' => 'audio/webm',
+        'pdf' => 'application/pdf',
+        'txt' => 'text/plain',
+        'csv' => 'text/csv',
+        'zip' => 'application/zip',
+        'doc' => 'application/msword',
+        'docx' =>
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls' => 'application/vnd.ms-excel',
+        'xlsx' =>
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'ppt' => 'application/vnd.ms-powerpoint',
+        'pptx' =>
+          'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        _ => null,
+      };
+
+  Future<void> _openAttachment(Map<String, dynamic> attachment) async {
+    final attachmentId = attachment['attachmentId']?.toString();
+    if (attachmentId == null || _playerId == null) return;
+    try {
+      final response = await ref.read(apiClientProvider).get(
+            '$_messagesPath/media/$attachmentId',
+            options: Options(
+              headers: {'X-Player-ID': _playerId},
+              responseType: ResponseType.bytes,
+            ),
+          );
+      final bytes = Uint8List.fromList(List<int>.from(response.data as List));
+      final contentType = response.headers.value('content-type') ?? '';
+      if (contentType.contains('application/json')) {
+        final data = jsonDecode(utf8.decode(bytes));
+        final url = data is Map ? data['downloadUrl']?.toString() : null;
+        if (url == null ||
+            !await launchUrl(Uri.parse(url),
+                mode: LaunchMode.externalApplication)) {
+          throw StateError('This file could not be opened.');
+        }
+      } else {
+        final fileName = attachment['fileName']?.toString() ?? 'buddy-file';
+        final savedPath = await FilePicker.saveFile(
+          dialogTitle: 'Save buddy attachment',
+          fileName: fileName,
+          bytes: bytes,
+        );
+        if (savedPath == null) return;
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+            () => _error = error.toString().replaceFirst('Bad state: ', ''));
+      }
+    }
+  }
+
+  Future<void> _requestBuddyGame() async {
+    final match = await BuddyGameRequestDialog.show(
+      context,
+      friendId: widget.friendId,
+      friendName: widget.friendName,
+    );
+    if (match == null || !mounted) return;
+    final webSocketService = ref.read(webSocketServiceProvider);
+    final connected = await webSocketService.connectToRoom(
+      roomId: match.roomId,
+      playerId: match.localPlayerId,
+      matchmakingSessionId: match.sessionId,
+    );
+    if (!mounted) return;
+    if (!connected) {
+      setState(() => _error = 'Could not connect to the buddy game.');
+      return;
+    }
+    ref.read(gameControllerProvider.notifier)
+      ..configureOnlineMatch(
+        roomId: match.roomId,
+        playerId: match.localPlayerId,
+        selectedColor: match.localColor,
+        gameMode: match.gameMode,
+        requestDiceRoll: webSocketService.requestDiceRoll,
+      )
+      ..startNewGame(players: match.players);
+    final router = GoRouter.of(context);
+    Navigator.of(context, rootNavigator: true).pop();
+    await router.push('/game');
+  }
+
   void _scrollToBottom({bool animated = true}) {
     if (!_scrollController.hasClients) return;
     final target = _scrollController.position.maxScrollExtent;
@@ -286,6 +514,13 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
       timeline.add(
         _FriendMessageBubble(
           content: message['content']?.toString() ?? '',
+          attachments: message['attachments'] is List
+              ? (message['attachments'] as List)
+                  .whereType<Map>()
+                  .map((item) => Map<String, dynamic>.from(item))
+                  .toList(growable: false)
+              : const [],
+          onAttachmentTap: _openAttachment,
           time: _timeLabel(time),
           senderName: mine ? _myDisplayName : widget.friendName,
           mine: mine,
@@ -356,6 +591,12 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
                         ),
                       ],
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'Invite to a game',
+                    onPressed: _requestBuddyGame,
+                    icon: const Icon(Icons.sports_esports_rounded,
+                        color: Color(0xFF66E0B1)),
                   ),
                   if (callingThisFriend)
                     IconButton(
@@ -466,6 +707,12 @@ class _FriendChatDialogState extends ConsumerState<FriendChatDialog> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  IconButton(
+                    tooltip: 'Attach files',
+                    onPressed: _sending ? null : _pickAndSendFiles,
+                    color: Colors.white70,
+                    icon: const Icon(Icons.attach_file_rounded),
+                  ),
                   Expanded(
                     child: TextField(
                       controller: _messageController,
@@ -558,6 +805,8 @@ class _ChatDateDivider extends StatelessWidget {
 
 class _FriendMessageBubble extends StatelessWidget {
   final String content;
+  final List<Map<String, dynamic>> attachments;
+  final ValueChanged<Map<String, dynamic>> onAttachmentTap;
   final String time;
   final String senderName;
   final bool mine;
@@ -567,6 +816,8 @@ class _FriendMessageBubble extends StatelessWidget {
 
   const _FriendMessageBubble({
     required this.content,
+    required this.attachments,
+    required this.onAttachmentTap,
     required this.time,
     required this.senderName,
     required this.mine,
@@ -622,17 +873,23 @@ class _FriendMessageBubble extends StatelessWidget {
                 ),
               ),
             ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                content,
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontSize: 13,
-                  height: 1.38,
+            if (content.isNotEmpty)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  content,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 13,
+                    height: 1.38,
+                  ),
                 ),
               ),
-            ),
+            for (final attachment in attachments)
+              _ChatAttachmentTile(
+                attachment: attachment,
+                onTap: () => onAttachmentTap(attachment),
+              ),
             const SizedBox(height: 3),
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -656,6 +913,73 @@ class _FriendMessageBubble extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatAttachmentTile extends StatelessWidget {
+  const _ChatAttachmentTile({required this.attachment, required this.onTap});
+
+  final Map<String, dynamic> attachment;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final fileName = attachment['fileName']?.toString() ?? 'Attached file';
+    final size = (attachment['byteSize'] as num?)?.toInt();
+    final sizeLabel = size == null
+        ? ''
+        : size < 1024 * 1024
+            ? '${(size / 1024).ceil()} KB'
+            : '${(size / (1024 * 1024)).toStringAsFixed(1)} MB';
+    return Padding(
+      padding: const EdgeInsets.only(top: 5),
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.insert_drive_file_rounded,
+                    color: Color(0xFFB7F4D5), size: 19),
+                const SizedBox(width: 7),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 190),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fileName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (sizeLabel.isNotEmpty)
+                        Text(
+                          sizeLabel,
+                          style: GoogleFonts.poppins(
+                              color: Colors.white60, fontSize: 9),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 5),
+                const Icon(Icons.download_rounded,
+                    color: Colors.white70, size: 16),
+              ],
+            ),
+          ),
         ),
       ),
     );

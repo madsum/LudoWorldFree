@@ -38,7 +38,17 @@ public class ChatMediaUploadService {
             Map.entry("audio/mp4", "AUDIO"),
             Map.entry("audio/ogg", "AUDIO"),
             Map.entry("audio/wav", "AUDIO"),
-            Map.entry("audio/webm", "AUDIO"));
+            Map.entry("audio/webm", "AUDIO"),
+            Map.entry("application/pdf", "FILE"),
+            Map.entry("text/plain", "FILE"),
+            Map.entry("text/csv", "FILE"),
+            Map.entry("application/zip", "FILE"),
+            Map.entry("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "FILE"),
+            Map.entry("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "FILE"),
+            Map.entry("application/vnd.openxmlformats-officedocument.presentationml.presentation", "FILE"),
+            Map.entry("application/msword", "FILE"),
+            Map.entry("application/vnd.ms-excel", "FILE"),
+            Map.entry("application/vnd.ms-powerpoint", "FILE"));
 
     private final JdbcTemplate jdbc;
     private final ChatConversationService conversations;
@@ -77,7 +87,7 @@ public class ChatMediaUploadService {
                 || request.byteSize() <= 0 || request.byteSize() > 20L * 1024 * 1024
                 || request.sha256Hex() == null || !SHA256.matcher(request.sha256Hex()).matches()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "Choose an image or audio file up to 20 MB and provide its SHA-256 checksum.");
+                    "Choose a supported image, audio, or document up to 20 MB and provide its SHA-256 checksum.");
         }
         String contentType = request.contentType().toLowerCase();
         UUID uploadId = UUID.randomUUID();

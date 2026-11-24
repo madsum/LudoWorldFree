@@ -6,8 +6,12 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -35,6 +39,9 @@ public class ChatMessage {
     private Instant createdAt = Instant.now();
     @Column(name = "read_at")
     private Instant readAt;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "attachments", nullable = false, columnDefinition = "jsonb")
+    private List<Map<String, Object>> attachments = List.of();
 
     protected ChatMessage() {}
 
@@ -44,6 +51,12 @@ public class ChatMessage {
         this.content = content;
     }
 
+    public ChatMessage(UUID senderId, UUID recipientId, String content,
+                       List<Map<String, Object>> attachments) {
+        this(senderId, recipientId, content);
+        this.attachments = attachments == null ? List.of() : List.copyOf(attachments);
+    }
+
     public UUID getId() { return id; }
     public UUID getSenderId() { return senderId; }
     public UUID getRecipientId() { return recipientId; }
@@ -51,4 +64,8 @@ public class ChatMessage {
     public MessageType getMessageType() { return messageType; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getReadAt() { return readAt; }
+    public List<Map<String, Object>> getAttachments() { return attachments; }
+    public void setAttachments(List<Map<String, Object>> attachments) {
+        this.attachments = attachments == null ? List.of() : List.copyOf(attachments);
+    }
 }

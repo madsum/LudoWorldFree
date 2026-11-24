@@ -58,6 +58,8 @@ class _GameScreenState extends ConsumerState<GameScreen>
   String? _typingPlayerId;
   Timer? _typingIndicatorTimer;
   Timer? _bellAlertTimer;
+  Timer? _bellAlertCooldownTimer;
+  DateTime? _bellAlertAllowedAt;
   Timer? _opponentDisconnectTimer;
   Timer? _buddyRequestPollTimer;
   bool _buddyRequestPollInFlight = false;
@@ -194,6 +196,20 @@ class _GameScreenState extends ConsumerState<GameScreen>
         } else if (message['type'] == 'bell_alert' &&
             message['targetPlayerId'] == gameNotifier.onlineLocalPlayerId) {
           unawaited(_handleBellAlert(message));
+        } else if (message['type'] == 'bell_alert_sent') {
+          ref
+              .read(gameAudioServiceProvider)
+              .playEffect('audio/classic-click.wav');
+        } else if (message['type'] == 'error' &&
+            message['code'] == 'BELL_ALERT_COOLDOWN' &&
+            mounted) {
+          final retryAfter = (message['retryAfterSeconds'] as num?)?.toInt();
+          final waitSeconds = retryAfter ?? 40;
+          _startBellAlertCooldown(Duration(seconds: waitSeconds));
+          TopNotice.show(
+            context,
+            'Play-fast is cooling down. Try again in $waitSeconds seconds.',
+          );
         } else if (message['type'] == 'rematch_update') {
           unawaited(_handleRematchUpdate(message));
         } else if (message['type'] == 'error' &&
@@ -541,6 +557,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
     _chatBubbleTimer?.cancel();
     _typingIndicatorTimer?.cancel();
     _bellAlertTimer?.cancel();
+    _bellAlertCooldownTimer?.cancel();
     _opponentDisconnectTimer?.cancel();
     unawaited(ref.read(gameAudioServiceProvider).stopMusic());
     _chatMessages.dispose();
@@ -608,6 +625,15 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   void _ringPlayerBell(LudoColor playerColor) {
+    final cooldownRemaining = _bellAlertAllowedAt?.difference(DateTime.now());
+    if (cooldownRemaining != null && cooldownRemaining > Duration.zero) {
+      final seconds = (cooldownRemaining.inMilliseconds + 999) ~/ 1000;
+      TopNotice.show(
+        context,
+        'Play-fast is cooling down. Try again in $seconds seconds.',
+      );
+      return;
+    }
     final gameNotifier = ref.read(gameControllerProvider.notifier);
     final gameState = ref.read(gameControllerProvider);
     if (!gameNotifier.isOnlineMode || gameState.isGameOver) return;
@@ -619,9 +645,26 @@ class _GameScreenState extends ConsumerState<GameScreen>
         _disconnectedOnlinePlayerIds.contains(target.first.id)) {
       return;
     }
-    ref.read(webSocketServiceProvider).sendBellAlert(target.first.id);
-    _playBellAlertSound();
+    final sent =
+        ref.read(webSocketServiceProvider).sendBellAlert(target.first.id);
+    if (!sent) {
+      TopNotice.show(
+          context, 'Reconnect to the game before nudging your buddy.');
+      return;
+    }
+    _startBellAlertCooldown(const Duration(seconds: 40));
     _showBellAlertText(target.first.color);
+  }
+
+  void _startBellAlertCooldown(Duration duration) {
+    _bellAlertCooldownTimer?.cancel();
+    _bellAlertAllowedAt = DateTime.now().add(duration);
+    _bellAlertCooldownTimer = Timer(duration, () {
+      _bellAlertAllowedAt = null;
+      if (mounted) {
+        TopNotice.show(context, 'Play-fast is ready to send again.');
+      }
+    });
   }
 
   String? _resolveDisconnectedPlayerId(
